@@ -1,8 +1,11 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, prefer_final_fields
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
+import 'package:get/get.dart';
 
 class MyStudentRequest extends StatefulWidget {
   const MyStudentRequest({super.key});
@@ -11,99 +14,123 @@ class MyStudentRequest extends StatefulWidget {
   State<MyStudentRequest> createState() => _MyStudentRequestState();
 }
 
-class _MyStudentRequestState extends State<MyStudentRequest> { 
+class _MyStudentRequestState extends State<MyStudentRequest> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  
+  Set<String> _processingRequests = {};
 
-  // Method to update verification
-  Future<void> _verifyTeacher(String docId) async {
-    await _firestore.collection("users").doc(docId).update({
-      "verified": true,
-    });
+  // Accept student request
+  Future<void> _acceptStudent(String studentId, String teacherName) async {
+    try {
+      setState(() {
+        _processingRequests.add(studentId);
+      });
+
+      // Update the status to true in the student's teachers subcollection
+      await _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('teachers')
+          .doc(teacherName)
+          .update({
+        'status': true,
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _processingRequests.remove(studentId);
+      });
+
+      // Show success dialog
+      _showSuccessDialog(studentId);
+    } catch (e) {
+      setState(() {
+        _processingRequests.remove(studentId);
+      });
+
+      Get.snackbar(
+        'Error',
+        'Failed to accept student: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
   }
 
-  void _showTeacherDialog(
-      BuildContext context, Map<String, dynamic> data, String docId) {
+  // Show success dialog after accepting
+  void _showSuccessDialog(String studentId) {
     showDialog(
       context: context,
-      builder: (context) {
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 600, // max dialog width
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C2F2C),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    "Teacher Information",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 50,
+                    color: Colors.green[600],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Success message
+                Text(
+                  'Student Accepted!',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'The student has been added to your list',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+
+                // Close button
+                AnimatedButton(
+                  width: 120,
+                  height: 45,
+                  color: Colors.green[600]!,
+                  shadowDegree: ShadowDegree.light,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: Text(
+                    'Done',
+                    style: GoogleFonts.poppins(
                       color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
                     ),
                   ),
-                  const SizedBox(height: 20),
-
-                  _buildReadOnlyField("Fullname", data['fullname']),
-                  _buildReadOnlyField("Email", data['email']),
-                  _buildReadOnlyField(
-                      "Mobile Number", data['mobileNumber'].toString()),
-
-                  // Address TextField with 4-line height
-                  _buildReadOnlyField(
-                    "Address",
-                    data['address'],
-                    maxLines: 4,
-                  ),
-
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      AnimatedButton(
-                        width: 110,
-                        height: 45,
-                        color: Colors.red,
-                        shadowDegree: ShadowDegree.light,
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        child: const Text(
-                          "Ignore",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      AnimatedButton(
-                        width: 110,
-                        height: 45,
-                        color: Colors.white,
-                        shadowDegree: ShadowDegree.light,
-                        onPressed: () async {
-                          await _verifyTeacher(docId);
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                        child: const Text(
-                          "Accept",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
@@ -111,105 +138,473 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
     );
   }
 
-  Widget _buildReadOnlyField(String label, String value, {int maxLines = 1}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: TextField(
-        readOnly: true,
-        controller: TextEditingController(text: value),
-        maxLines: maxLines,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Colors.white70),
-          filled: true,
-          fillColor: const Color(0xFF3A3D3A),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+  // Message student
+  void _messageStudent(String studentId, String studentName, String studentEmail) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final TextEditingController messageController = TextEditingController();
+        
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 14,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: const Color(0xFF1E201E),
+                      child: Text(
+                        studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            studentName,
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            studentEmail,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Message input
+                Text(
+                  'Send a message',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: messageController,
+                  maxLines: 4,
+                  style: GoogleFonts.poppins(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Type your message here...',
+                    hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1E201E)),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Action buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AnimatedButton(
+                      width: 100,
+                      height: 45,
+                      color: Colors.grey[300]!,
+                      shadowDegree: ShadowDegree.light,
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    AnimatedButton(
+                      width: 100,
+                      height: 45,
+                      color: const Color(0xFF1E201E),
+                      shadowDegree: ShadowDegree.light,
+                      onPressed: () {
+                        if (messageController.text.trim().isNotEmpty) {
+                          // Here you can implement actual message sending
+                          // For now, just show a success message
+                          Navigator.of(context).pop();
+                          Get.snackbar(
+                            'Success',
+                            'Message sent to $studentName',
+                            backgroundColor: Colors.green,
+                            colorText: Colors.white,
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Send',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  // Get all students who added this teacher
+  Stream<List<Map<String, dynamic>>> _getStudentRequests() async* {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      yield [];
+      return;
+    }
+
+    // Get current teacher's full name
+    final teacherDoc = await _firestore.collection('users').doc(currentUser.uid).get();
+    final teacherName = teacherDoc.data()?['fullname'] ?? '';
+
+    if (teacherName.isEmpty) {
+      yield [];
+      return;
+    }
+
+    // Query all users to find students who have this teacher with status false
+    await for (var usersSnapshot in _firestore.collection('users').where('role', isEqualTo: 'student').snapshots()) {
+      List<Map<String, dynamic>> requests = [];
+
+      for (var userDoc in usersSnapshot.docs) {
+        // Check if this student has the current teacher in their subcollection
+        final teacherSubDoc = await _firestore
+            .collection('users')
+            .doc(userDoc.id)
+            .collection('teachers')
+            .doc(teacherName)
+            .get();
+
+        if (teacherSubDoc.exists) {
+          final teacherData = teacherSubDoc.data();
+          final status = teacherData?['status'] ?? false;
+
+          // Only include pending requests (status = false)
+          if (!status) {
+            final userData = userDoc.data();
+            requests.add({
+              'studentId': userDoc.id,
+              'username': userData['username'] ?? 'Unknown',
+              'email': userData['email'] ?? '',
+              'addedAt': teacherData?['addedAt'],
+            });
+          }
+        }
+      }
+
+      yield requests;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1E201E),
-      body: SafeArea(
-        child: StreamBuilder<QuerySnapshot>(
-          stream: _firestore
-              .collection("users")
-              .where("role", isEqualTo: "teacher")
-              .where("verified", isEqualTo: false)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator(color: Colors.white));
-            }
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF2D2F2D),
+        elevation: 0,
+        title: Text(
+          'Student Requests',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+      ),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _getStudentRequests(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            );
+          }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Center(
-                child: Text(
-                  "No request today",
-                  style: TextStyle(color: Colors.white, fontSize: 18),
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error loading requests',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
                 ),
-              );
-            }
+              ),
+            );
+          }
 
-            final teachers = snapshot.data!.docs;
+          final requests = snapshot.data ?? [];
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: teachers.length,
-              itemBuilder: (context, index) {
-                final teacher = teachers[index].data() as Map<String, dynamic>;
-                final docId = teachers[index].id;
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Center(
-                    child: AnimatedButton(
-                      width: 300,
-                      height: 100,
+          if (requests.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 80,
+                    color: Colors.white.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No pending requests',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white,
-                      shadowDegree: ShadowDegree.light,
-                      onPressed: () {
-                        _showTeacherDialog(context, teacher, docId);
-                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Students who add you will appear here',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return FutureBuilder<DocumentSnapshot>(
+            future: _firestore.collection('users').doc(_auth.currentUser?.uid).get(),
+            builder: (context, teacherSnapshot) {
+              final teacherName = teacherSnapshot.data?.data() != null
+                  ? (teacherSnapshot.data!.data() as Map<String, dynamic>)['fullname'] ?? ''
+                  : '';
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: requests.length,
+                itemBuilder: (context, index) {
+                  final request = requests[index];
+                  final studentId = request['studentId'];
+                  final username = request['username'];
+                  final email = request['email'];
+                  final isProcessing = _processingRequests.contains(studentId);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2D2F2D),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.1),
+                        width: 1,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            teacher['fullname'] ?? "No Name",
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                            ),
+                          Row(
+                            children: [
+                              // Student avatar
+                              CircleAvatar(
+                                radius: 30,
+                                backgroundColor: Colors.amber[700],
+                                child: Text(
+                                  username.isNotEmpty ? username[0].toUpperCase() : 'S',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+
+                              // Student info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      username,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      email,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        color: Colors.white.withOpacity(0.7),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Pending badge
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[700],
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  'Pending',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            teacher['email'] ?? "No Email",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.black.withOpacity(0.6),
-                            ),
+                          const SizedBox(height: 16),
+
+                          // Action buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              // Message button
+                              AnimatedButton(
+                                width: 110,
+                                height: 42,
+                                color: Colors.white.withOpacity(0.1),
+                                shadowDegree: ShadowDegree.light,
+                                onPressed: isProcessing
+                                    ? () {}
+                                    : () {
+                                        _messageStudent(studentId, username, email);
+                                      },
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.message_outlined,
+                                      size: 18,
+                                      color: isProcessing
+                                          ? Colors.white.withOpacity(0.3)
+                                          : Colors.white,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Message',
+                                      style: GoogleFonts.poppins(
+                                        color: isProcessing
+                                            ? Colors.white.withOpacity(0.3)
+                                            : Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+
+                              // Accept button
+                              AnimatedButton(
+                                width: 100,
+                                height: 42,
+                                color: Colors.green[600]!,
+                                shadowDegree: ShadowDegree.light,
+                                enabled: !isProcessing,
+                                onPressed: () {
+                                  _acceptStudent(studentId, teacherName);
+                                },
+                                child: isProcessing
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.check_circle_outline,
+                                            size: 18,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Accept',
+                                            style: GoogleFonts.poppins(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }

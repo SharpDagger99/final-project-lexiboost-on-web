@@ -9,7 +9,7 @@ class MyFillTheBlank extends StatefulWidget {
   final Function(int) onHideLetter;
 
   const MyFillTheBlank({
-    super.key,
+    super.key, 
     required this.answerController,
     required this.visibleLetters,
     required this.onRevealLetter,
@@ -252,6 +252,8 @@ class MyFillTheBlankSettings extends StatefulWidget {
     required this.visibleLetters,
     required this.onToggle,
   });
+  
+  TextEditingController? get hintController => null;
 
   @override
   State<MyFillTheBlankSettings> createState() =>
@@ -297,6 +299,50 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
                 ),
                 decoration: InputDecoration(
                   hintText: "The Answer...",
+                  hintStyle: GoogleFonts.poppins(
+                    color: Colors.black54,
+                    fontSize: 14,
+                  ),
+                  border: InputBorder.none,
+                  counterText: "",
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20,),
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              "Game Hint:",
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 300,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.black, width: 1),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: TextField(
+                controller: widget.hintController,
+                maxLength: 25,
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.black,
+                ),
+                decoration: InputDecoration(
+                  hintText: "Give a hint if user use a hint...",
                   hintStyle: GoogleFonts.poppins(
                     color: Colors.black54,
                     fontSize: 14,

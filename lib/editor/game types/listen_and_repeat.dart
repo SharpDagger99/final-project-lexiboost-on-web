@@ -1,10 +1,14 @@
-// ignore_for_file: avoid_print, deprecated_member_use
+// ignore_for_file: avoid_print, deprecated_member_use, unused_field
 
 import 'package:animated_button/animated_button.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 class MyListenAndRepeat extends StatefulWidget {
   final TextEditingController sentenceController;
@@ -226,15 +230,19 @@ class MyListenAndRepeatSettings extends StatefulWidget {
 
 class _MyListenAndRepeatSettingsState extends State<MyListenAndRepeatSettings> {
   late AudioPlayer _audioPlayer;
+  late AudioRecorder _audioRecorder;
   bool _isPlaying = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  bool _isMicActive = false;
+  bool _isRecording = false;
+  String? _audioPath;
+  String _audioSource = ""; // Stores "uploaded" or "recorded"
 
   @override
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
+    _audioRecorder = AudioRecorder();
 
     _audioPlayer.onPlayerStateChanged.listen((state) {
       setState(() => _isPlaying = state == PlayerState.playing);
@@ -252,20 +260,123 @@ class _MyListenAndRepeatSettingsState extends State<MyListenAndRepeatSettings> {
   @override
   void dispose() {
     _audioPlayer.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
-  Future<void> _playPause() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.play(AssetSource('audio/sample.mp3'));
+  Future<void> _pickAudioFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        // Stop any playing audio
+        await _audioPlayer.stop();
+        
+        setState(() {
+          _audioPath = result.files.single.path;
+          _audioSource = "uploaded";
+          _position = Duration.zero;
+          _duration = Duration.zero;
+        });
+
+        print("Audio file uploaded: $_audioPath");
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Audio file uploaded successfully!'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print("Error picking audio file: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading audio: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
-  void _toggleMic() {
-    setState(() => _isMicActive = !_isMicActive);
-    print(_isMicActive ? "Mic activated" : "Mic deactivated");
+  Future<void> _toggleRecording() async {
+    if (_isRecording) {
+      // Stop recording
+      final path = await _audioRecorder.stop();
+      
+      if (path != null) {
+        setState(() {
+          _audioPath = path;
+          _audioSource = "recorded";
+          _isRecording = false;
+          _position = Duration.zero;
+          _duration = Duration.zero;
+        });
+        
+        print("Recording saved: $path");
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recording saved successfully!'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } else {
+      // Start recording
+      if (await _audioRecorder.hasPermission()) {
+        // Stop any playing audio
+        await _audioPlayer.stop();
+        
+        final Directory appDir = await getApplicationDocumentsDirectory();
+        final String filePath = '${appDir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        
+        await _audioRecorder.start(const RecordConfig(), path: filePath);
+        
+        setState(() {
+          _isRecording = true;
+          _audioPath = null; // Clear previous audio
+        });
+        
+        print("Recording started...");
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission denied'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _playPause() async {
+    if (_audioPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No audio available. Please upload or record first.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      await _audioPlayer.play(DeviceFileSource(_audioPath!));
+    }
   }
 
   @override
@@ -290,9 +401,7 @@ class _MyListenAndRepeatSettingsState extends State<MyListenAndRepeatSettings> {
               width: 150,
               height: 50,
               color: Colors.green,
-              onPressed: () {
-                print("Send audio pressed");
-              },
+              onPressed: _pickAudioFile,
               child: Text(
                 "Send Audio",
                 style: GoogleFonts.poppins(
@@ -357,10 +466,10 @@ class _MyListenAndRepeatSettingsState extends State<MyListenAndRepeatSettings> {
             AnimatedButton(
               width: 70,
               height: 70,
-              color: _isMicActive ? Colors.redAccent : Colors.greenAccent,
-              onPressed: _toggleMic,
+              color: _isRecording ? Colors.redAccent : Colors.greenAccent,
+              onPressed: _toggleRecording,
               child: Icon(
-                _isMicActive ? Icons.mic : Icons.mic_none_rounded,
+                _isRecording ? Icons.stop : Icons.mic,
                 color: Colors.black,
                 size: 40,
               ),

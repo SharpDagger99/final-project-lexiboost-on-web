@@ -1,7 +1,9 @@
 // ===== game_edit.dart =====
 
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_web_libraries_in_flutter
 
+import 'dart:async';
+import 'dart:html' as html;
 import 'package:animated_button/animated_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,7 +22,7 @@ import 'package:lexi_on_web/editor/game%20types/read_the_sentence.dart';
 import 'package:lexi_on_web/editor/game%20types/what_called.dart';
 import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
-import 'package:lexi_on_web/editor/game%20types/image_match.dart'; // ✅ NEW Import
+import 'package:lexi_on_web/editor/game%20types/image_match.dart';
 
 // Page data class to store page content
 class PageData {
@@ -38,11 +40,12 @@ class PageData {
   List<Uint8List?> guessAnswerImages;
   List<Uint8List?> imageMatchImages;
   int imageMatchCount;
-  String difficulty; // Add difficulty property
+  String difficulty;
   String prizeCoins;
-  String gameRule; // Add game rule property
-  String gameSet; // Add game set property
-  String gameCode; // Add game code property
+  String gameRule;
+  String gameSet;
+  String gameCode;
+  String? docId; // Firestore document ID for this page
 
   PageData({
     this.title = '',
@@ -59,11 +62,12 @@ class PageData {
     List<Uint8List?>? guessAnswerImages,
     List<Uint8List?>? imageMatchImages,
     this.imageMatchCount = 2,
-    this.difficulty = 'easy', // Initialize difficulty
+    this.difficulty = 'easy',
     this.prizeCoins = '100',
-    this.gameRule = 'none', // Initialize game rule
-    this.gameSet = 'public', // Initialize game set
-    this.gameCode = '', // Initialize game code
+    this.gameRule = 'none',
+    this.gameSet = 'public',
+    this.gameCode = '',
+    this.docId,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null);
 }
@@ -89,37 +93,42 @@ class _MyGameEditState extends State<MyGameEdit> {
   );
   final TextEditingController gameCodeController = TextEditingController();
 
-  double progressValue = 0.1; // Progress bar value (10%)
-  String selectedGameType = 'Fill in the blank'; // Default game type
-  String selectedDifficulty = 'easy'; // Default difficulty
-  String selectedGameRule = 'none'; // Default game rule
-  String selectedGameSet = 'public'; // Default game set
+  double progressValue = 0.1;
+  String selectedGameType = 'Fill in the blank';
+  String selectedDifficulty = 'easy';
+  String selectedGameRule = 'none';
+  String selectedGameSet = 'public';
 
   List<bool> visibleLetters = [];
   Uint8List? selectedImageBytes;
   Uint8List? whatCalledImageBytes;
   List<String> multipleChoices = [];
 
-  // ✅ Support 3 image hints for Guess the Answer 2
   List<Uint8List?> guessAnswerImages = [null, null, null];
-
-  // ✅ Support for Image Match (up to 8 images)
   List<Uint8List?> imageMatchImages = List.filled(8, null);
-  int imageMatchCount = 2; // default number of slots
+  int imageMatchCount = 2;
 
-  // Page management
-  List<PageData> pages = [PageData()]; // Start with one page
+  List<PageData> pages = [PageData()];
   int currentPageIndex = 0;
 
-  // Firestore related
-  String? gameId; // set when opening an existing game or creating one
+  String? gameId;
+  Timer? _debounceTimer;
+
+  final mathState = MathState();
+
+  // Browser event listeners
+  StreamSubscription<html.Event>? _beforeUnloadSubscription;
+  StreamSubscription<html.PopStateEvent>? _popStateSubscription;
 
   @override
   void initState() {
     super.initState();
     answerController.addListener(_syncVisibleLetters);
+    titleController.addListener(_onTitleChanged);
 
-    // If arguments were passed via Get (gameId), load the title from Firestore
+    // Set up browser event listeners
+    _setupBrowserEventListeners();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = Get.arguments;
       if (args != null && args['gameId'] != null) {
@@ -127,6 +136,143 @@ class _MyGameEditState extends State<MyGameEdit> {
         _loadFromFirestore(gameId!);
       }
     });
+  }
+
+  void _setupBrowserEventListeners() {
+    // Prevent page reload (F5, Ctrl+R, etc.)
+    _beforeUnloadSubscription = html.window.onBeforeUnload.listen((event) {
+      final beforeUnloadEvent = event as html.BeforeUnloadEvent;
+      beforeUnloadEvent.returnValue =
+          'You have unsaved changes. Are you sure you want to leave?';
+    });
+
+    // Handle browser back button
+    _popStateSubscription = html.window.onPopState.listen((event) {
+      // Prevent default back navigation
+      html.window.history.pushState(null, '', html.window.location.href);
+
+      // Show confirmation dialog
+      _showBrowserBackConfirmation();
+    });
+
+    // Push initial state to enable popstate detection
+    html.window.history.pushState(null, '', html.window.location.href);
+  }
+
+  Future<void> _showBrowserBackConfirmation() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            width: 400,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back, color: Colors.orange, size: 50),
+                const SizedBox(height: 20),
+                Text(
+                  'Leave Game Editor?',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'You are about to leave the game editor. Do you want to save your changes before leaving?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.grey,
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        // Stay on current page - push state again
+                        html.window.history.pushState(
+                          null,
+                          '',
+                          html.window.location.href,
+                        );
+                      },
+                      child: Text(
+                        'Stay',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.red,
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        _removeEventListeners();
+                        await _navigateBasedOnRole();
+                      },
+                      child: Text(
+                        'Leave',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.green,
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        _saveCurrentPageData();
+                        await _saveToFirestore();
+                        _removeEventListeners();
+                        await _navigateBasedOnRole();
+                      },
+                      child: Text(
+                        'Save',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _removeEventListeners() {
+    _beforeUnloadSubscription?.cancel();
+    _popStateSubscription?.cancel();
+    _beforeUnloadSubscription = null;
+    _popStateSubscription = null;
   }
 
   void _syncVisibleLetters() {
@@ -148,21 +294,42 @@ class _MyGameEditState extends State<MyGameEdit> {
     });
   }
 
+  void _onTitleChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1500), () async {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || gameId == null) return;
+
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('created_games')
+            .doc(gameId)
+            .update({
+              'title': titleController.text.trim(),
+              'updated_at': FieldValue.serverTimestamp(),
+            });
+      } catch (e) {
+        debugPrint('Failed to update title: $e');
+      }
+    });
+  }
+
   void _toggleLetter(int index) {
     setState(() {
       visibleLetters[index] = !visibleLetters[index];
     });
   }
 
-  // Save current page data before switching (Column 1 fields are global, not per-page)
   void _saveCurrentPageData() {
     pages[currentPageIndex] = PageData(
-      title: '', // Column 1 fields are global, don't save per page
+      title: '',
       description: '',
       gameType: selectedGameType,
-      difficulty: '', // Column 1 fields are global, don't save per page
-      gameRule: '', // Column 1 fields are global, don't save per page
-      gameSet: '', // Column 1 fields are global, don't save per page
+      difficulty: '',
+      gameRule: '',
+      gameSet: '',
       answer: answerController.text,
       descriptionField: descriptionFieldController.text,
       readSentence: readSentenceController.text,
@@ -174,23 +341,14 @@ class _MyGameEditState extends State<MyGameEdit> {
       guessAnswerImages: List.from(guessAnswerImages),
       imageMatchImages: List.from(imageMatchImages),
       imageMatchCount: imageMatchCount,
-      prizeCoins: '', // Column 1 fields are global, don't save per page
+      prizeCoins: '',
+      docId: pages[currentPageIndex].docId, // Preserve the document ID
     );
   }
 
-  // Load page data when switching (Column 1 fields remain global and unchanged)
   void _loadPageData(int pageIndex) {
     final pageData = pages[pageIndex];
 
-    // Column 1 fields are global and don't change per page - keep current values
-    // titleController.text remains unchanged (global game title)
-    // descriptionController.text remains unchanged (global game description) 
-    // selectedDifficulty remains unchanged (global game difficulty)
-    // selectedGameRule remains unchanged (general game rules)
-    // selectedGameSet remains unchanged (general game setting)
-    // prizeCoinsController.text remains unchanged (global prize coins)
-
-    // Only load page-specific content (Columns 2 & 3)
     selectedGameType = pageData.gameType;
     answerController.text = pageData.answer;
     descriptionFieldController.text = pageData.descriptionField;
@@ -204,11 +362,9 @@ class _MyGameEditState extends State<MyGameEdit> {
     imageMatchImages = List.from(pageData.imageMatchImages);
     imageMatchCount = pageData.imageMatchCount;
 
-    // Update progress based on current page
     progressValue = (pageIndex + 1) / pages.length;
   }
 
-  // Navigate to previous page
   void _goToPreviousPage() {
     if (currentPageIndex > 0) {
       _saveCurrentPageData();
@@ -219,18 +375,15 @@ class _MyGameEditState extends State<MyGameEdit> {
     }
   }
 
-  // Navigate to next page or create new
   void _goToNextPage() {
     _saveCurrentPageData();
 
     if (currentPageIndex < pages.length - 1) {
-      // Go to existing next page
       setState(() {
         currentPageIndex++;
         _loadPageData(currentPageIndex);
       });
     } else {
-      // Create new page
       setState(() {
         pages.add(PageData());
         currentPageIndex++;
@@ -239,7 +392,6 @@ class _MyGameEditState extends State<MyGameEdit> {
     }
   }
 
-  // Show page selector dialog
   void _showPageSelector() {
     showDialog(
       context: context,
@@ -367,13 +519,11 @@ class _MyGameEditState extends State<MyGameEdit> {
     );
   }
 
-  // Delete current page
   void _deletePage() {
     if (pages.length == 1) {
-      return; // Can't delete the only page
+      return;
     }
 
-    // Show confirmation dialog
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -399,12 +549,15 @@ class _MyGameEditState extends State<MyGameEdit> {
               ),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(context).pop();
+                
+                // Delete the round document from Firestore and update page numbers
+                await _deletePageFromFirestore(currentPageIndex);
+                
                 setState(() {
                   pages.removeAt(currentPageIndex);
 
-                  // Adjust current page index if necessary
                   if (currentPageIndex >= pages.length) {
                     currentPageIndex = pages.length - 1;
                   }
@@ -426,7 +579,39 @@ class _MyGameEditState extends State<MyGameEdit> {
     );
   }
 
-  /// Load metadata (title, etc.) from Firestore for the provided gameId
+  /// Delete a specific page/round from Firestore and update subsequent page numbers
+  Future<void> _deletePageFromFirestore(int pageIndex) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameRoundsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds');
+
+      // Delete the document if it exists
+      if (pages[pageIndex].docId != null) {
+        await gameRoundsRef.doc(pages[pageIndex].docId).delete();
+      }
+
+      // Update page numbers for all subsequent pages
+      for (int i = pageIndex + 1; i < pages.length; i++) {
+        if (pages[i].docId != null) {
+          await gameRoundsRef.doc(pages[i].docId).update({
+            'page':
+                i, // New page number after deletion (0-indexed becomes i because we're removing one)
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to delete page from Firestore: $e');
+    }
+  }
+
+  /// Load all game metadata from Firestore
   Future<void> _loadFromFirestore(String id) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -443,16 +628,380 @@ class _MyGameEditState extends State<MyGameEdit> {
         final data = doc.data()!;
         setState(() {
           titleController.text = (data['title'] as String?) ?? '';
-          // If you later store more fields (pages, description, progress etc.) in Firestore,
-          // you can load them here and populate the editor state.
+          descriptionController.text = (data['description'] as String?) ?? '';
+          selectedDifficulty = (data['difficulty'] as String?) ?? 'easy';
+          prizeCoinsController.text = (data['prizeCoins'] as String?) ?? '100';
+          selectedGameRule = (data['gameRule'] as String?) ?? 'none';
+          selectedGameSet = (data['gameSet'] as String?) ?? 'public';
+          gameCodeController.text = (data['gameCode'] as String?) ?? '';
         });
+        
+        // Load game rounds data
+        await _loadGameRounds();
       }
     } catch (e) {
       debugPrint('Failed to load game metadata: $e');
     }
   }
 
-  /// Save metadata (currently: title) back to Firestore
+  /// Load all game rounds from Firestore
+  Future<void> _loadGameRounds() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameRoundsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds');
+
+      final snapshot = await gameRoundsRef.orderBy('page').get();
+
+      if (snapshot.docs.isEmpty) {
+        // No rounds saved yet, keep default single page
+        return;
+      }
+
+      List<PageData> loadedPages = [];
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+
+        // Deserialize image data
+        Uint8List? selectedImage;
+        if (data['selectedImageBytes'] != null) {
+          selectedImage = Uint8List.fromList(
+            List<int>.from(data['selectedImageBytes']),
+          );
+        }
+
+        Uint8List? whatCalledImage;
+        if (data['whatCalledImageBytes'] != null) {
+          whatCalledImage = Uint8List.fromList(
+            List<int>.from(data['whatCalledImageBytes']),
+          );
+        }
+
+        List<Uint8List?> guessImages = [null, null, null];
+        if (data['guessAnswerImages'] != null) {
+          final imagesList = data['guessAnswerImages'] as List;
+          for (int i = 0; i < imagesList.length && i < 3; i++) {
+            if (imagesList[i] != null) {
+              guessImages[i] = Uint8List.fromList(
+                List<int>.from(imagesList[i]),
+              );
+            }
+          }
+        }
+
+        List<Uint8List?> matchImages = List.filled(8, null);
+        if (data['imageMatchImages'] != null) {
+          final imagesList = data['imageMatchImages'] as List;
+          for (int i = 0; i < imagesList.length && i < 8; i++) {
+            if (imagesList[i] != null) {
+              matchImages[i] = Uint8List.fromList(
+                List<int>.from(imagesList[i]),
+              );
+            }
+          }
+        }
+
+        loadedPages.add(
+          PageData(
+            gameType: (data['gameType'] as String?) ?? 'Fill in the blank',
+            answer: (data['answer'] as String?) ?? '',
+            descriptionField: (data['descriptionField'] as String?) ?? '',
+            readSentence: (data['readSentence'] as String?) ?? '',
+            listenAndRepeat: (data['listenAndRepeat'] as String?) ?? '',
+            visibleLetters: data['visibleLetters'] != null
+                ? List<bool>.from(data['visibleLetters'])
+                : [],
+            selectedImageBytes: selectedImage,
+            whatCalledImageBytes: whatCalledImage,
+            multipleChoices: data['multipleChoices'] != null
+                ? List<String>.from(data['multipleChoices'])
+                : [],
+            guessAnswerImages: guessImages,
+            imageMatchImages: matchImages,
+            imageMatchCount: (data['imageMatchCount'] as int?) ?? 2,
+            docId: doc.id,
+          ),
+        );
+      }
+
+      setState(() {
+        pages = loadedPages;
+        currentPageIndex = 0;
+        if (pages.isNotEmpty) {
+          _loadPageData(0);
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to load game rounds: $e');
+    }
+  }
+
+  /// Get current user's role from Firestore
+  Future<String> _getUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 'student';
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        return userDoc.data()?['role'] ?? 'student';
+      }
+      return 'student';
+    } catch (e) {
+      debugPrint('Failed to get user role: $e');
+      return 'student';
+    }
+  }
+
+  /// Navigate to appropriate page based on user role
+  Future<void> _navigateBasedOnRole() async {
+    final role = await _getUserRole();
+
+    if (role == 'admin') {
+      Get.offAllNamed('/admin');
+    } else if (role == 'teacher') {
+      Get.offAllNamed('/teacher_home');
+    } else {
+      Get.offAllNamed('/game_create');
+    }
+  }
+
+  /// Show close confirmation dialog
+  Future<void> _showCloseConfirmationDialog() async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            width: 400,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue, size: 50),
+                const SizedBox(height: 20),
+                Text(
+                  'Close File',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Are you sure you want to close this file? Save the file?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.grey,
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Return',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.red,
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        _removeEventListeners();
+                        await _navigateBasedOnRole();
+                      },
+                      child: Text(
+                        'No',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.green,
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        _saveCurrentPageData();
+                        await _saveToFirestore();
+                        _removeEventListeners();
+                        await _navigateBasedOnRole();
+                      },
+                      child: Text(
+                        'Save',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show delete confirmation dialog
+  Future<void> _showDeleteConfirmationDialog() async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            width: 400,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.red, size: 50),
+                const SizedBox(height: 20),
+                Text(
+                  'Delete Game',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Are you sure you want to delete this game? This action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.grey,
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 80,
+                      height: 40,
+                      color: Colors.red,
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _deleteGame();
+                      },
+                      child: Text(
+                        'Delete',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Delete game from Firestore
+  Future<void> _deleteGame() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to delete.')),
+      );
+      return;
+    }
+
+    if (gameId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No game to delete.')));
+      return;
+    }
+
+    try {
+      final gameDocRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId);
+
+      // First, delete all documents in the game_rounds subcollection
+      final gameRoundsSnapshot = await gameDocRef
+          .collection('game_rounds')
+          .get();
+
+      for (var doc in gameRoundsSnapshot.docs) {
+        await doc.reference.delete();
+      }
+
+      // Then delete the main game document
+      await gameDocRef.delete();
+
+      _removeEventListeners();
+      await _navigateBasedOnRole();
+    } catch (e) {
+      debugPrint('Failed to delete game: $e');
+    }
+  }
+
+  /// Save all game metadata to Firestore
   Future<void> _saveToFirestore() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -463,55 +1012,146 @@ class _MyGameEditState extends State<MyGameEdit> {
     }
 
     try {
+      final Map<String, dynamic> gameData = {
+        'title': titleController.text.trim(),
+        'description': descriptionController.text.trim(),
+        'difficulty': selectedDifficulty,
+        'prizeCoins': prizeCoinsController.text.replaceAll(',', '').trim(),
+        'gameRule': selectedGameRule,
+        'gameSet': selectedGameSet,
+        'gameCode': selectedGameSet == 'private'
+            ? gameCodeController.text.trim()
+            : '',
+      };
+
       if (gameId == null) {
-        // If the editor was opened without a gameId (e.g. direct open), create a new doc
         final docRef = FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .collection('created_games')
             .doc();
 
-        await docRef.set({
-          'title': titleController.text.trim(),
-          'created_at': FieldValue.serverTimestamp(),
-        });
+        gameData['created_at'] = FieldValue.serverTimestamp();
+        await docRef.set(gameData);
 
         setState(() {
           gameId = docRef.id;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Created new game and saved title.')),
+          const SnackBar(content: Text('Game created and saved successfully.')),
         );
       } else {
-        // Update existing document
+        gameData['updated_at'] = FieldValue.serverTimestamp();
+
         await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .collection('created_games')
             .doc(gameId)
-            .update({
-              'title': titleController.text.trim(),
-              'updated_at': FieldValue.serverTimestamp(),
-            });
+            .update(gameData);
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Title updated successfully.')),
+          const SnackBar(content: Text('Game updated successfully.')),
         );
       }
+
+      // Save all pages to game_rounds subcollection
+      await _saveGameRounds();
     } catch (e) {
-      debugPrint('Failed to save title: $e');
+      debugPrint('Failed to save game: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to save. See logs.')),
+        SnackBar(content: Text('Failed to save: ${e.toString()}')),
       );
+    }
+  }
+
+  /// Save all game rounds to the game_rounds subcollection
+  Future<void> _saveGameRounds() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameRoundsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds');
+
+      // Save each page as a round document
+      for (int i = 0; i < pages.length; i++) {
+        final pageData = pages[i];
+
+        final Map<String, dynamic> roundData = {
+          'gameType': pageData.gameType,
+          'page': i + 1, // Store 1-based page number
+          'answer': pageData.answer,
+          'descriptionField': pageData.descriptionField,
+          'readSentence': pageData.readSentence,
+          'listenAndRepeat': pageData.listenAndRepeat,
+          'visibleLetters': pageData.visibleLetters,
+          'multipleChoices': pageData.multipleChoices,
+          'imageMatchCount': pageData.imageMatchCount,
+        };
+
+        // Serialize image data
+        if (pageData.selectedImageBytes != null) {
+          roundData['selectedImageBytes'] =
+              pageData.selectedImageBytes!.toList();
+        }
+
+        if (pageData.whatCalledImageBytes != null) {
+          roundData['whatCalledImageBytes'] =
+              pageData.whatCalledImageBytes!.toList();
+        }
+
+        // Serialize guess answer images
+        List<dynamic> guessImagesData = [];
+        for (var image in pageData.guessAnswerImages) {
+          if (image != null) {
+            guessImagesData.add(image.toList());
+          } else {
+            guessImagesData.add(null);
+          }
+        }
+        roundData['guessAnswerImages'] = guessImagesData;
+
+        // Serialize image match images
+        List<dynamic> matchImagesData = [];
+        for (var image in pageData.imageMatchImages) {
+          if (image != null) {
+            matchImagesData.add(image.toList());
+          } else {
+            matchImagesData.add(null);
+          }
+        }
+        roundData['imageMatchImages'] = matchImagesData;
+
+        // If document ID exists, update it; otherwise create a new one
+        if (pageData.docId != null) {
+          await gameRoundsRef.doc(pageData.docId).set(roundData);
+        } else {
+          // Create new document with auto-generated ID
+          final docRef = await gameRoundsRef.add(roundData);
+          // Store the generated document ID back to the page data
+          pages[i].docId = docRef.id;
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to save game rounds: $e');
     }
   }
 
   @override
   void dispose() {
+    _removeEventListeners();
+    _debounceTimer?.cancel();
+    titleController.removeListener(_onTitleChanged);
     titleController.dispose();
     descriptionController.dispose();
     descriptionFieldController.dispose();
+    answerController.removeListener(_syncVisibleLetters);
     answerController.dispose();
     readSentenceController.dispose();
     listenAndRepeatController.dispose();
@@ -693,7 +1333,10 @@ class _MyGameEditState extends State<MyGameEdit> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: TextField(
                       controller: prizeCoinsController,
-                      keyboardType: TextInputType.numberWithOptions(signed: false, decimal: false),
+                      keyboardType: TextInputType.numberWithOptions(
+                        signed: false,
+                        decimal: false,
+                      ),
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       style: GoogleFonts.poppins(
                         fontSize: 16,
@@ -709,26 +1352,30 @@ class _MyGameEditState extends State<MyGameEdit> {
                       ),
                       onChanged: (value) {
                         if (value.isNotEmpty) {
-                          // Remove commas for parsing
                           String cleanValue = value.replaceAll(',', '');
                           int? coins = int.tryParse(cleanValue);
-                          
+
                           if (coins != null) {
                             if (coins > 99999) {
-                              // Format with commas
-                              prizeCoinsController.text = NumberFormat('#,##0').format(99999);
-                              prizeCoinsController.selection = TextSelection.fromPosition(
-                                TextPosition(offset: prizeCoinsController.text.length),
-                              );
+                              prizeCoinsController.text = NumberFormat(
+                                '#,##0',
+                              ).format(99999);
+                              prizeCoinsController.selection =
+                                  TextSelection.fromPosition(
+                                    TextPosition(
+                                      offset: prizeCoinsController.text.length,
+                                    ),
+                                  );
                             } else {
-                              // Format with commas
-                              String formatted = NumberFormat('#,##0').format(coins);
-                              // Only update if formatting actually changed to avoid cursor issues
+                              String formatted = NumberFormat(
+                                '#,##0',
+                              ).format(coins);
                               if (formatted != value) {
                                 prizeCoinsController.text = formatted;
-                                prizeCoinsController.selection = TextSelection.fromPosition(
-                                  TextPosition(offset: formatted.length),
-                                );
+                                prizeCoinsController.selection =
+                                    TextSelection.fromPosition(
+                                      TextPosition(offset: formatted.length),
+                                    );
                               }
                             }
                           } else if (cleanValue.isEmpty) {
@@ -774,8 +1421,14 @@ class _MyGameEditState extends State<MyGameEdit> {
                       isExpanded: true,
                       items: const [
                         DropdownMenuItem(value: 'none', child: Text('None')),
-                        DropdownMenuItem(value: 'heart', child: Text('Heart Deduction')),
-                        DropdownMenuItem(value: 'timer', child: Text('Timer Countdown')),
+                        DropdownMenuItem(
+                          value: 'heart',
+                          child: Text('Heart Deduction'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'timer',
+                          child: Text('Timer Countdown'),
+                        ),
                         DropdownMenuItem(value: 'score', child: Text('Score')),
                       ],
                       onChanged: (String? newValue) {
@@ -825,8 +1478,14 @@ class _MyGameEditState extends State<MyGameEdit> {
                           ),
                           isExpanded: true,
                           items: const [
-                            DropdownMenuItem(value: 'public', child: Text('Public')),
-                            DropdownMenuItem(value: 'private', child: Text('Private')),
+                            DropdownMenuItem(
+                              value: 'public',
+                              child: Text('Public'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'private',
+                              child: Text('Private'),
+                            ),
                           ],
                           onChanged: (String? newValue) {
                             if (newValue != null) {
@@ -840,13 +1499,12 @@ class _MyGameEditState extends State<MyGameEdit> {
                           },
                         ),
                       ),
-                      
-                      // Conditional Game Code text field (only shows for Private) next to dropdown
+
                       if (selectedGameSet == 'private') ...[
                         const SizedBox(width: 20),
-                        
+
                         Container(
-                          width: 120, // Reduced width to fit 8 digits comfortably
+                          width: 120,
                           height: 50,
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -854,9 +1512,11 @@ class _MyGameEditState extends State<MyGameEdit> {
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: TextField(
-                            
                             controller: gameCodeController,
-                            keyboardType: TextInputType.numberWithOptions(signed: false, decimal: false),
+                            keyboardType: TextInputType.numberWithOptions(
+                              signed: false,
+                              decimal: false,
+                            ),
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(8),
@@ -875,7 +1535,6 @@ class _MyGameEditState extends State<MyGameEdit> {
                               border: InputBorder.none,
                             ),
                             onChanged: (value) {
-                              // Format with dash if 5 or more digits
                               String cleanValue = value.replaceAll('-', '');
                               if (cleanValue.length >= 5) {
                                 String formatted = '';
@@ -888,9 +1547,10 @@ class _MyGameEditState extends State<MyGameEdit> {
                                 }
                                 if (formatted != value) {
                                   gameCodeController.text = formatted;
-                                  gameCodeController.selection = TextSelection.fromPosition(
-                                    TextPosition(offset: formatted.length),
-                                  );
+                                  gameCodeController.selection =
+                                      TextSelection.fromPosition(
+                                        TextPosition(offset: formatted.length),
+                                      );
                                 }
                               }
                             },
@@ -917,7 +1577,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                           height: 50,
                           color: Colors.red,
                           onPressed: () {
-                            // Add delete functionality here
+                            _showDeleteConfirmationDialog();
                           },
                           child: Text(
                             "Delete",
@@ -935,7 +1595,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                           height: 50,
                           color: Colors.blue,
                           onPressed: () {
-                            // Add delete functionality here
+                            _showCloseConfirmationDialog();
                           },
                           child: Text(
                             "Close",
@@ -948,13 +1608,11 @@ class _MyGameEditState extends State<MyGameEdit> {
                         ),
                         const SizedBox(width: 20),
 
-
                         AnimatedButton(
                           width: 100,
                           height: 50,
                           color: Colors.green,
                           onPressed: () async {
-                            // Save current page before saving
                             _saveCurrentPageData();
                             await _saveToFirestore();
                           },
@@ -1080,7 +1738,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                                           pickedImages: imageMatchImages,
                                           count: imageMatchCount,
                                         )
-                                      : const MyMath(),
+                                      : MyMath(mathState: mathState),
                                 ),
 
                                 Center(
@@ -1089,9 +1747,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                                     height: 60,
                                     color: Colors.green,
                                     onPressed: () async {
-                                      // Save current page before saving title
                                       _saveCurrentPageData();
-
                                       await _saveToFirestore();
                                     },
                                     child: Text(
@@ -1294,7 +1950,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                         },
                       )
                     else if (selectedGameType == 'Math')
-                      const MyMathSettings(),
+                      MyMathSettings(mathState: mathState),
 
                     const Spacer(),
 
@@ -1303,11 +1959,9 @@ class _MyGameEditState extends State<MyGameEdit> {
                       child: Divider(color: Colors.white),
                     ),
 
-                    // Last lane 3 controller with added functionality
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        // Previous page button
                         AnimatedButton(
                           width: 50,
                           height: 50,
@@ -1323,7 +1977,6 @@ class _MyGameEditState extends State<MyGameEdit> {
                           ),
                         ),
 
-                        // Page selector button
                         AnimatedButton(
                           width: 150,
                           height: 50,
@@ -1339,7 +1992,6 @@ class _MyGameEditState extends State<MyGameEdit> {
                           ),
                         ),
 
-                        // Next/New page button
                         AnimatedButton(
                           width: 50,
                           height: 50,
@@ -1353,7 +2005,6 @@ class _MyGameEditState extends State<MyGameEdit> {
                           ),
                         ),
 
-                        // Delete page button
                         AnimatedButton(
                           width: 50,
                           height: 50,
@@ -1384,7 +2035,6 @@ class _MyGameEditState extends State<MyGameEdit> {
                           height: 50,
                           color: Colors.green,
                           onPressed: () {
-                            // Save current page before testing
                             _saveCurrentPageData();
                             // Add test functionality here
                           },

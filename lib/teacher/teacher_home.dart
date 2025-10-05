@@ -2,15 +2,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:lexi_on_web/admin/dashboard.dart';
+
 import 'package:lexi_on_web/admin/game_create.dart';
 import 'package:lexi_on_web/admin/report.dart';
+import 'package:lexi_on_web/teacher/class1.dart';
 import 'package:lexi_on_web/teacher/student_request.dart';
+import 'package:lexi_on_web/teacher/add_student.dart';
 import 'package:lexi_on_web/admin/settings_admin.dart';
 import 'package:lexi_on_web/start.dart';
-
-// Import all your pages
-
+import 'package:lexi_on_web/teacher/teacher_dashboard.dart';
 
 class MyTeacherHome extends StatefulWidget {
   const MyTeacherHome({super.key});
@@ -118,6 +118,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
 
   final List<Map<String, dynamic>> menuItems = [
     {"icon": Icons.dashboard, "title": "Dashboard"},
+    {"icon": Icons.people, "title": "Students"},
+    {"icon": Icons.message_rounded, "title": "Class"},
     {"icon": Icons.request_page, "title": "Request"},
     {"icon": Icons.videogame_asset, "title": "Game Create"},
     {"icon": Icons.receipt_long, "title": "Report"},
@@ -127,7 +129,9 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
 
   // Pages for each sidebar option
   final List<Widget> pages = const [
-    MyDashBoard(),
+    MyTeacherDashboard(),
+    MyAddStudent(),
+    MyClass1(),
     MyStudentRequest(),
     MyGameCreate(),
     MyReport(),
@@ -173,20 +177,24 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                           _buildSidebarItem(
                               icon: Icons.dashboard, title: "Dashboard", index: 0),
                           _buildSidebarItem(
-                              icon: Icons.request_page, title: "Request", index: 1),
+                              icon: Icons.people, title: "Students", index: 1),
+                              _buildSidebarItem(
+                              icon: Icons.message_rounded, title: "Class", index: 2),
+                          _buildSidebarItem(
+                              icon: Icons.request_page, title: "Request", index: 3),
                           _buildSidebarItem(
                               icon: Icons.videogame_asset,
                               title: "Game Create",
-                              index: 2),
+                              index: 4),
                           _buildSidebarItem(
-                              icon: Icons.receipt_long, title: "Report", index: 3),
+                              icon: Icons.receipt_long, title: "Report", index: 5),
 
                           const Spacer(),
 
                           _buildSidebarItem(
-                              icon: Icons.settings, title: "Settings", index: 4),
+                              icon: Icons.settings, title: "Settings", index: 6),
                           _buildSidebarItem(
-                              icon: Icons.logout, title: "Log Out", index: 5),
+                              icon: Icons.logout, title: "Log Out", index: 7),
                         ],
                       ),
                     ),
@@ -233,7 +241,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
       selected: isSelected,
       selectedTileColor: Colors.white12,
       onTap: () {
-        if (index == 5) { // Logout button index
+        if (index == 6) { // Logout button index (updated from 5 to 6)
           _showLogoutDialog();
         } else {
           setState(() {

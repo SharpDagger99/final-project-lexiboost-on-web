@@ -235,12 +235,12 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                 return Padding(
                   padding: const EdgeInsets.only(left: 10, right: 10),
                   child: AnimatedButton(
-                    width: 120,
+                    width: 90,
                     height: 45,
                     color: Colors.white,
                     onPressed: () => _pickImage(index),
                     child: Text(
-                      "Upload Image ${index + 1}",
+                      "Image ${index + 1}",
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
