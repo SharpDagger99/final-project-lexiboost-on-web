@@ -119,6 +119,7 @@ class _MyGameEditState extends State<MyGameEdit> {
   // Browser event listeners
   StreamSubscription<html.Event>? _beforeUnloadSubscription;
   StreamSubscription<html.PopStateEvent>? _popStateSubscription;
+  StreamSubscription<html.Event>? _reloadSubscription;
 
   @override
   void initState() {
@@ -134,6 +135,9 @@ class _MyGameEditState extends State<MyGameEdit> {
       if (args != null && args['gameId'] != null) {
         gameId = args['gameId'] as String;
         _loadFromFirestore(gameId!);
+      } else {
+        // Handle browser reload scenario - try to get gameId from URL or session
+        _handleBrowserReload();
       }
     });
   }
@@ -153,6 +157,13 @@ class _MyGameEditState extends State<MyGameEdit> {
 
       // Show confirmation dialog
       _showBrowserBackConfirmation();
+    });
+
+    // Handle browser reload events
+    _reloadSubscription = html.window.onBeforeUnload.listen((event) {
+      // Save current data before reload
+      _saveCurrentPageData();
+      _autoSaveToFirestore();
     });
 
     // Push initial state to enable popstate detection
@@ -271,8 +282,10 @@ class _MyGameEditState extends State<MyGameEdit> {
   void _removeEventListeners() {
     _beforeUnloadSubscription?.cancel();
     _popStateSubscription?.cancel();
+    _reloadSubscription?.cancel();
     _beforeUnloadSubscription = null;
     _popStateSubscription = null;
+    _reloadSubscription = null;
   }
 
   void _syncVisibleLetters() {
@@ -611,6 +624,64 @@ class _MyGameEditState extends State<MyGameEdit> {
     }
   }
 
+  /// Handle browser reload scenario - retrieve gameId and load data
+  Future<void> _handleBrowserReload() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Try to get the most recent game from the user's created_games collection
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .orderBy('updated_at', descending: true)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final doc = snapshot.docs.first;
+        gameId = doc.id;
+        await _loadFromFirestore(gameId!);
+      }
+    } catch (e) {
+      debugPrint('Failed to handle browser reload: $e');
+    }
+  }
+
+  /// Auto-save current data to Firestore (for reload scenarios)
+  Future<void> _autoSaveToFirestore() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final Map<String, dynamic> gameData = {
+        'title': titleController.text.trim(),
+        'description': descriptionController.text.trim(),
+        'difficulty': selectedDifficulty,
+        'prizeCoins': prizeCoinsController.text.replaceAll(',', '').trim(),
+        'gameRule': selectedGameRule,
+        'gameSet': selectedGameSet,
+        'gameCode': selectedGameSet == 'private'
+            ? gameCodeController.text.trim()
+            : '',
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .update(gameData);
+
+      // Save all pages to game_rounds subcollection
+      await _saveGameRounds();
+    } catch (e) {
+      debugPrint('Failed to auto-save game: $e');
+    }
+  }
+
   /// Load all game metadata from Firestore
   Future<void> _loadFromFirestore(String id) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -669,63 +740,10 @@ class _MyGameEditState extends State<MyGameEdit> {
       for (var doc in snapshot.docs) {
         final data = doc.data();
 
-        // Deserialize image data
-        Uint8List? selectedImage;
-        if (data['selectedImageBytes'] != null) {
-          selectedImage = Uint8List.fromList(
-            List<int>.from(data['selectedImageBytes']),
-          );
-        }
-
-        Uint8List? whatCalledImage;
-        if (data['whatCalledImageBytes'] != null) {
-          whatCalledImage = Uint8List.fromList(
-            List<int>.from(data['whatCalledImageBytes']),
-          );
-        }
-
-        List<Uint8List?> guessImages = [null, null, null];
-        if (data['guessAnswerImages'] != null) {
-          final imagesList = data['guessAnswerImages'] as List;
-          for (int i = 0; i < imagesList.length && i < 3; i++) {
-            if (imagesList[i] != null) {
-              guessImages[i] = Uint8List.fromList(
-                List<int>.from(imagesList[i]),
-              );
-            }
-          }
-        }
-
-        List<Uint8List?> matchImages = List.filled(8, null);
-        if (data['imageMatchImages'] != null) {
-          final imagesList = data['imageMatchImages'] as List;
-          for (int i = 0; i < imagesList.length && i < 8; i++) {
-            if (imagesList[i] != null) {
-              matchImages[i] = Uint8List.fromList(
-                List<int>.from(imagesList[i]),
-              );
-            }
-          }
-        }
-
+        // Load only gameType and page from subcollection
         loadedPages.add(
           PageData(
             gameType: (data['gameType'] as String?) ?? 'Fill in the blank',
-            answer: (data['answer'] as String?) ?? '',
-            descriptionField: (data['descriptionField'] as String?) ?? '',
-            readSentence: (data['readSentence'] as String?) ?? '',
-            listenAndRepeat: (data['listenAndRepeat'] as String?) ?? '',
-            visibleLetters: data['visibleLetters'] != null
-                ? List<bool>.from(data['visibleLetters'])
-                : [],
-            selectedImageBytes: selectedImage,
-            whatCalledImageBytes: whatCalledImage,
-            multipleChoices: data['multipleChoices'] != null
-                ? List<String>.from(data['multipleChoices'])
-                : [],
-            guessAnswerImages: guessImages,
-            imageMatchImages: matchImages,
-            imageMatchCount: (data['imageMatchCount'] as int?) ?? 2,
             docId: doc.id,
           ),
         );
@@ -1086,47 +1104,7 @@ class _MyGameEditState extends State<MyGameEdit> {
         final Map<String, dynamic> roundData = {
           'gameType': pageData.gameType,
           'page': i + 1, // Store 1-based page number
-          'answer': pageData.answer,
-          'descriptionField': pageData.descriptionField,
-          'readSentence': pageData.readSentence,
-          'listenAndRepeat': pageData.listenAndRepeat,
-          'visibleLetters': pageData.visibleLetters,
-          'multipleChoices': pageData.multipleChoices,
-          'imageMatchCount': pageData.imageMatchCount,
         };
-
-        // Serialize image data
-        if (pageData.selectedImageBytes != null) {
-          roundData['selectedImageBytes'] =
-              pageData.selectedImageBytes!.toList();
-        }
-
-        if (pageData.whatCalledImageBytes != null) {
-          roundData['whatCalledImageBytes'] =
-              pageData.whatCalledImageBytes!.toList();
-        }
-
-        // Serialize guess answer images
-        List<dynamic> guessImagesData = [];
-        for (var image in pageData.guessAnswerImages) {
-          if (image != null) {
-            guessImagesData.add(image.toList());
-          } else {
-            guessImagesData.add(null);
-          }
-        }
-        roundData['guessAnswerImages'] = guessImagesData;
-
-        // Serialize image match images
-        List<dynamic> matchImagesData = [];
-        for (var image in pageData.imageMatchImages) {
-          if (image != null) {
-            matchImagesData.add(image.toList());
-          } else {
-            matchImagesData.add(null);
-          }
-        }
-        roundData['imageMatchImages'] = matchImagesData;
 
         // If document ID exists, update it; otherwise create a new one
         if (pageData.docId != null) {
