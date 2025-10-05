@@ -1,5 +1,8 @@
+// ignore_for_file: avoid_print
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ----------- Preview Widget (for Column 2) -----------
 class MyFillTheBlank extends StatefulWidget {
@@ -243,17 +246,17 @@ class _MyFillTheBlankState extends State<MyFillTheBlank> {
 // ----------- Settings Widget (for Column 3) -----------
 class MyFillTheBlankSettings extends StatefulWidget {
   final TextEditingController answerController;
+  final TextEditingController hintController;
   final List<bool> visibleLetters;
   final Function(int) onToggle;
 
   const MyFillTheBlankSettings({
     super.key,
     required this.answerController,
+    required this.hintController,
     required this.visibleLetters,
     required this.onToggle,
   });
-  
-  TextEditingController? get hintController => null;
 
   @override
   State<MyFillTheBlankSettings> createState() =>
@@ -311,8 +314,9 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
           ],
         ),
 
-        const SizedBox(height: 20,),
+        const SizedBox(height: 20),
 
+        // Game Hint Row
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -336,7 +340,7 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: TextField(
                 controller: widget.hintController,
-                maxLength: 25,
+                maxLength: 100,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   color: Colors.black,
@@ -401,6 +405,287 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
           }),
         ),
       ],
+    );
+  }
+}
+
+// ----------- Firebase Storage Functions -----------
+
+/// Saves Fill the Blank game data to Firebase
+///
+/// Structure: users/{userId}/created_games/{gameId}/game_rounds/{roundDocId}/game_type/{gameTypeDocId}
+///
+/// @param userId - The user ID
+/// @param gameId - The game ID from created_games collection
+/// @param roundDocId - The auto document ID from game_rounds collection
+/// @param gameTypeDocId - The auto document ID from game_type subcollection
+/// @param answer - The complete answer string
+/// @param visibleLetters - Array of booleans (true = visible, false = hidden)
+/// @param gameHint - Hint string for the game
+Future<void> saveFillTheBlankToFirebase({
+  required String userId,
+  required String gameId,
+  required String roundDocId,
+  required String gameTypeDocId,
+  required String answer,
+  required List<bool> visibleLetters,
+  required String gameHint,
+}) async {
+  try {
+    final firestore = FirebaseFirestore.instance;
+
+    // Reference to the specific document in the nested structure
+    final docRef = firestore
+        .collection('users')
+        .doc(userId)
+        .collection('created_games')
+        .doc(gameId)
+        .collection('game_rounds')
+        .doc(roundDocId)
+        .collection('game_type')
+        .doc(gameTypeDocId);
+
+    // Prepare the data
+    final data = {
+      'answer': visibleLetters, // Array of booleans for each letter
+      'gameHint': gameHint,
+      'answerText': answer, // Store the full answer text for reference
+      'gameType': 'fill_the_blank',
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    // Save to Firebase
+    await docRef.set(data, SetOptions(merge: true));
+
+    print('Fill the Blank data saved successfully!');
+  } catch (e) {
+    print('Error saving Fill the Blank data: $e');
+    rethrow;
+  }
+}
+
+/// Loads Fill the Blank game data from Firebase
+///
+/// @param userId - The user ID
+/// @param gameId - The game ID from created_games collection
+/// @param roundDocId - The document ID from game_rounds collection
+/// @param gameTypeDocId - The document ID from game_type subcollection
+/// @returns Map containing answer, visibleLetters, and gameHint
+Future<Map<String, dynamic>?> loadFillTheBlankFromFirebase({
+  required String userId,
+  required String gameId,
+  required String roundDocId,
+  required String gameTypeDocId,
+}) async {
+  try {
+    final firestore = FirebaseFirestore.instance;
+
+    // Reference to the specific document
+    final docRef = firestore
+        .collection('users')
+        .doc(userId)
+        .collection('created_games')
+        .doc(gameId)
+        .collection('game_rounds')
+        .doc(roundDocId)
+        .collection('game_type')
+        .doc(gameTypeDocId);
+
+    // Get the document
+    final docSnapshot = await docRef.get();
+
+    if (docSnapshot.exists) {
+      final data = docSnapshot.data();
+      return {
+        'answerText': data?['answerText'] ?? '',
+        'answer': List<bool>.from(data?['answer'] ?? []),
+        'gameHint': data?['gameHint'] ?? '',
+      };
+    } else {
+      print('Document does not exist');
+      return null;
+    }
+  } catch (e) {
+    print('Error loading Fill the Blank data: $e');
+    rethrow;
+  }
+}
+
+// ----------- Example Usage Widget -----------
+
+class FillTheBlankGameManager extends StatefulWidget {
+  final String userId;
+  final String gameId;
+  final String roundDocId;
+  final String gameTypeDocId;
+
+  const FillTheBlankGameManager({
+    super.key,
+    required this.userId,
+    required this.gameId,
+    required this.roundDocId,
+    required this.gameTypeDocId,
+  });
+
+  @override
+  State<FillTheBlankGameManager> createState() =>
+      _FillTheBlankGameManagerState();
+}
+
+class _FillTheBlankGameManagerState extends State<FillTheBlankGameManager> {
+  late TextEditingController _answerController;
+  late TextEditingController _hintController;
+  late List<bool> _visibleLetters;
+
+  @override
+  void initState() {
+    super.initState();
+    _answerController = TextEditingController();
+    _hintController = TextEditingController();
+    _visibleLetters = [];
+
+    // Add listener to update visible letters when answer changes
+    _answerController.addListener(_updateVisibleLetters);
+
+    // Load existing data if available
+    _loadGameData();
+  }
+
+  void _updateVisibleLetters() {
+    final answer = _answerController.text;
+    if (_visibleLetters.length != answer.length) {
+      setState(() {
+        _visibleLetters = List.generate(answer.length, (_) => true);
+      });
+    }
+  }
+
+  Future<void> _loadGameData() async {
+    final data = await loadFillTheBlankFromFirebase(
+      userId: widget.userId,
+      gameId: widget.gameId,
+      roundDocId: widget.roundDocId,
+      gameTypeDocId: widget.gameTypeDocId,
+    );
+
+    if (data != null) {
+      setState(() {
+        _answerController.text = data['answerText'];
+        _visibleLetters = data['answer'];
+        _hintController.text = data['gameHint'];
+      });
+    }
+  }
+
+  Future<void> _saveGameData() async {
+    if (_answerController.text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter an answer')));
+      return;
+    }
+
+    try {
+      await saveFillTheBlankToFirebase(
+        userId: widget.userId,
+        gameId: widget.gameId,
+        roundDocId: widget.roundDocId,
+        gameTypeDocId: widget.gameTypeDocId,
+        answer: _answerController.text,
+        visibleLetters: _visibleLetters,
+        gameHint: _hintController.text,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Game data saved successfully!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving data: $e')));
+      }
+    }
+  }
+
+  void _toggleLetterVisibility(int index) {
+    setState(() {
+      if (index < _visibleLetters.length) {
+        _visibleLetters[index] = !_visibleLetters[index];
+      }
+    });
+  }
+
+  void _revealLetter(int index) {
+    setState(() {
+      if (index < _visibleLetters.length) {
+        _visibleLetters[index] = true;
+      }
+    });
+  }
+
+  void _hideLetter(int index) {
+    setState(() {
+      if (index < _visibleLetters.length) {
+        _visibleLetters[index] = false;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _answerController.dispose();
+    _hintController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Fill The Blank Game'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _saveGameData,
+            tooltip: 'Save Game Data',
+          ),
+        ],
+      ),
+      body: Row(
+        children: [
+          // Preview Column
+          Expanded(
+            flex: 2,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              child: MyFillTheBlank(
+                answerController: _answerController,
+                visibleLetters: _visibleLetters,
+                onRevealLetter: _revealLetter,
+                onHideLetter: _hideLetter,
+              ),
+            ),
+          ),
+
+          // Settings Column
+          Expanded(
+            flex: 1,
+            child: Container(
+              color: Colors.blue.shade700,
+              padding: const EdgeInsets.all(20),
+              child: MyFillTheBlankSettings(
+                answerController: _answerController,
+                hintController: _hintController,
+                visibleLetters: _visibleLetters,
+                onToggle: _toggleLetterVisibility,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

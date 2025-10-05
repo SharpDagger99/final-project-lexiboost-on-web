@@ -45,6 +45,7 @@ class PageData {
   String gameRule;
   String gameSet;
   String gameCode;
+  String hint;
   String? docId; // Firestore document ID for this page
 
   PageData({
@@ -67,6 +68,7 @@ class PageData {
     this.gameRule = 'none',
     this.gameSet = 'public',
     this.gameCode = '',
+    this.hint = '',
     this.docId,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null);
@@ -92,6 +94,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     text: '100',
   );
   final TextEditingController gameCodeController = TextEditingController();
+  final TextEditingController hintController = TextEditingController();
 
   double progressValue = 0.1;
   String selectedGameType = 'Fill in the blank';
@@ -355,6 +358,7 @@ class _MyGameEditState extends State<MyGameEdit> {
       imageMatchImages: List.from(imageMatchImages),
       imageMatchCount: imageMatchCount,
       prizeCoins: '',
+      hint: hintController.text,
       docId: pages[currentPageIndex].docId, // Preserve the document ID
     );
   }
@@ -367,6 +371,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     descriptionFieldController.text = pageData.descriptionField;
     readSentenceController.text = pageData.readSentence;
     listenAndRepeatController.text = pageData.listenAndRepeat;
+    hintController.text = pageData.hint;
     visibleLetters = List.from(pageData.visibleLetters);
     selectedImageBytes = pageData.selectedImageBytes;
     whatCalledImageBytes = pageData.whatCalledImageBytes;
@@ -739,11 +744,22 @@ class _MyGameEditState extends State<MyGameEdit> {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-
-        // Load only gameType and page from subcollection
+        final gameType = (data['gameType'] as String?) ?? 'Fill in the blank';
+        
+        // Load game type specific data from game_type subcollection
+        final gameTypeData = await _loadGameTypeData(doc.id, gameType);
+        
         loadedPages.add(
           PageData(
-            gameType: (data['gameType'] as String?) ?? 'Fill in the blank',
+            gameType: gameType,
+            answer: gameTypeData['answerText'] ?? '',
+            descriptionField: gameTypeData['question'] ?? '',
+            readSentence: gameTypeData['sentence'] ?? '',
+            listenAndRepeat: gameTypeData['sentence'] ?? '',
+            visibleLetters: gameTypeData['answer'] ?? [],
+            multipleChoices: gameTypeData['multipleChoices'] ?? [],
+            imageMatchCount: gameTypeData['imageCount'] ?? 2,
+            hint: gameTypeData['gameHint'] ?? '',
             docId: doc.id,
           ),
         );
@@ -759,6 +775,36 @@ class _MyGameEditState extends State<MyGameEdit> {
     } catch (e) {
       debugPrint('Failed to load game rounds: $e');
     }
+  }
+
+  /// Load specific game type data from game_type subcollection
+  Future<Map<String, dynamic>> _loadGameTypeData(
+    String roundDocId,
+    String gameType,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return {};
+
+    try {
+      final gameTypeRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds')
+          .doc(roundDocId)
+          .collection('game_type');
+
+      final gameTypeDocId = gameType.toLowerCase().replaceAll(' ', '_');
+      final docSnapshot = await gameTypeRef.doc(gameTypeDocId).get();
+
+      if (docSnapshot.exists) {
+        return docSnapshot.data() ?? {};
+      }
+    } catch (e) {
+      debugPrint('Failed to load game type data: $e');
+    }
+    return {};
   }
 
   /// Get current user's role from Firestore
@@ -1106,18 +1152,118 @@ class _MyGameEditState extends State<MyGameEdit> {
           'page': i + 1, // Store 1-based page number
         };
 
+        String roundDocId;
         // If document ID exists, update it; otherwise create a new one
         if (pageData.docId != null) {
-          await gameRoundsRef.doc(pageData.docId).set(roundData);
+          roundDocId = pageData.docId!;
+          await gameRoundsRef.doc(roundDocId).set(roundData);
         } else {
           // Create new document with auto-generated ID
           final docRef = await gameRoundsRef.add(roundData);
+          roundDocId = docRef.id;
           // Store the generated document ID back to the page data
-          pages[i].docId = docRef.id;
+          pages[i].docId = roundDocId;
         }
+
+        // Save specific game type data to game_type subcollection
+        await _saveGameTypeData(roundDocId, pageData);
       }
     } catch (e) {
       debugPrint('Failed to save game rounds: $e');
+    }
+  }
+
+  /// Save specific game type data to game_type subcollection
+  Future<void> _saveGameTypeData(String roundDocId, PageData pageData) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameTypeRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds')
+          .doc(roundDocId)
+          .collection('game_type');
+
+      // Create a document with the game type as the document ID
+      final gameTypeDocId = pageData.gameType.toLowerCase().replaceAll(
+        ' ',
+        '_',
+      );
+
+      final Map<String, dynamic> gameTypeData = {
+        'gameType': pageData.gameType,
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+      // Add specific data based on game type
+      if (pageData.gameType == 'Fill in the blank') {
+        gameTypeData.addAll({
+          'answer': pageData.visibleLetters,
+          'gameHint': pageData.hint,
+          'answerText': pageData.answer,
+        });
+      } else if (pageData.gameType == 'Fill in the blank 2') {
+        gameTypeData.addAll({
+          'answer': pageData.visibleLetters,
+          'gameHint': pageData.hint,
+          'answerText': pageData.answer,
+          'imageData': pageData.selectedImageBytes != null
+              ? 'image_uploaded'
+              : null,
+        });
+      } else if (pageData.gameType == 'Guess the answer') {
+        gameTypeData.addAll({
+          'answer': pageData.visibleLetters,
+          'gameHint': pageData.hint,
+          'answerText': pageData.answer,
+          'question': pageData.descriptionField,
+          'multipleChoices': pageData.multipleChoices,
+          'imageData': pageData.selectedImageBytes != null
+              ? 'image_uploaded'
+              : null,
+        });
+      } else if (pageData.gameType == 'Guess the answer 2') {
+        gameTypeData.addAll({
+          'answer': pageData.visibleLetters,
+          'gameHint': pageData.hint,
+          'answerText': pageData.answer,
+          'question': pageData.descriptionField,
+          'multipleChoices': pageData.multipleChoices,
+          'imagesData': pageData.guessAnswerImages
+              .where((img) => img != null)
+              .length,
+        });
+      } else if (pageData.gameType == 'Read the sentence') {
+        gameTypeData.addAll({'sentence': pageData.readSentence});
+      } else if (pageData.gameType == 'What is it called') {
+        gameTypeData.addAll({
+          'sentence': pageData.readSentence,
+          'imageData': pageData.whatCalledImageBytes != null
+              ? 'image_uploaded'
+              : null,
+        });
+      } else if (pageData.gameType == 'Listen and Repeat') {
+        gameTypeData.addAll({'sentence': pageData.listenAndRepeat});
+      } else if (pageData.gameType == 'Image Match') {
+        gameTypeData.addAll({
+          'imageCount': pageData.imageMatchCount,
+          'imagesData': pageData.imageMatchImages
+              .where((img) => img != null)
+              .length,
+        });
+      } else if (pageData.gameType == 'Math') {
+        gameTypeData.addAll({'mathData': 'math_game_configured'});
+      }
+
+      await gameTypeRef
+          .doc(gameTypeDocId)
+          .set(gameTypeData, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Failed to save game type data: $e');
     }
   }
 
@@ -1135,6 +1281,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     listenAndRepeatController.dispose();
     prizeCoinsController.dispose();
     gameCodeController.dispose();
+    hintController.dispose();
     super.dispose();
   }
 
@@ -1849,6 +1996,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                     if (selectedGameType == 'Fill in the blank')
                       MyFillTheBlankSettings(
                         answerController: answerController,
+                        hintController: hintController,
                         visibleLetters: visibleLetters,
                         onToggle: _toggleLetter,
                       )
