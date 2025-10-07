@@ -17,6 +17,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lexi_on_web/editor/game%20types/fill_the_blank.dart';
 import 'package:lexi_on_web/editor/game%20types/fill_the_blank2.dart';
 import 'package:lexi_on_web/editor/game%20types/fill_the_blank3.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:lexi_on_web/editor/game%20types/guess_the_answer.dart';
 import 'package:lexi_on_web/editor/game%20types/read_the_sentence.dart';
 import 'package:lexi_on_web/editor/game%20types/what_called.dart';
@@ -47,6 +49,13 @@ class PageData {
   String gameCode;
   String hint;
   String? docId; // Firestore document ID for this page
+  String? imageUrl; // Firebase Storage URL for selectedImageBytes
+  String? whatCalledImageUrl; // Firebase Storage URL for whatCalledImageBytes
+  List<String?>
+  guessAnswerImageUrls; // Firebase Storage URLs for guessAnswerImages
+  List<String?>
+  imageMatchImageUrls; // Firebase Storage URLs for imageMatchImages
+  int correctAnswerIndex; // Index of correct answer for Guess the answer
 
   PageData({
     this.title = '',
@@ -70,8 +79,15 @@ class PageData {
     this.gameCode = '',
     this.hint = '',
     this.docId,
+    this.imageUrl,
+    this.whatCalledImageUrl,
+    List<String?>? guessAnswerImageUrls,
+    List<String?>? imageMatchImageUrls,
+    this.correctAnswerIndex = -1,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
-       imageMatchImages = imageMatchImages ?? List.filled(8, null);
+       imageMatchImages = imageMatchImages ?? List.filled(8, null),
+       guessAnswerImageUrls = guessAnswerImageUrls ?? [null, null, null],
+       imageMatchImageUrls = imageMatchImageUrls ?? List.filled(8, null);
 }
 
 class MyGameEdit extends StatefulWidget {
@@ -110,6 +126,7 @@ class _MyGameEditState extends State<MyGameEdit> {
   List<Uint8List?> guessAnswerImages = [null, null, null];
   List<Uint8List?> imageMatchImages = List.filled(8, null);
   int imageMatchCount = 2;
+  int correctAnswerIndex = -1; // Track correct answer for Guess the answer
 
   List<PageData> pages = [PageData()];
   int currentPageIndex = 0;
@@ -359,37 +376,62 @@ class _MyGameEditState extends State<MyGameEdit> {
       imageMatchCount: imageMatchCount,
       prizeCoins: '',
       hint: hintController.text,
+      correctAnswerIndex: correctAnswerIndex,
       docId: pages[currentPageIndex].docId, // Preserve the document ID
+      imageUrl: pages[currentPageIndex].imageUrl, // Preserve image URL
+      whatCalledImageUrl: pages[currentPageIndex].whatCalledImageUrl,
+      guessAnswerImageUrls: pages[currentPageIndex].guessAnswerImageUrls,
+      imageMatchImageUrls: pages[currentPageIndex].imageMatchImageUrls,
     );
   }
 
   void _loadPageData(int pageIndex) {
     final pageData = pages[pageIndex];
 
-    selectedGameType = pageData.gameType;
-    answerController.text = pageData.answer;
-    descriptionFieldController.text = pageData.descriptionField;
-    readSentenceController.text = pageData.readSentence;
-    listenAndRepeatController.text = pageData.listenAndRepeat;
-    hintController.text = pageData.hint;
-    visibleLetters = List.from(pageData.visibleLetters);
-    selectedImageBytes = pageData.selectedImageBytes;
-    whatCalledImageBytes = pageData.whatCalledImageBytes;
-    multipleChoices = List.from(pageData.multipleChoices);
-    guessAnswerImages = List.from(pageData.guessAnswerImages);
-    imageMatchImages = List.from(pageData.imageMatchImages);
-    imageMatchCount = pageData.imageMatchCount;
+    debugPrint('Loading page $pageIndex with gameType: ${pageData.gameType}');
+    debugPrint(
+      'Page selectedImageBytes is null: ${pageData.selectedImageBytes == null}',
+    );
+    if (pageData.selectedImageBytes != null) {
+      debugPrint(
+        'Page selectedImageBytes size: ${pageData.selectedImageBytes!.length}',
+      );
+    }
 
-    progressValue = (pageIndex + 1) / pages.length;
+    setState(() {
+      selectedGameType = pageData.gameType;
+      answerController.text = pageData.answer;
+      descriptionFieldController.text = pageData.descriptionField;
+      readSentenceController.text = pageData.readSentence;
+      listenAndRepeatController.text = pageData.listenAndRepeat;
+      hintController.text = pageData.hint;
+      visibleLetters = List.from(pageData.visibleLetters);
+      selectedImageBytes = pageData.selectedImageBytes;
+      whatCalledImageBytes = pageData.whatCalledImageBytes;
+      multipleChoices = List.from(pageData.multipleChoices);
+      guessAnswerImages = List.from(pageData.guessAnswerImages);
+      imageMatchImages = List.from(pageData.imageMatchImages);
+      imageMatchCount = pageData.imageMatchCount;
+      
+      // Load correct answer index for Guess the answer and Guess the answer 2
+      if (pageData.gameType == 'Guess the answer' ||
+          pageData.gameType == 'Guess the answer 2') {
+        correctAnswerIndex = pageData.correctAnswerIndex;
+      }
+
+      progressValue = (pageIndex + 1) / pages.length;
+      
+      debugPrint(
+        'After setState, selectedImageBytes is null: ${selectedImageBytes == null}',
+      );
+    });
   }
 
   void _goToPreviousPage() {
     if (currentPageIndex > 0) {
       _saveCurrentPageData();
-      setState(() {
-        currentPageIndex--;
-        _loadPageData(currentPageIndex);
-      });
+      currentPageIndex--;
+      _loadPageData(currentPageIndex);
     }
   }
 
@@ -397,16 +439,14 @@ class _MyGameEditState extends State<MyGameEdit> {
     _saveCurrentPageData();
 
     if (currentPageIndex < pages.length - 1) {
-      setState(() {
-        currentPageIndex++;
-        _loadPageData(currentPageIndex);
-      });
+      currentPageIndex++;
+      _loadPageData(currentPageIndex);
     } else {
       setState(() {
         pages.add(PageData());
         currentPageIndex++;
-        _loadPageData(currentPageIndex);
       });
+      _loadPageData(currentPageIndex);
     }
   }
 
@@ -452,10 +492,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                             onTap: () {
                               if (!isCurrentPage) {
                                 _saveCurrentPageData();
-                                setState(() {
-                                  currentPageIndex = index;
-                                  _loadPageData(currentPageIndex);
-                                });
+                                currentPageIndex = index;
+                                _loadPageData(currentPageIndex);
                               }
                               Navigator.of(context).pop();
                             },
@@ -579,9 +617,9 @@ class _MyGameEditState extends State<MyGameEdit> {
                   if (currentPageIndex >= pages.length) {
                     currentPageIndex = pages.length - 1;
                   }
-
-                  _loadPageData(currentPageIndex);
                 });
+                 
+                _loadPageData(currentPageIndex);
               },
               child: Text(
                 'Delete',
@@ -749,18 +787,81 @@ class _MyGameEditState extends State<MyGameEdit> {
         // Load game type specific data from game_type subcollection
         final gameTypeData = await _loadGameTypeData(doc.id, gameType);
         
+        debugPrint('Loading page data for gameType: $gameType');
+        debugPrint(
+          'ImageBytes available: ${gameTypeData['imageBytes'] != null}',
+        );
+        debugPrint('ImageUrl available: ${gameTypeData['imageUrl'] != null}');
+
+        // Handle different field structures based on game type
+        List<String> multipleChoices = [];
+        String hint = '';
+        if (gameType == 'Guess the answer') {
+          // Guess the answer structure (updated with checkboxes)
+          multipleChoices = [
+            gameTypeData['multipleChoice1'] ?? '',
+            gameTypeData['multipleChoice2'] ?? '',
+            gameTypeData['multipleChoice3'] ?? '',
+            gameTypeData['multipleChoice4'] ?? '',
+          ];
+          hint = gameTypeData['gameHint'] ?? '';
+        } else if (gameType == 'Guess the answer 2') {
+          // Guess the answer 2 structure (new with multiple images)
+          multipleChoices = [
+            gameTypeData['multipleChoice1'] ?? '',
+            gameTypeData['multipleChoice2'] ?? '',
+            gameTypeData['multipleChoice3'] ?? '',
+            gameTypeData['multipleChoice4'] ?? '',
+          ];
+          hint = gameTypeData['hint'] ?? '';
+        } else {
+          // Other game types
+          multipleChoices = gameTypeData['multipleChoices'] != null
+              ? List<String>.from(gameTypeData['multipleChoices'])
+              : [];
+          hint = gameTypeData['gameHint'] ?? '';
+        }
+        
         loadedPages.add(
           PageData(
             gameType: gameType,
-            answer: gameTypeData['answerText'] ?? '',
+            answer: gameTypeData['answerText'] ?? gameTypeData['answer'] ?? '',
             descriptionField: gameTypeData['question'] ?? '',
             readSentence: gameTypeData['sentence'] ?? '',
             listenAndRepeat: gameTypeData['sentence'] ?? '',
-            visibleLetters: gameTypeData['answer'] ?? [],
-            multipleChoices: gameTypeData['multipleChoices'] ?? [],
+            visibleLetters:
+                gameTypeData['answer'] != null && gameTypeData['answer'] is List
+                ? List<bool>.from(gameTypeData['answer'])
+                : [],
+            multipleChoices: multipleChoices,
             imageMatchCount: gameTypeData['imageCount'] ?? 2,
-            hint: gameTypeData['gameHint'] ?? '',
+            hint: hint,
             docId: doc.id,
+            selectedImageBytes: gameTypeData['imageBytes'] as Uint8List?,
+            imageUrl:
+                gameTypeData['imageUrl'] as String? ??
+                gameTypeData['image'] as String?,
+            guessAnswerImages: gameType == 'Guess the answer 2'
+                ? [
+                    gameTypeData['image1Bytes'] as Uint8List?,
+                    gameTypeData['image2Bytes'] as Uint8List?,
+                    gameTypeData['image3Bytes'] as Uint8List?,
+                  ]
+                : [null, null, null],
+            guessAnswerImageUrls: gameType == 'Guess the answer 2'
+                ? [
+                    gameTypeData['image1'] as String?,
+                    gameTypeData['image2'] as String?,
+                    gameTypeData['image3'] as String?,
+                  ]
+                : [null, null, null],
+            correctAnswerIndex:
+                gameType == 'Guess the answer' ||
+                    gameType == 'Guess the answer 2'
+                ? (gameTypeData['answer'] as int?) ??
+                      (gameTypeData['correctAnswerIndex'] as int?) ??
+                      -1
+                : -1,
           ),
         );
       }
@@ -799,12 +900,113 @@ class _MyGameEditState extends State<MyGameEdit> {
       final docSnapshot = await gameTypeRef.doc(gameTypeDocId).get();
 
       if (docSnapshot.exists) {
-        return docSnapshot.data() ?? {};
+        final data = docSnapshot.data() ?? {};
+
+        // Load images from URLs if they exist
+        if (gameType == 'Guess the answer 2') {
+          // Handle multiple images for Guess the answer 2
+          for (int i = 1; i <= 3; i++) {
+            String? imageUrl = data['image$i'];
+            if (imageUrl != null && imageUrl.isNotEmpty) {
+              try {
+                debugPrint('Downloading image $i from: $imageUrl');
+                final imageBytes = await _downloadImageFromUrl(imageUrl);
+                if (imageBytes != null) {
+                  data['image${i}Bytes'] = imageBytes;
+                  debugPrint(
+                    'Image $i downloaded successfully, size: ${imageBytes.length} bytes',
+                  );
+                } else {
+                  debugPrint('Image $i download returned null');
+                }
+              } catch (e) {
+                debugPrint('Failed to download image $i: $e');
+              }
+            }
+          }
+        } else {
+          // Handle single image for other game types
+          String? imageUrl;
+          if (data['imageUrl'] != null &&
+              data['imageUrl'] is String &&
+              (data['imageUrl'] as String).isNotEmpty) {
+            imageUrl = data['imageUrl'];
+          } else if (data['image'] != null &&
+              data['image'] is String &&
+              (data['image'] as String).isNotEmpty) {
+            imageUrl = data['image'];
+          }
+
+          if (imageUrl != null) {
+            try {
+              debugPrint('Downloading image from: $imageUrl');
+              final imageBytes = await _downloadImageFromUrl(imageUrl);
+              if (imageBytes != null) {
+                data['imageBytes'] = imageBytes;
+                debugPrint(
+                  'Image downloaded successfully, size: ${imageBytes.length} bytes',
+                );
+              } else {
+                debugPrint('Image download returned null');
+              }
+            } catch (e) {
+              debugPrint('Failed to download image: $e');
+            }
+          } else {
+            debugPrint('No valid image URL found in data');
+          }
+        }
+
+        return data;
       }
     } catch (e) {
       debugPrint('Failed to load game type data: $e');
     }
     return {};
+  }
+
+  /// Upload image to Firebase Storage and return download URL
+  Future<String> _uploadImageToStorage(
+    Uint8List imageBytes,
+    String imageName,
+  ) async {
+    try {
+      final storage = FirebaseStorage.instanceFor(
+        bucket: 'gs://lexiboost-36801.firebasestorage.app',
+      );
+      final fileName =
+          '${imageName}_${DateTime.now().millisecondsSinceEpoch}.png';
+      final path = 'game image/$fileName';
+
+      final ref = storage.ref().child(path);
+      final uploadTask = await ref.putData(
+        imageBytes,
+        SettableMetadata(contentType: 'image/png'),
+      );
+
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      debugPrint('Image uploaded successfully: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      rethrow;
+    }
+  }
+
+  /// Download image from URL and return as Uint8List
+  Future<Uint8List?> _downloadImageFromUrl(String imageUrl) async {
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      } else {
+        debugPrint('Failed to download image: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Error downloading image: $e');
+      return null;
+    }
   }
 
   /// Get current user's role from Firestore
@@ -1216,26 +1418,76 @@ class _MyGameEditState extends State<MyGameEdit> {
               : null,
         });
       } else if (pageData.gameType == 'Guess the answer') {
+        // Upload image if new bytes exist, otherwise use existing URL
+        String? imageUrl = pageData.imageUrl;
+        if (pageData.selectedImageBytes != null) {
+          try {
+            imageUrl = await _uploadImageToStorage(
+              pageData.selectedImageBytes!,
+              'guess_the_answer',
+            );
+            pageData.imageUrl = imageUrl;
+          } catch (e) {
+            debugPrint('Failed to upload image for Guess the answer: $e');
+          }
+        }
+         
         gameTypeData.addAll({
-          'answer': pageData.visibleLetters,
-          'gameHint': pageData.hint,
-          'answerText': pageData.answer,
           'question': pageData.descriptionField,
-          'multipleChoices': pageData.multipleChoices,
-          'imageData': pageData.selectedImageBytes != null
-              ? 'image_uploaded'
-              : null,
+          'gameHint': pageData.hint,
+          'answer': correctAnswerIndex,
+          'image': imageUrl,
+          'multipleChoice1': pageData.multipleChoices.isNotEmpty
+              ? pageData.multipleChoices[0]
+              : '',
+          'multipleChoice2': pageData.multipleChoices.length > 1
+              ? pageData.multipleChoices[1]
+              : '',
+          'multipleChoice3': pageData.multipleChoices.length > 2
+              ? pageData.multipleChoices[2]
+              : '',
+          'multipleChoice4': pageData.multipleChoices.length > 3
+              ? pageData.multipleChoices[3]
+              : '',
         });
       } else if (pageData.gameType == 'Guess the answer 2') {
+        // Upload multiple images if new bytes exist, otherwise use existing URLs
+        List<String?> imageUrls = List.from(pageData.guessAnswerImageUrls);
+        for (int i = 0; i < pageData.guessAnswerImages.length; i++) {
+          if (pageData.guessAnswerImages[i] != null) {
+            try {
+              imageUrls[i] = await _uploadImageToStorage(
+                pageData.guessAnswerImages[i]!,
+                'guess_the_answer_image${i + 1}',
+              );
+            } catch (e) {
+              debugPrint(
+                'Failed to upload image $i for Guess the answer 2: $e',
+              );
+            }
+          }
+        }
+        pageData.guessAnswerImageUrls = imageUrls;
+        
         gameTypeData.addAll({
-          'answer': pageData.visibleLetters,
-          'gameHint': pageData.hint,
-          'answerText': pageData.answer,
           'question': pageData.descriptionField,
-          'multipleChoices': pageData.multipleChoices,
-          'imagesData': pageData.guessAnswerImages
-              .where((img) => img != null)
-              .length,
+          'hint': pageData.hint,
+          'image1': imageUrls[0] ?? '',
+          'image2': imageUrls[1] ?? '',
+          'image3': imageUrls[2] ?? '',
+          'multipleChoice1': pageData.multipleChoices.isNotEmpty
+              ? pageData.multipleChoices[0]
+              : '',
+          'multipleChoice2': pageData.multipleChoices.length > 1
+              ? pageData.multipleChoices[1]
+              : '',
+          'multipleChoice3': pageData.multipleChoices.length > 2
+              ? pageData.multipleChoices[2]
+              : '',
+          'multipleChoice4': pageData.multipleChoices.length > 3
+              ? pageData.multipleChoices[3]
+              : '',
+          'correctAnswerIndex': correctAnswerIndex,
         });
       } else if (pageData.gameType == 'Read the sentence') {
         gameTypeData.addAll({'sentence': pageData.readSentence});
@@ -1826,21 +2078,25 @@ class _MyGameEditState extends State<MyGameEdit> {
                                         )
                                       : selectedGameType == 'Guess the answer'
                                       ? MyFillInTheBlank3(
-                                          answerController: answerController,
-                                          visibleLetters: visibleLetters,
-                                          pickedImage: selectedImageBytes,
+                                          hintController: hintController,
                                           questionController:
                                               descriptionFieldController,
+                                          visibleLetters: visibleLetters,
+                                          pickedImage: selectedImageBytes,
                                           multipleChoices: multipleChoices,
+                                          correctAnswerIndex:
+                                              correctAnswerIndex,
                                         )
                                       : selectedGameType == 'Guess the answer 2'
                                       ? MyGuessTheAnswer(
-                                          answerController: answerController,
-                                          visibleLetters: visibleLetters,
-                                          pickedImages: guessAnswerImages,
+                                          hintController: hintController,
                                           questionController:
                                               descriptionFieldController,
+                                          visibleLetters: visibleLetters,
+                                          pickedImages: guessAnswerImages,
                                           multipleChoices: multipleChoices,
+                                          correctAnswerIndex:
+                                              correctAnswerIndex,
                                         )
                                       : selectedGameType == 'Read the sentence'
                                       ? MyReadTheSentence(
@@ -2003,6 +2259,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                     else if (selectedGameType == 'Fill in the blank 2')
                       MyFillInTheBlank2Settings(
                         answerController: answerController,
+                        hintController: hintController,
                         visibleLetters: visibleLetters,
                         onToggle: _toggleLetter,
                         onImagePicked: (Uint8List imageBytes) {
@@ -2013,7 +2270,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                       )
                     else if (selectedGameType == 'Guess the answer')
                       MyFillInTheBlank3Settings(
-                        answerController: answerController,
+                        hintController: hintController,
+                        questionController: descriptionFieldController,
                         visibleLetters: visibleLetters,
                         onToggle: _toggleLetter,
                         onImagePicked: (Uint8List imageBytes) {
@@ -2021,16 +2279,21 @@ class _MyGameEditState extends State<MyGameEdit> {
                             selectedImageBytes = imageBytes;
                           });
                         },
-                        questionController: descriptionFieldController,
                         onChoicesChanged: (List<String> choices) {
                           setState(() {
                             multipleChoices = choices;
                           });
                         },
+                        onCorrectAnswerSelected: (int index) {
+                          setState(() {
+                            correctAnswerIndex = index;
+                          });
+                        },
                       )
                     else if (selectedGameType == 'Guess the answer 2')
                       MyGuessTheAnswerSettings(
-                        answerController: answerController,
+                        hintController: hintController,
+                        questionController: descriptionFieldController,
                         visibleLetters: visibleLetters,
                         onToggle: _toggleLetter,
                         onImagePicked: (int index, Uint8List imageBytes) {
@@ -2038,10 +2301,14 @@ class _MyGameEditState extends State<MyGameEdit> {
                             guessAnswerImages[index] = imageBytes;
                           });
                         },
-                        questionController: descriptionFieldController,
                         onChoicesChanged: (List<String> choices) {
                           setState(() {
                             multipleChoices = choices;
+                          });
+                        },
+                        onCorrectAnswerSelected: (int index) {
+                          setState(() {
+                            correctAnswerIndex = index;
                           });
                         },
                       )

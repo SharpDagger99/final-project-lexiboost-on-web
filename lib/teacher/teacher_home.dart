@@ -178,14 +178,12 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                               icon: Icons.dashboard, title: "Dashboard", index: 0),
                           _buildSidebarItem(
                               icon: Icons.people, title: "Students", index: 1),
-                              _buildSidebarItem(
+                          _buildSidebarItem(
                               icon: Icons.message_rounded, title: "Class", index: 2),
                           _buildSidebarItem(
                               icon: Icons.request_page, title: "Request", index: 3),
                           _buildSidebarItem(
-                              icon: Icons.videogame_asset,
-                              title: "Game Create",
-                              index: 4),
+                              icon: Icons.videogame_asset, title: "Game Create", index: 4),
                           _buildSidebarItem(
                               icon: Icons.receipt_long, title: "Report", index: 5),
 
@@ -241,7 +239,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
       selected: isSelected,
       selectedTileColor: Colors.white12,
       onTap: () {
-        if (index == 6) { // Logout button index (updated from 5 to 6)
+        if (index == 7) { // Log Out button index
           _showLogoutDialog();
         } else {
           setState(() {
