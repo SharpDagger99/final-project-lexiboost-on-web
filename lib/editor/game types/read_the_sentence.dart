@@ -4,6 +4,8 @@ import 'package:animated_button/animated_button.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // First widget (Column 2)
 class MyReadTheSentence extends StatefulWidget {
@@ -97,6 +99,81 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
     setState(() {
       _answerController.clear();
     });
+  }
+
+  // Firebase storage method
+  Future<void> _saveSentenceToFirebase() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User not authenticated. Please sign in.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final sentence = widget.sentenceController.text.trim();
+      if (sentence.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a sentence first.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Create the document path: users/{userId}/created_games/{gameId}/game_rounds/{roundId}
+      final gameId = DateTime.now().millisecondsSinceEpoch.toString();
+      final roundId = '${DateTime.now().millisecondsSinceEpoch}_round';
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds')
+          .doc(roundId)
+          .set({
+            'sentence': sentence,
+            'createdAt': FieldValue.serverTimestamp(),
+            'gameType': 'read_the_sentence',
+          });
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sentence saved successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving sentence: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -237,6 +314,13 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
                     color: Colors.black,
                     size: 50,
                   ),
+                ),
+                AnimatedButton(
+                  width: 70,
+                  height: 70,
+                  color: Colors.blue,
+                  onPressed: _saveSentenceToFirebase,
+                  child: const Icon(Icons.save, color: Colors.white, size: 50),
                 ),
               ],
             ),

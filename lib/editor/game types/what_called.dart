@@ -103,6 +103,8 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
     });
   }
 
+  // Firebase storage method
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -136,7 +138,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
             decoration: BoxDecoration(
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: Colors.blue, width: 2),
+              
             ),
             child: widget.pickedImage == null
                 ? Center(
@@ -231,6 +233,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
                     size: 50,
                   ),
                 ),
+               
               ],
             ),
           ),
@@ -245,11 +248,14 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
 // ================================
 class MyWhatItIsCalledSettings extends StatefulWidget {
   final TextEditingController sentenceController;
+  final TextEditingController
+  hintController; // 🔹 hint controller from game_edit
   final Function(Uint8List) onImagePicked; // 🔹 callback for image
 
   const MyWhatItIsCalledSettings({
     super.key,
     required this.sentenceController,
+    required this.hintController,
     required this.onImagePicked,
   });
 
@@ -261,6 +267,11 @@ class MyWhatItIsCalledSettings extends StatefulWidget {
 }
 
 class _MyWhatItIsCalledSettingsState extends State<MyWhatItIsCalledSettings> {
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
     if (result != null && result.files.isNotEmpty) {
@@ -336,6 +347,42 @@ class _MyWhatItIsCalledSettingsState extends State<MyWhatItIsCalledSettings> {
             style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
             decoration: InputDecoration(
               hintText: "The Answer...",
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.black54,
+                fontSize: 14,
+              ),
+              border: InputBorder.none,
+              counterText: "", // 🔹 hides default counter below field
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        Text(
+          "Game Hint:",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: 300,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.black, width: 1),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextField(
+            controller: widget.hintController,
+            maxLength: 50, // 🔹 limit to 50 characters
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              hintText: "Enter game hint...",
               hintStyle: GoogleFonts.poppins(
                 color: Colors.black54,
                 fontSize: 14,

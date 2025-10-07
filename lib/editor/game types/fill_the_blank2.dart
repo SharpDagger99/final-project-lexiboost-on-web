@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, avoid_print
+// ignore_for_file: deprecated_member_use, avoid_print, prefer_interpolation_to_compose_strings
 
 import 'dart:typed_data';
 import 'package:animated_button/animated_button.dart';
@@ -7,12 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
 
 // ----------- Preview Widget (for Column 2) -----------
 class MyFillInTheBlank2 extends StatefulWidget {
   final TextEditingController answerController; 
   final List<bool> visibleLetters;
   final Uint8List? pickedImage;
+  final String? imageUrl; // Add imageUrl parameter
   final Function(int) onRevealLetter;
   final Function(int) onHideLetter;
 
@@ -23,6 +26,7 @@ class MyFillInTheBlank2 extends StatefulWidget {
     required this.onRevealLetter,
     required this.onHideLetter,
     this.pickedImage,
+    this.imageUrl, // Optional imageUrl
   });
 
   @override
@@ -60,6 +64,134 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
       }
       return "";
     });
+  }
+
+  // Build the appropriate image widget based on available data
+  Widget _buildImageWidget() {
+    // Priority: pickedImage (local) > imageUrl (from Firebase)
+    if (widget.pickedImage != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(25),
+        child: Image.memory(widget.pickedImage!, fit: BoxFit.contain),
+      );
+    } else if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
+      // Use FutureBuilder to load image with Firebase Storage SDK (bypasses CORS)
+      return FutureBuilder<Uint8List?>(
+        future: _loadImageFromFirebaseStorage(widget.imageUrl!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+            print('========== IMAGE LOAD ERROR ==========');
+            print('Image load error for URL: ${widget.imageUrl}');
+            print('Error: ${snapshot.error}');
+            print('======================================');
+
+            // Fallback to CachedNetworkImage if Firebase Storage fails
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(25),
+              child: CachedNetworkImage(
+                imageUrl: widget.imageUrl!,
+                fit: BoxFit.contain,
+                placeholder: (context, url) =>
+                    const Center(child: CircularProgressIndicator()),
+                errorWidget: (context, url, error) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error, color: Colors.red, size: 40),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Failed to load image',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'CORS issue - Configure Firebase Storage',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+
+          // Successfully loaded image bytes
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(25),
+            child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+          );
+        },
+      );
+    } else {
+      return Center(
+        child: Text(
+          "Image Hint",
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            color: Colors.blue,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Load image from Firebase Storage using the SDK (bypasses CORS)
+  Future<Uint8List?> _loadImageFromFirebaseStorage(String imageUrl) async {
+    try {
+      // Check if it's a Firebase Storage URL
+      if (imageUrl.contains('firebasestorage.googleapis.com')) {
+        // Extract the path from the URL
+        final uri = Uri.parse(imageUrl);
+        final pathSegments = uri.pathSegments;
+
+        // Find the path after /o/
+        int oIndex = pathSegments.indexOf('o');
+        if (oIndex != -1 && oIndex + 1 < pathSegments.length) {
+          // Decode the path (it's URL encoded)
+          String filePath = Uri.decodeComponent(pathSegments[oIndex + 1]);
+
+          print('Loading image from Firebase Storage path: $filePath');
+
+          // Use Firebase Storage SDK to get the image
+          final storage = FirebaseStorage.instanceFor(
+            bucket: 'gs://lexiboost-36801.firebasestorage.app',
+          );
+          final ref = storage.ref().child(filePath);
+          final imageBytes = await ref.getData();
+
+          print('Image loaded successfully: ${imageBytes?.length ?? 0} bytes');
+          return imageBytes;
+        }
+      }
+
+      // Fallback to HTTP request if not a Firebase Storage URL
+      print('Using HTTP fallback for URL: $imageUrl');
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+    } catch (e) {
+      print('Error loading image from Firebase Storage: $e');
+    }
+
+    return null;
   }
 
   void _handleInput() {
@@ -180,24 +312,7 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
               borderRadius: BorderRadius.circular(25),
               
             ),
-            child: widget.pickedImage == null
-                ? Center(
-                    child: Text(
-                      "Image Hint",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.blue,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(25),
-                    child: Image.memory(
-                      widget.pickedImage!,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
+            child: _buildImageWidget(),
           ),
         ),
 
@@ -801,6 +916,7 @@ class _FillTheBlank2GameManagerState extends State<FillTheBlank2GameManager> {
                 answerController: _answerController,
                 visibleLetters: _visibleLetters,
                 pickedImage: _pickedImage,
+                imageUrl: _imageUrl, // Pass the imageUrl from Firebase
                 onRevealLetter: _revealLetter,
                 onHideLetter: _hideLetter,
               ),
