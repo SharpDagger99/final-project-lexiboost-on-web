@@ -27,6 +27,7 @@ import 'package:lexi_on_web/editor/game%20types/what_called.dart';
 import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
+import 'package:lexi_on_web/services/settings_service.dart';
 
 // Page data class to store page content
 class PageData {
@@ -51,6 +52,7 @@ class PageData {
   String gameCode;
   String hint;
   String? docId; // Firestore document ID for this page
+  String? gameTypeDocId; // Firestore document ID for game_type subcollection
   String? imageUrl; // Firebase Storage URL for selectedImageBytes
   String? whatCalledImageUrl; // Firebase Storage URL for whatCalledImageBytes
   List<String?>
@@ -64,6 +66,10 @@ class PageData {
   String listenAndRepeatAudioSource; // "uploaded" or "recorded"
   String? listenAndRepeatAudioUrl; // Firebase Storage URL for audio
   Uint8List? listenAndRepeatAudioBytes; // Audio file bytes
+
+  // Math game data
+  Map<String, dynamic>?
+  mathData; // Stores totalBoxes, operators, boxValues, answer
 
   PageData({
     this.title = '',
@@ -87,6 +93,7 @@ class PageData {
     this.gameCode = '',
     this.hint = '',
     this.docId,
+    this.gameTypeDocId,
     this.imageUrl,
     this.whatCalledImageUrl,
     List<String?>? guessAnswerImageUrls,
@@ -96,6 +103,7 @@ class PageData {
     this.listenAndRepeatAudioSource = "",
     this.listenAndRepeatAudioUrl,
     this.listenAndRepeatAudioBytes,
+    this.mathData,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null),
        guessAnswerImageUrls = guessAnswerImageUrls ?? [null, null, null],
@@ -151,9 +159,14 @@ class _MyGameEditState extends State<MyGameEdit> {
   String? gameId;
   Timer? _debounceTimer;
   Timer? _autoSaveTimer;
+  Timer? _idleTimer; // Timer for idle detection
   String _autoSaveStatus = ''; // Auto-save status message
+  bool _isSaving = false; // Loading state for save button
+  bool _hasUserInteracted = false; // Track if user has started interacting
+  bool _isIdle = false; // Track if user is currently idle
 
   final mathState = MathState();
+  final SettingsService _settingsService = SettingsService();
 
   // Browser event listeners
   StreamSubscription<html.Event>? _beforeUnloadSubscription;
@@ -171,6 +184,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     readSentenceController.addListener(_triggerAutoSave);
     listenAndRepeatController.addListener(_triggerAutoSave);
     hintController.addListener(_triggerAutoSave);
+    gameCodeController.addListener(_triggerAutoSave);
 
     // Set up browser event listeners
     _setupBrowserEventListeners();
@@ -216,10 +230,14 @@ class _MyGameEditState extends State<MyGameEdit> {
   }
 
   Future<void> _showBrowserBackConfirmation() async {
+    bool isSavingInDialog = false;
+    
     await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
         return Dialog(
           backgroundColor: const Color(0xFF2A2C2A),
           shape: RoundedRectangleBorder(
@@ -297,15 +315,32 @@ class _MyGameEditState extends State<MyGameEdit> {
                     AnimatedButton(
                       width: 80,
                       height: 40,
-                      color: Colors.green,
+                          color: isSavingInDialog ? Colors.grey : Colors.green,
                       onPressed: () async {
-                        Navigator.of(context).pop();
+                            if (isSavingInDialog) return;
+                            setDialogState(() {
+                              isSavingInDialog = true;
+                            });
                         _saveCurrentPageData();
                         await _saveToFirestore();
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                            }
                         _removeEventListeners();
                         await _navigateBasedOnRole();
                       },
-                      child: Text(
+                          child: isSavingInDialog
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Text(
                         'Save',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
@@ -319,6 +354,8 @@ class _MyGameEditState extends State<MyGameEdit> {
               ],
             ),
           ),
+            );
+          },
         );
       },
     );
@@ -374,24 +411,67 @@ class _MyGameEditState extends State<MyGameEdit> {
     });
   }
 
-  /// Trigger auto-save when any field changes
-  void _triggerAutoSave() {
-    _autoSaveTimer?.cancel();
+  /// Trigger auto-save when any field changes (intelligent idle-based system)
+  void _triggerAutoSave() async {
+    // Check if auto-save is enabled in settings
+    final autoSaveEnabled = await _settingsService.getAutoSaveEnabled();
+    if (!autoSaveEnabled) {
+      debugPrint('Auto-save is disabled in settings - skipping auto-save');
+      if (mounted) {
+        setState(() {
+          _autoSaveStatus = 'Auto-save disabled';
+        });
+      }
+      return;
+    }
+
+    // Mark that user has started interacting
+    _hasUserInteracted = true;
+
+    // Cancel any existing idle timer
+    _idleTimer?.cancel();
 
     // Show "Unsaved changes" status
     if (mounted) {
       setState(() {
         _autoSaveStatus = 'Unsaved changes...';
+        _isIdle = false;
       });
     }
 
-    _autoSaveTimer = Timer(const Duration(seconds: 3), () async {
+    debugPrint('User interaction detected - starting 10-second idle timer');
+
+    // Start 10-second idle timer
+    _idleTimer = Timer(const Duration(seconds: 10), () async {
+      // User has been idle for 10 seconds - trigger auto-save
+      await _performAutoSave();
+    });
+  }
+
+  /// Perform the actual auto-save operation
+  Future<void> _performAutoSave() async {
+    // Double-check if auto-save is still enabled (in case setting changed during idle period)
+    final autoSaveEnabled = await _settingsService.getAutoSaveEnabled();
+    if (!autoSaveEnabled) {
+      debugPrint(
+        'Auto-save was disabled during idle period - skipping auto-save',
+      );
+      if (mounted) {
+        setState(() {
+          _autoSaveStatus = 'Auto-save disabled';
+        });
+      }
+      return;
+    }
+
       // Only auto-save if gameId exists (game has been created)
       if (gameId != null) {
-        debugPrint('Auto-saving game data...');
+      debugPrint('User idle for 10 seconds - auto-saving game data...');
+
         if (mounted) {
           setState(() {
             _autoSaveStatus = 'Saving...';
+          _isIdle = true;
           });
         }
 
@@ -420,7 +500,11 @@ class _MyGameEditState extends State<MyGameEdit> {
           });
         }
       }
-    });
+  }
+
+  /// Detect user interaction and trigger auto-save
+  void _onUserInteraction() {
+    _triggerAutoSave();
   }
 
   void _toggleLetter(int index) {
@@ -428,12 +512,15 @@ class _MyGameEditState extends State<MyGameEdit> {
       visibleLetters[index] = !visibleLetters[index];
     });
     // Trigger auto-save when letter visibility changes
-    _triggerAutoSave();
+    _onUserInteraction();
   }
 
   void _saveCurrentPageData() {
     debugPrint(
       "Saving page data - Audio path: $listenAndRepeatAudioPath, Source: $listenAndRepeatAudioSource",
+    );
+    debugPrint(
+      "Saving page data - GameType: $selectedGameType, ReadSentence: '${readSentenceController.text}'",
     );
 
     // Preserve existing imageUrl if no new image bytes
@@ -441,6 +528,26 @@ class _MyGameEditState extends State<MyGameEdit> {
     if (selectedImageBytes != null) {
       // New image uploaded, imageUrl will be updated on save
       preservedImageUrl = null;
+    }
+    
+    // Save Math data if current game type is Math
+    Map<String, dynamic>? savedMathData;
+    if (selectedGameType == 'Math') {
+      savedMathData = {
+        'totalBoxes': mathState.totalBoxes,
+        'answer': double.tryParse(mathState.resultController.text) ?? 0,
+      };
+
+      // Save operators
+      for (int i = 0; i < mathState.operators.length && i < 9; i++) {
+        savedMathData['operator${i + 1}_${i + 2}'] = mathState.operators[i];
+      }
+
+      // Save box values
+      for (int i = 0; i < mathState.boxControllers.length && i < 10; i++) {
+        final boxValue = double.tryParse(mathState.boxControllers[i].text) ?? 0;
+        savedMathData['box${i + 1}'] = boxValue;
+      }
     }
     
     pages[currentPageIndex] = PageData(
@@ -465,6 +572,8 @@ class _MyGameEditState extends State<MyGameEdit> {
       hint: hintController.text,
       correctAnswerIndex: correctAnswerIndex,
       docId: pages[currentPageIndex].docId, // Preserve the document ID
+      gameTypeDocId: pages[currentPageIndex]
+          .gameTypeDocId, // Preserve game_type document ID
       imageUrl:
           preservedImageUrl ??
           pages[currentPageIndex].imageUrl, // Preserve image URL
@@ -479,6 +588,7 @@ class _MyGameEditState extends State<MyGameEdit> {
       listenAndRepeatAudioSource: listenAndRepeatAudioSource,
       listenAndRepeatAudioUrl: pages[currentPageIndex].listenAndRepeatAudioUrl,
       listenAndRepeatAudioBytes: listenAndRepeatAudioBytes,
+      mathData: savedMathData,
     );
   }
 
@@ -487,6 +597,22 @@ class _MyGameEditState extends State<MyGameEdit> {
 
     debugPrint('========== Loading Page Data ==========');
     debugPrint('Loading page $pageIndex with gameType: ${pageData.gameType}');
+    if (pageData.gameType == 'Read the sentence') {
+      debugPrint(
+        'Loading Read the sentence page - readSentence: "${pageData.readSentence}"',
+      );
+    } else if (pageData.gameType == 'What is it called') {
+      debugPrint(
+        'Loading What is it called page - readSentence: "${pageData.readSentence}", hint: "${pageData.hint}"',
+      );
+      debugPrint(
+        'What is it called imageBytes is null: ${pageData.whatCalledImageBytes == null}',
+      );
+      debugPrint('What is it called imageUrl: ${pageData.whatCalledImageUrl}');
+      debugPrint(
+        'What is it called imageBytes size: ${pageData.whatCalledImageBytes?.length ?? 0}',
+      );
+    }
     debugPrint(
       'Page selectedImageBytes is null: ${pageData.selectedImageBytes == null}',
     );
@@ -532,7 +658,73 @@ class _MyGameEditState extends State<MyGameEdit> {
         'After setState, selectedImageBytes is null: ${selectedImageBytes == null}',
       );
       debugPrint('ImageUrl preserved: ${pageData.imageUrl}');
+      debugPrint(
+        'After setState, readSentenceController.text: "${readSentenceController.text}"',
+      );
+      debugPrint(
+        'After setState, hintController.text: "${hintController.text}"',
+      );
+      debugPrint(
+        'After setState, whatCalledImageBytes is null: ${whatCalledImageBytes == null}',
+      );
+      debugPrint(
+        'After setState, whatCalledImageBytes size: ${whatCalledImageBytes?.length ?? 0}',
+      );
     });
+    
+    // Load Math data if this is a Math game type
+    if (pageData.gameType == 'Math') {
+      _loadMathDataToState(pageData);
+    }
+  }
+
+  /// Load Math game data into MathState
+  void _loadMathDataToState(PageData pageData) {
+    if (pageData.mathData == null) return;
+
+    final data = pageData.mathData!;
+
+    // Get totalBoxes
+    final totalBoxes = data['totalBoxes'] as int? ?? 1;
+
+    // Reset MathState
+    while (mathState.totalBoxes > 1) {
+      mathState.decrement();
+    }
+
+    // Add boxes to match totalBoxes
+    while (mathState.totalBoxes < totalBoxes) {
+      mathState.increment();
+    }
+
+    // Load box values
+    for (
+      int i = 0;
+      i < totalBoxes && i < mathState.boxControllers.length;
+      i++
+    ) {
+      final boxValue = data['box${i + 1}'];
+      if (boxValue != null) {
+        mathState.boxControllers[i].text = boxValue.toString();
+      }
+    }
+
+    // Load operators
+    for (int i = 0; i < mathState.operators.length; i++) {
+      final operator = data['operator${i + 1}_${i + 2}'] as String?;
+      if (operator != null && operator.isNotEmpty) {
+        mathState.operators[i] = operator;
+      }
+    }
+
+    // Load answer
+    final answer = data['answer'];
+    if (answer != null) {
+      mathState.resultController.text = answer.toString();
+    }
+
+    // MathState will automatically recalculate and notify listeners
+    // when controllers are updated
   }
 
   void _goToPreviousPage() {
@@ -540,6 +732,7 @@ class _MyGameEditState extends State<MyGameEdit> {
       _saveCurrentPageData();
       currentPageIndex--;
       _loadPageData(currentPageIndex);
+      _onUserInteraction();
     }
   }
 
@@ -556,6 +749,7 @@ class _MyGameEditState extends State<MyGameEdit> {
       });
       _loadPageData(currentPageIndex);
     }
+    _onUserInteraction();
   }
 
   void _showPageSelector() {
@@ -743,7 +937,70 @@ class _MyGameEditState extends State<MyGameEdit> {
     );
   }
 
-  /// Delete a specific page/round from Firestore and update subsequent page numbers
+  /// Collect storage URLs from a single page
+  Future<List<String>> _collectPageStorageUrls(PageData pageData) async {
+    List<String> urls = [];
+
+    try {
+      // Collect URLs based on what's stored in PageData
+      switch (pageData.gameType) {
+        case 'Fill in the blank 2':
+          if (pageData.imageUrl != null && pageData.imageUrl!.isNotEmpty) {
+            urls.add(pageData.imageUrl!);
+          }
+          break;
+
+        case 'Guess the answer':
+          if (pageData.imageUrl != null && pageData.imageUrl!.isNotEmpty) {
+            urls.add(pageData.imageUrl!);
+          }
+          break;
+
+        case 'Guess the answer 2':
+          for (final url in pageData.guessAnswerImageUrls) {
+            if (url != null && url.isNotEmpty) {
+              urls.add(url);
+            }
+          }
+          break;
+
+        case 'What is it called':
+          if (pageData.whatCalledImageUrl != null &&
+              pageData.whatCalledImageUrl!.isNotEmpty) {
+            urls.add(pageData.whatCalledImageUrl!);
+          }
+          break;
+
+        case 'Listen and Repeat':
+          if (pageData.listenAndRepeatAudioUrl != null &&
+              pageData.listenAndRepeatAudioUrl!.isNotEmpty) {
+            urls.add(pageData.listenAndRepeatAudioUrl!);
+          }
+          break;
+
+        case 'Image Match':
+          for (final url in pageData.imageMatchImageUrls) {
+            if (url != null && url.isNotEmpty) {
+              urls.add(url);
+            }
+          }
+          break;
+
+        case 'Read the sentence':
+          // Read the sentence doesn't use any storage files (no images/audio)
+          // No URLs to collect
+          break;
+      }
+
+      debugPrint('Collected ${urls.length} storage URLs from page');
+      return urls;
+    } catch (e) {
+      debugPrint('Failed to collect page storage URLs: $e');
+      return urls;
+    }
+  }
+
+  /// Delete a specific page/round from Firestore and Firebase Storage, then update subsequent page numbers
   Future<void> _deletePageFromFirestore(int pageIndex) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || gameId == null) return;
@@ -756,12 +1013,32 @@ class _MyGameEditState extends State<MyGameEdit> {
           .doc(gameId)
           .collection('game_rounds');
 
-      // Delete the document if it exists
+      // Step 1: Collect and delete storage files for this page
+      final pageData = pages[pageIndex];
+      final storageUrls = await _collectPageStorageUrls(pageData);
+
+      debugPrint(
+        'Deleting ${storageUrls.length} storage files for page $pageIndex',
+      );
+      for (final url in storageUrls) {
+        await _deleteFileFromStorage(url);
+      }
+
+      // Step 2: Delete game_type subcollection documents
+      if (pageData.docId != null && pageData.gameTypeDocId != null) {
+        await gameRoundsRef
+            .doc(pageData.docId)
+            .collection('game_type')
+            .doc(pageData.gameTypeDocId)
+            .delete();
+      }
+
+      // Step 3: Delete the round document if it exists
       if (pages[pageIndex].docId != null) {
         await gameRoundsRef.doc(pages[pageIndex].docId).delete();
       }
 
-      // Update page numbers for all subsequent pages
+      // Step 4: Update page numbers for all subsequent pages
       for (int i = pageIndex + 1; i < pages.length; i++) {
         if (pages[i].docId != null) {
           await gameRoundsRef.doc(pages[i].docId).update({
@@ -770,6 +1047,10 @@ class _MyGameEditState extends State<MyGameEdit> {
           });
         }
       }
+      
+      debugPrint(
+        'Page $pageIndex deleted successfully (including ${storageUrls.length} storage files)',
+      );
     } catch (e) {
       debugPrint('Failed to delete page from Firestore: $e');
     }
@@ -894,9 +1175,14 @@ class _MyGameEditState extends State<MyGameEdit> {
       for (var doc in snapshot.docs) {
         final data = doc.data();
         final gameType = (data['gameType'] as String?) ?? 'Fill in the blank';
+        final gameTypeDocId = (data['gameTypeDocId'] as String?) ?? '';
         
         // Load game type specific data from game_type subcollection
-        final gameTypeData = await _loadGameTypeData(doc.id, gameType);
+        final gameTypeData = await _loadGameTypeData(
+          doc.id,
+          gameType,
+          gameTypeDocId,
+        );
         
         debugPrint('Loading page data for gameType: $gameType');
         debugPrint(
@@ -907,6 +1193,10 @@ class _MyGameEditState extends State<MyGameEdit> {
         // Handle different field structures based on game type
         List<String> multipleChoices = [];
         String hint = '';
+        String answer = '';
+        String readSentence = '';
+        String listenAndRepeat = '';
+        
         if (gameType == 'Guess the answer') {
           // Guess the answer structure (updated with checkboxes)
           multipleChoices = [
@@ -925,21 +1215,45 @@ class _MyGameEditState extends State<MyGameEdit> {
             gameTypeData['multipleChoice4'] ?? '',
           ];
           hint = gameTypeData['hint'] ?? '';
+        } else if (gameType == 'What is it called') {
+          // What is it called uses 'answer' field for the sentence
+          readSentence = gameTypeData['answer'] ?? '';
+          hint = gameTypeData['gameHint'] ?? '';
+          debugPrint(
+            'Loading What is it called data: readSentence="$readSentence", hint="$hint"',
+          );
+          debugPrint(
+            'What is it called gameTypeData keys: ${gameTypeData.keys.toList()}',
+          );
+          debugPrint('What is it called imageUrl: ${gameTypeData['imageUrl']}');
+          debugPrint('What is it called image: ${gameTypeData['image']}');
+          debugPrint(
+            'What is it called imageBytes: ${gameTypeData['imageBytes'] != null ? '${(gameTypeData['imageBytes'] as Uint8List).length} bytes' : 'null'}',
+          );
+        } else if (gameType == 'Listen and Repeat') {
+          // Listen and Repeat uses 'answer' field for the sentence
+          listenAndRepeat = gameTypeData['answer'] ?? '';
+        } else if (gameType == 'Read the sentence') {
+          readSentence = gameTypeData['sentence'] ?? '';
+          debugPrint('Loading Read the sentence data: "$readSentence"');
         } else {
           // Other game types
           multipleChoices = gameTypeData['multipleChoices'] != null
               ? List<String>.from(gameTypeData['multipleChoices'])
               : [];
           hint = gameTypeData['gameHint'] ?? '';
+          answer = gameTypeData['answerText'] ?? '';
         }
         
         loadedPages.add(
           PageData(
             gameType: gameType,
-            answer: gameTypeData['answerText'] ?? gameTypeData['answer'] ?? '',
+            answer: answer.isEmpty
+                ? (gameTypeData['answerText'] ?? '')
+                : answer,
             descriptionField: gameTypeData['question'] ?? '',
-            readSentence: gameTypeData['sentence'] ?? '',
-            listenAndRepeat: gameTypeData['sentence'] ?? '',
+            readSentence: readSentence,
+            listenAndRepeat: listenAndRepeat,
             visibleLetters:
                 gameTypeData['answer'] != null && gameTypeData['answer'] is List
                 ? List<bool>.from(gameTypeData['answer'])
@@ -948,10 +1262,18 @@ class _MyGameEditState extends State<MyGameEdit> {
             imageMatchCount: gameTypeData['imageCount'] ?? 2,
             hint: hint,
             docId: doc.id,
+            gameTypeDocId: gameTypeDocId,
             selectedImageBytes: gameTypeData['imageBytes'] as Uint8List?,
             imageUrl:
                 gameTypeData['imageUrl'] as String? ??
                 gameTypeData['image'] as String?,
+            whatCalledImageBytes: gameType == 'What is it called'
+                ? gameTypeData['imageBytes'] as Uint8List?
+                : null,
+            whatCalledImageUrl: gameType == 'What is it called'
+                ? (gameTypeData['imageUrl'] as String? ??
+                      gameTypeData['image'] as String?)
+                : null,
             guessAnswerImages: gameType == 'Guess the answer 2'
                 ? [
                     gameTypeData['image1Bytes'] as Uint8List?,
@@ -966,6 +1288,37 @@ class _MyGameEditState extends State<MyGameEdit> {
                     gameTypeData['image3'] as String?,
                   ]
                 : [null, null, null],
+            imageMatchImages: gameType == 'Image Match'
+                ? [
+                    gameTypeData['image1Bytes'] as Uint8List?,
+                    gameTypeData['image2Bytes'] as Uint8List?,
+                    gameTypeData['image3Bytes'] as Uint8List?,
+                    gameTypeData['image4Bytes'] as Uint8List?,
+                    gameTypeData['image5Bytes'] as Uint8List?,
+                    gameTypeData['image6Bytes'] as Uint8List?,
+                    gameTypeData['image7Bytes'] as Uint8List?,
+                    gameTypeData['image8Bytes'] as Uint8List?,
+                  ]
+                : List.filled(8, null),
+            imageMatchImageUrls: gameType == 'Image Match'
+                ? [
+                    gameTypeData['image1'] as String?,
+                    gameTypeData['image2'] as String?,
+                    gameTypeData['image3'] as String?,
+                    gameTypeData['image4'] as String?,
+                    gameTypeData['image5'] as String?,
+                    gameTypeData['image6'] as String?,
+                    gameTypeData['image7'] as String?,
+                    gameTypeData['image8'] as String?,
+                  ]
+                : List.filled(8, null),
+            listenAndRepeatAudioUrl: gameType == 'Listen and Repeat'
+                ? gameTypeData['audio'] as String?
+                : null,
+            listenAndRepeatAudioSource:
+                gameType == 'Listen and Repeat' && gameTypeData['audio'] != null
+                ? 'uploaded'
+                : '',
             correctAnswerIndex:
                 gameType == 'Guess the answer' ||
                     gameType == 'Guess the answer 2'
@@ -973,6 +1326,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                       (gameTypeData['correctAnswerIndex'] as int?) ??
                       -1
                 : -1,
+            mathData: gameType == 'Math' ? gameTypeData : null,
           ),
         );
       }
@@ -993,6 +1347,7 @@ class _MyGameEditState extends State<MyGameEdit> {
   Future<Map<String, dynamic>> _loadGameTypeData(
     String roundDocId,
     String gameType,
+    String gameTypeDocId,
   ) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || gameId == null) return {};
@@ -1007,14 +1362,58 @@ class _MyGameEditState extends State<MyGameEdit> {
           .doc(roundDocId)
           .collection('game_type');
 
-      final gameTypeDocId = gameType.toLowerCase().replaceAll(' ', '_');
+      if (gameTypeDocId.isEmpty) {
+        debugPrint('No gameTypeDocId found for round $roundDocId');
+        return {};
+      }
+      
       final docSnapshot = await gameTypeRef.doc(gameTypeDocId).get();
 
       if (docSnapshot.exists) {
         final data = docSnapshot.data() ?? {};
 
         // Load images from URLs if they exist
-        if (gameType == 'Guess the answer 2') {
+        if (gameType == 'What is it called') {
+          // Handle single image for What is it called
+          String? imageUrl;
+          if (data['imageUrl'] != null &&
+              data['imageUrl'] is String &&
+              (data['imageUrl'] as String).isNotEmpty) {
+            imageUrl = data['imageUrl'];
+          } else if (data['image'] != null &&
+              data['image'] is String &&
+              (data['image'] as String).isNotEmpty) {
+            imageUrl = data['image'];
+          }
+
+          if (imageUrl != null) {
+            try {
+              debugPrint('Downloading What is it called image from: $imageUrl');
+              // Preserve both imageUrl and image fields for consistency
+              data['imageUrl'] = imageUrl;
+              data['image'] = imageUrl; // Keep original field for consistency
+
+              final imageBytes = await _downloadImageFromUrl(imageUrl);
+              if (imageBytes != null) {
+                data['imageBytes'] = imageBytes;
+                debugPrint(
+                  'What is it called image downloaded successfully, size: ${imageBytes.length} bytes',
+                );
+              } else {
+                debugPrint(
+                  'What is it called image download returned null, will use URL directly',
+                );
+              }
+            } catch (e) {
+              debugPrint('Failed to download What is it called image: $e');
+              // Keep both fields for consistency
+              data['imageUrl'] = imageUrl;
+              data['image'] = imageUrl;
+            }
+          } else {
+            debugPrint('No valid image URL found for What is it called');
+          }
+        } else if (gameType == 'Guess the answer 2') {
           // Handle multiple images for Guess the answer 2
           for (int i = 1; i <= 3; i++) {
             String? imageUrl = data['image$i'];
@@ -1032,6 +1431,31 @@ class _MyGameEditState extends State<MyGameEdit> {
                 }
               } catch (e) {
                 debugPrint('Failed to download image $i: $e');
+              }
+            }
+          }
+        } else if (gameType == 'Image Match') {
+          // Handle multiple images for Image Match (up to 8 images)
+          for (int i = 1; i <= 8; i++) {
+            String? imageUrl = data['image$i'];
+            if (imageUrl != null &&
+                imageUrl.isNotEmpty &&
+                !imageUrl.contains(
+                  'gs://lexiboost-36801.firebasestorage.app/game image',
+                )) {
+              try {
+                debugPrint('Downloading Image Match image $i from: $imageUrl');
+                final imageBytes = await _downloadImageFromUrl(imageUrl);
+                if (imageBytes != null) {
+                  data['image${i}Bytes'] = imageBytes;
+                  debugPrint(
+                    'Image Match image $i downloaded successfully, size: ${imageBytes.length} bytes',
+                  );
+                } else {
+                  debugPrint('Image Match image $i download returned null');
+                }
+              } catch (e) {
+                debugPrint('Failed to download Image Match image $i: $e');
               }
             }
           }
@@ -1190,9 +1614,13 @@ class _MyGameEditState extends State<MyGameEdit> {
 
   /// Show close confirmation dialog
   Future<void> _showCloseConfirmationDialog() async {
+    bool isSavingInDialog = false;
+    
     await showDialog(
       context: context,
       builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
         return Dialog(
           backgroundColor: const Color(0xFF2A2C2A),
           shape: RoundedRectangleBorder(
@@ -1262,15 +1690,32 @@ class _MyGameEditState extends State<MyGameEdit> {
                     AnimatedButton(
                       width: 80,
                       height: 40,
-                      color: Colors.green,
+                          color: isSavingInDialog ? Colors.grey : Colors.green,
                       onPressed: () async {
-                        Navigator.of(context).pop();
+                            if (isSavingInDialog) return;
+                            setDialogState(() {
+                              isSavingInDialog = true;
+                            });
                         _saveCurrentPageData();
                         await _saveToFirestore();
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                            }
                         _removeEventListeners();
                         await _navigateBasedOnRole();
                       },
-                      child: Text(
+                          child: isSavingInDialog
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Text(
                         'Save',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
@@ -1284,6 +1729,8 @@ class _MyGameEditState extends State<MyGameEdit> {
               ],
             ),
           ),
+            );
+          },
         );
       },
     );
@@ -1369,41 +1816,218 @@ class _MyGameEditState extends State<MyGameEdit> {
     );
   }
 
-  /// Delete game from Firestore
-  Future<void> _deleteGame() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in to delete.')),
-      );
-      return;
-    }
-
-    if (gameId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No game to delete.')));
+  /// Delete a file from Firebase Storage given its URL
+  Future<void> _deleteFileFromStorage(String fileUrl) async {
+    if (fileUrl.isEmpty ||
+        fileUrl == 'gs://lexiboost-36801.firebasestorage.app/game image' ||
+        fileUrl == 'gs://lexiboost-36801.firebasestorage.app/gameAudio') {
+      // Skip default/placeholder URLs
       return;
     }
 
     try {
+      final storage = FirebaseStorage.instanceFor(
+        bucket: 'gs://lexiboost-36801.firebasestorage.app',
+      );
+
+      // Extract the file path from the URL
+      String filePath;
+      if (fileUrl.startsWith('gs://')) {
+        // Format: gs://bucket/path/to/file
+        final uri = Uri.parse(fileUrl);
+        filePath = uri.path.substring(1); // Remove leading '/'
+      } else if (fileUrl.startsWith('https://')) {
+        // Format: https://firebasestorage.googleapis.com/v0/b/bucket/o/path%2Fto%2Ffile
+        final uri = Uri.parse(fileUrl);
+        final pathSegments = uri.pathSegments;
+
+        // Find the 'o' segment and get everything after it
+        final oIndex = pathSegments.indexOf('o');
+        if (oIndex != -1 && oIndex < pathSegments.length - 1) {
+          filePath = Uri.decodeComponent(
+            pathSegments.sublist(oIndex + 1).join('/'),
+          );
+          // Remove query parameters like ?alt=media&token=...
+          filePath = filePath.split('?')[0];
+        } else {
+          debugPrint('Could not parse file path from URL: $fileUrl');
+          return;
+        }
+      } else {
+        debugPrint('Unknown URL format: $fileUrl');
+        return;
+      }
+
+      final ref = storage.ref().child(filePath);
+      await ref.delete();
+      debugPrint('Successfully deleted file from Storage: $filePath');
+    } catch (e) {
+      debugPrint('Failed to delete file from Storage ($fileUrl): $e');
+      // Don't throw - continue with other deletions
+    }
+  }
+
+  /// Collect all storage URLs from a game (images and audio)
+  Future<List<String>> _collectStorageUrls() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return [];
+
+    List<String> storageUrls = [];
+
+    try {
+      final gameRoundsRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_rounds');
+
+      final gameRoundsSnapshot = await gameRoundsRef.get();
+
+      for (var roundDoc in gameRoundsSnapshot.docs) {
+        final roundData = roundDoc.data();
+        final gameType = roundData['gameType'] as String?;
+        final gameTypeDocId = roundData['gameTypeDocId'] as String?;
+
+        if (gameTypeDocId == null || gameTypeDocId.isEmpty) continue;
+
+        // Get game_type data
+        final gameTypeSnapshot = await gameRoundsRef
+            .doc(roundDoc.id)
+            .collection('game_type')
+            .doc(gameTypeDocId)
+            .get();
+
+        if (!gameTypeSnapshot.exists) continue;
+
+        final gameTypeData = gameTypeSnapshot.data() ?? {};
+
+        // Collect URLs based on game type
+        switch (gameType) {
+          case 'Fill in the blank 2':
+            // Has imageUrl field
+            final imageUrl = gameTypeData['imageUrl'] as String?;
+            if (imageUrl != null && imageUrl.isNotEmpty) {
+              storageUrls.add(imageUrl);
+            }
+            break;
+
+          case 'Guess the answer':
+            // Has image field
+            final image = gameTypeData['image'] as String?;
+            if (image != null && image.isNotEmpty) {
+              storageUrls.add(image);
+            }
+            break;
+
+          case 'Guess the answer 2':
+            // Has image1, image2, image3
+            for (int i = 1; i <= 3; i++) {
+              final imageUrl = gameTypeData['image$i'] as String?;
+              if (imageUrl != null && imageUrl.isNotEmpty) {
+                storageUrls.add(imageUrl);
+              }
+            }
+            break;
+
+          case 'What is it called':
+            // Has image field
+            final image = gameTypeData['image'] as String?;
+            if (image != null && image.isNotEmpty) {
+              storageUrls.add(image);
+            }
+            break;
+
+          case 'Listen and Repeat':
+            // Has audio field
+            final audio = gameTypeData['audio'] as String?;
+            if (audio != null && audio.isNotEmpty) {
+              storageUrls.add(audio);
+            }
+            break;
+
+          case 'Image Match':
+            // Has image1 through image8
+            for (int i = 1; i <= 8; i++) {
+              final imageUrl = gameTypeData['image$i'] as String?;
+              if (imageUrl != null && imageUrl.isNotEmpty) {
+                storageUrls.add(imageUrl);
+              }
+            }
+            break;
+
+          case 'Read the sentence':
+            // Read the sentence doesn't use any storage files (no images/audio)
+            // No URLs to collect
+            break;
+        }
+      }
+
+      debugPrint('Collected ${storageUrls.length} storage URLs for deletion');
+      return storageUrls;
+    } catch (e) {
+      debugPrint('Failed to collect storage URLs: $e');
+      return storageUrls;
+    }
+  }
+
+  /// Delete game from Firestore and Firebase Storage
+  Future<void> _deleteGame() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint('Error: User must be logged in to delete');
+      return;
+    }
+
+    if (gameId == null) {
+      debugPrint('Error: No game to delete');
+      return;
+    }
+
+    try {
+      // Step 1: Collect all storage URLs before deleting Firestore documents
+      debugPrint('Collecting storage URLs for game: $gameId');
+      final storageUrls = await _collectStorageUrls();
+
+      // Step 2: Delete all files from Firebase Storage
+      debugPrint('Deleting ${storageUrls.length} files from Storage...');
+      for (final url in storageUrls) {
+        await _deleteFileFromStorage(url);
+      }
+
+      // Step 3: Delete Firestore documents
+      debugPrint('Deleting Firestore documents...');
       final gameDocRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('created_games')
           .doc(gameId);
 
-      // First, delete all documents in the game_rounds subcollection
+      // Delete all game_type subcollection documents first
       final gameRoundsSnapshot = await gameDocRef
           .collection('game_rounds')
           .get();
 
-      for (var doc in gameRoundsSnapshot.docs) {
-        await doc.reference.delete();
+      for (var roundDoc in gameRoundsSnapshot.docs) {
+        // Delete game_type subcollection
+        final gameTypeSnapshot = await roundDoc.reference
+            .collection('game_type')
+            .get();
+
+        for (var gameTypeDoc in gameTypeSnapshot.docs) {
+          await gameTypeDoc.reference.delete();
+        }
+        
+        // Delete the round document
+        await roundDoc.reference.delete();
       }
 
-      // Then delete the main game document
+      // Delete the main game document
       await gameDocRef.delete();
+
+      debugPrint(
+        'Game deleted successfully (including ${storageUrls.length} storage files)',
+      );
 
       _removeEventListeners();
       await _navigateBasedOnRole();
@@ -1416,10 +2040,22 @@ class _MyGameEditState extends State<MyGameEdit> {
   Future<void> _saveToFirestore() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in to save.')),
-      );
+      debugPrint('Error: User must be logged in to save');
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _autoSaveStatus = 'Error: Not logged in';
+        });
+      }
       return;
+    }
+
+    // Set loading state
+    if (mounted) {
+      setState(() {
+        _isSaving = true;
+        _autoSaveStatus = 'Saving...';
+      });
     }
 
     try {
@@ -1446,13 +2082,13 @@ class _MyGameEditState extends State<MyGameEdit> {
         gameData['updated_at'] = FieldValue.serverTimestamp();
         await docRef.set(gameData);
 
+        if (mounted) {
         setState(() {
           gameId = docRef.id;
         });
+        }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Game created and saved successfully.')),
-        );
+        debugPrint('Game created and saved successfully');
       } else {
         gameData['updated_at'] = FieldValue.serverTimestamp();
 
@@ -1464,18 +2100,36 @@ class _MyGameEditState extends State<MyGameEdit> {
             .doc(gameId)
             .set(gameData, SetOptions(merge: true));
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Game updated successfully.')),
-        );
+        debugPrint('Game updated successfully');
       }
 
       // Save all pages to game_rounds subcollection
       await _saveGameRounds();
+
+      // Update UI with success state
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _autoSaveStatus = 'All changes saved ✓';
+        });
+
+        // Clear status after 3 seconds
+        Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _autoSaveStatus = '';
+            });
+          }
+        });
+      }
     } catch (e) {
       debugPrint('Failed to save game: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save: ${e.toString()}')),
-      );
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _autoSaveStatus = 'Save failed - ${e.toString()}';
+        });
+      }
     }
   }
 
@@ -1499,6 +2153,7 @@ class _MyGameEditState extends State<MyGameEdit> {
         final Map<String, dynamic> roundData = {
           'gameType': pageData.gameType,
           'page': i + 1, // Store 1-based page number
+          'gameTypeDocId': pageData.gameTypeDocId ?? '',
         };
 
         String roundDocId;
@@ -1540,11 +2195,20 @@ class _MyGameEditState extends State<MyGameEdit> {
           .doc(roundDocId)
           .collection('game_type');
 
-      // Create a document with the game type as the document ID
-      final gameTypeDocId = pageData.gameType.toLowerCase().replaceAll(
-        ' ',
-        '_',
-      );
+      // Create document reference with auto-generated ID or use existing
+      DocumentReference gameTypeDocRef;
+      if (pageData.gameTypeDocId != null &&
+          pageData.gameTypeDocId!.isNotEmpty) {
+        // Use existing document ID
+        gameTypeDocRef = gameTypeRef.doc(pageData.gameTypeDocId);
+      } else {
+        // Create new auto-generated document
+        gameTypeDocRef = gameTypeRef.doc(); // Auto-generated ID
+        // Store the ID back to pageData
+        pageData.gameTypeDocId = gameTypeDocRef.id;
+        // Also update the pages list
+        pages[pages.indexOf(pageData)].gameTypeDocId = gameTypeDocRef.id;
+      }
 
       final Map<String, dynamic> gameTypeData = {
         'gameType': pageData.gameType,
@@ -1657,26 +2321,48 @@ class _MyGameEditState extends State<MyGameEdit> {
           'correctAnswerIndex': correctAnswerIndex,
         });
       } else if (pageData.gameType == 'Read the sentence') {
+        debugPrint('Saving Read the sentence data: "${pageData.readSentence}"');
         gameTypeData.addAll({'sentence': pageData.readSentence});
       } else if (pageData.gameType == 'What is it called') {
+        debugPrint(
+          'Saving What is it called data: readSentence="${pageData.readSentence}", hint="${pageData.hint}"',
+        );
+        debugPrint(
+          'What is it called imageBytes is null: ${pageData.whatCalledImageBytes == null}',
+        );
+        debugPrint(
+          'What is it called imageUrl: ${pageData.whatCalledImageUrl}',
+        );
+        
         // Upload image if new bytes exist, otherwise use existing URL
         String? imageUrl = pageData.whatCalledImageUrl;
         if (pageData.whatCalledImageBytes != null) {
           try {
+            debugPrint('Uploading new image for What is it called...');
             imageUrl = await _uploadImageToStorage(
               pageData.whatCalledImageBytes!,
               'what_called_image',
             );
             pageData.whatCalledImageUrl = imageUrl;
+            debugPrint(
+              'What is it called image uploaded successfully: $imageUrl',
+            );
           } catch (e) {
             debugPrint('Failed to upload image for What is it called: $e');
           }
+        } else {
+          debugPrint(
+            'Using existing imageUrl for What is it called: $imageUrl',
+          );
         }
         
         gameTypeData.addAll({
           'answer': pageData.readSentence, // The answer text
           'image':
               imageUrl ?? 'gs://lexiboost-36801.firebasestorage.app/game image',
+          'imageUrl':
+              imageUrl ??
+              'gs://lexiboost-36801.firebasestorage.app/game image', // Add imageUrl for consistency
           'gameHint': pageData.hint, // The game hint
           'createdAt': FieldValue.serverTimestamp(),
           'gameType': 'what_called',
@@ -1779,41 +2465,41 @@ class _MyGameEditState extends State<MyGameEdit> {
 
         gameTypeData.addAll(imageMatchData);
       } else if (pageData.gameType == 'Math') {
-        // Get the math state from the current page
-
-        Map<String, dynamic> mathData = {
-          'totalBoxes': mathState.totalBoxes,
-          'answer': double.tryParse(mathState.resultController.text) ?? 0,
-        };
-
-        // Add operators as individual fields (operator1_2, operator2_3, etc.)
-        for (int i = 0; i < mathState.operators.length && i < 9; i++) {
-          mathData['operator${i + 1}_${i + 2}'] = mathState.operators[i];
-        }
-
-        // Fill remaining operators with empty string if less than 9 operators
-        for (int i = mathState.operators.length; i < 9; i++) {
-          mathData['operator${i + 1}_${i + 2}'] = '';
-        }
-
-        // Add box values (box1 to box10)
-        for (int i = 0; i < mathState.boxControllers.length && i < 10; i++) {
-          final boxValue =
-              double.tryParse(mathState.boxControllers[i].text) ?? 0;
-          mathData['box${i + 1}'] = boxValue;
-        }
-
-        // Fill remaining boxes with 0 if less than 10 boxes
-        for (int i = mathState.boxControllers.length; i < 10; i++) {
-          mathData['box${i + 1}'] = 0;
+        // Use saved Math data from PageData
+        if (pageData.mathData != null) {
+          Map<String, dynamic> mathData = Map.from(pageData.mathData!);
+          
+          // Ensure all operators are filled (operator1_2 through operator9_10)
+          for (int i = 1; i < 10; i++) {
+            final operatorKey = 'operator${i}_${i + 1}';
+            if (!mathData.containsKey(operatorKey)) {
+              mathData[operatorKey] = '';
+            }
+          }
+          
+          // Ensure all boxes are filled (box1 through box10)
+          for (int i = 1; i <= 10; i++) {
+            final boxKey = 'box$i';
+            if (!mathData.containsKey(boxKey)) {
+              mathData[boxKey] = 0;
+            }
         }
 
         gameTypeData.addAll(mathData);
+        } else {
+          // Fallback: use default empty Math data
+          gameTypeData.addAll({'totalBoxes': 1, 'answer': 0, 'box1': 0});
+
+          for (int i = 1; i < 10; i++) {
+            gameTypeData['operator${i}_${i + 1}'] = '';
+          }
+          for (int i = 2; i <= 10; i++) {
+            gameTypeData['box$i'] = 0;
+          }
+        }
       }
 
-      await gameTypeRef
-          .doc(gameTypeDocId)
-          .set(gameTypeData, SetOptions(merge: true));
+      await gameTypeDocRef.set(gameTypeData, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Failed to save game type data: $e');
     }
@@ -1824,6 +2510,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     _removeEventListeners();
     _debounceTimer?.cancel();
     _autoSaveTimer?.cancel();
+    _idleTimer?.cancel();
     titleController.removeListener(_onTitleChanged);
     titleController.dispose();
     descriptionController.removeListener(_triggerAutoSave);
@@ -1838,6 +2525,7 @@ class _MyGameEditState extends State<MyGameEdit> {
     listenAndRepeatController.removeListener(_triggerAutoSave);
     listenAndRepeatController.dispose();
     prizeCoinsController.dispose();
+    gameCodeController.removeListener(_triggerAutoSave);
     gameCodeController.dispose();
     hintController.removeListener(_triggerAutoSave);
     hintController.dispose();
@@ -1991,6 +2679,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                           setState(() {
                             selectedDifficulty = newValue;
                           });
+                          _onUserInteraction();
                         }
                       },
                     ),
@@ -2120,6 +2809,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                           setState(() {
                             selectedGameRule = newValue;
                           });
+                          _onUserInteraction();
                         }
                       },
                     ),
@@ -2179,6 +2869,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                                   gameCodeController.clear();
                                 }
                               });
+                              _onUserInteraction();
                             }
                           },
                         ),
@@ -2281,6 +2972,13 @@ class _MyGameEditState extends State<MyGameEdit> {
                               ),
                             ),
                           ),
+                          // Show idle status indicator
+                          if (_hasUserInteracted)
+                            Icon(
+                              _isIdle ? Icons.pause_circle : Icons.play_circle,
+                              color: _isIdle ? Colors.blue : Colors.orange,
+                              size: 16,
+                            ),
                         ],
                       ),
                     ),
@@ -2329,12 +3027,24 @@ class _MyGameEditState extends State<MyGameEdit> {
                         AnimatedButton(
                           width: 100,
                           height: 50,
-                          color: Colors.green,
+                          color: _isSaving ? Colors.grey : Colors.green,
                           onPressed: () async {
+                            if (_isSaving) return;
                             _saveCurrentPageData();
                             await _saveToFirestore();
                           },
-                          child: Text(
+                          child: _isSaving
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Text(
                             "Save",
                             style: GoogleFonts.poppins(
                               fontSize: 16,
@@ -2426,6 +3136,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                                               descriptionFieldController,
                                           visibleLetters: visibleLetters,
                                           pickedImage: selectedImageBytes,
+                                          imageUrl:
+                                              pages[currentPageIndex].imageUrl,
                                           multipleChoices: multipleChoices,
                                           correctAnswerIndex:
                                               correctAnswerIndex,
@@ -2437,6 +3149,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                                               descriptionFieldController,
                                           visibleLetters: visibleLetters,
                                           pickedImages: guessAnswerImages,
+                                          imageUrls: pages[currentPageIndex]
+                                              .guessAnswerImageUrls,
                                           multipleChoices: multipleChoices,
                                           correctAnswerIndex:
                                               correctAnswerIndex,
@@ -2451,6 +3165,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                                           sentenceController:
                                               readSentenceController,
                                           pickedImage: whatCalledImageBytes,
+                                          imageUrl: pages[currentPageIndex]
+                                              .whatCalledImageUrl,
                                         )
                                       : selectedGameType == 'Listen and Repeat'
                                       ? MyListenAndRepeat(
@@ -2472,12 +3188,27 @@ class _MyGameEditState extends State<MyGameEdit> {
                                   child: AnimatedButton(
                                     width: 350,
                                     height: 60,
-                                    color: Colors.green,
+                                    color: _isSaving
+                                        ? Colors.grey
+                                        : Colors.green,
                                     onPressed: () async {
+                                      if (_isSaving) return;
                                       _saveCurrentPageData();
                                       await _saveToFirestore();
                                     },
-                                    child: Text(
+                                    child: _isSaving
+                                        ? const SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 3,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.white,
+                                                  ),
+                                            ),
+                                          )
+                                        : Text(
                                       "Confirm",
                                       style: GoogleFonts.poppins(
                                         fontSize: 18,
@@ -2583,6 +3314,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                                 setState(() {
                                   selectedGameType = newValue;
                                 });
+                                _onUserInteraction();
                               }
                             },
                           ),
@@ -2613,7 +3345,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                             selectedImageBytes = imageBytes;
                           });
                           // Trigger auto-save when image is picked
-                          _triggerAutoSave();
+                          _onUserInteraction();
                         },
                       )
                     else if (selectedGameType == 'Guess the answer')
@@ -2621,21 +3353,26 @@ class _MyGameEditState extends State<MyGameEdit> {
                         hintController: hintController,
                         questionController: descriptionFieldController,
                         visibleLetters: visibleLetters,
+                        initialChoices: multipleChoices,
+                        initialCorrectIndex: correctAnswerIndex,
                         onToggle: _toggleLetter,
                         onImagePicked: (Uint8List imageBytes) {
                           setState(() {
                             selectedImageBytes = imageBytes;
                           });
+                          _onUserInteraction();
                         },
                         onChoicesChanged: (List<String> choices) {
                           setState(() {
                             multipleChoices = choices;
                           });
+                          _onUserInteraction();
                         },
                         onCorrectAnswerSelected: (int index) {
                           setState(() {
                             correctAnswerIndex = index;
                           });
+                          _onUserInteraction();
                         },
                       )
                     else if (selectedGameType == 'Guess the answer 2')
@@ -2643,21 +3380,26 @@ class _MyGameEditState extends State<MyGameEdit> {
                         hintController: hintController,
                         questionController: descriptionFieldController,
                         visibleLetters: visibleLetters,
+                        initialChoices: multipleChoices,
+                        initialCorrectIndex: correctAnswerIndex,
                         onToggle: _toggleLetter,
                         onImagePicked: (int index, Uint8List imageBytes) {
                           setState(() {
                             guessAnswerImages[index] = imageBytes;
                           });
+                          _onUserInteraction();
                         },
                         onChoicesChanged: (List<String> choices) {
                           setState(() {
                             multipleChoices = choices;
                           });
+                          _onUserInteraction();
                         },
                         onCorrectAnswerSelected: (int index) {
                           setState(() {
                             correctAnswerIndex = index;
                           });
+                          _onUserInteraction();
                         },
                       )
                     else if (selectedGameType == 'Read the sentence')
@@ -2672,6 +3414,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                           setState(() {
                             whatCalledImageBytes = imageBytes;
                           });
+                          _onUserInteraction();
                         },
                       )
                     else if (selectedGameType == 'Listen and Repeat')
@@ -2693,6 +3436,7 @@ class _MyGameEditState extends State<MyGameEdit> {
                               });
                               // Save the current page data immediately when audio changes
                               _saveCurrentPageData();
+                              _onUserInteraction();
                             },
                       )
                     else if (selectedGameType == 'Image Match')
@@ -2701,11 +3445,13 @@ class _MyGameEditState extends State<MyGameEdit> {
                           setState(() {
                             imageMatchImages[index] = imageBytes;
                           });
+                          _onUserInteraction();
                         },
                         onCountChanged: (int newCount) {
                           setState(() {
                             imageMatchCount = newCount;
                           });
+                          _onUserInteraction();
                         },
                       )
                     else if (selectedGameType == 'Math')

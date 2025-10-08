@@ -15,6 +15,7 @@ class MyGuessTheAnswer extends StatelessWidget {
   final TextEditingController questionController;
   final List<bool> visibleLetters;
   final List<Uint8List?> pickedImages; // ✅ now supports 3 images
+  final List<String?> imageUrls; // ✅ Add image URLs parameter
   final List<String> multipleChoices;
   final int correctAnswerIndex;
 
@@ -24,8 +25,9 @@ class MyGuessTheAnswer extends StatelessWidget {
     required this.questionController,
     required this.visibleLetters,
     this.pickedImages = const [null, null, null],
+    this.imageUrls = const [null, null, null],
     this.multipleChoices = const [],
-    this.correctAnswerIndex = -1,
+    this.correctAnswerIndex = -1, 
   });
 
   @override
@@ -60,6 +62,8 @@ class MyGuessTheAnswer extends StatelessWidget {
             final img = pickedImages.length > index
                 ? pickedImages[index]
                 : null;
+            final imgUrl = imageUrls.length > index ? imageUrls[index] : null;
+            
             return Container(
               width: 120,
               height: 120,
@@ -68,8 +72,41 @@ class MyGuessTheAnswer extends StatelessWidget {
                 borderRadius: BorderRadius.circular(15),
                 
               ),
-              child: img == null
-                  ? Center(
+              child: img != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: Image.memory(img, fit: BoxFit.cover),
+                    )
+                  : imgUrl != null && imgUrl.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: Image.network(
+                        imgUrl,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 24,
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : Center(
                       child: Padding(
                         padding: const EdgeInsets.all(8.0),
                         child: Text(
@@ -82,10 +119,6 @@ class MyGuessTheAnswer extends StatelessWidget {
                           textAlign: TextAlign.center,
                         ),
                       ),
-                    )
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: Image.memory(img, fit: BoxFit.cover),
                     ),
             );
           }),
@@ -197,6 +230,8 @@ class MyGuessTheAnswerSettings extends StatefulWidget {
   final Function(int, Uint8List) onImagePicked; // ✅ index + image
   final Function(List<String>) onChoicesChanged;
   final Function(int) onCorrectAnswerSelected;
+  final List<String> initialChoices; // ✅ Add initial choices
+  final int initialCorrectIndex; // ✅ Add initial correct answer index
 
   const MyGuessTheAnswerSettings({
     super.key,
@@ -207,6 +242,8 @@ class MyGuessTheAnswerSettings extends StatefulWidget {
     required this.onImagePicked,
     required this.onChoicesChanged,
     required this.onCorrectAnswerSelected,
+    this.initialChoices = const [],
+    this.initialCorrectIndex = -1,
   });
 
   @override
@@ -226,9 +263,17 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
   @override
   void initState() {
     super.initState();
-    for (var controller in choiceControllers) {
-      controller.addListener(_onChoicesChanged);
+    
+    // ✅ Load initial choices into controllers
+    for (int i = 0; i < choiceControllers.length; i++) {
+      if (i < widget.initialChoices.length) {
+        choiceControllers[i].text = widget.initialChoices[i];
+      }
+      choiceControllers[i].addListener(_onChoicesChanged);
     }
+
+    // ✅ Set initial correct answer index
+    selectedChoiceIndex = widget.initialCorrectIndex;
   }
 
   @override

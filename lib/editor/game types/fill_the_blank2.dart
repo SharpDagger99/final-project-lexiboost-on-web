@@ -813,7 +813,7 @@ class _FillTheBlank2GameManagerState extends State<FillTheBlank2GameManager> {
     if (_pickedImage == null && (_imageUrl == null || _imageUrl!.isEmpty)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please upload an image')));
+      ).showSnackBar(const SnackBar(content: Text('Please upload an image'))); 
       return;
     }
 

@@ -15,6 +15,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
   final TextEditingController questionController;
   final List<bool> visibleLetters;
   final Uint8List? pickedImage;
+  final String? imageUrl; // Add imageUrl parameter
   final List<String> multipleChoices;
   final int correctAnswerIndex;
 
@@ -24,6 +25,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
     required this.questionController,
     required this.visibleLetters,
     this.pickedImage,
+    this.imageUrl,
     this.multipleChoices = const [],
     this.correctAnswerIndex = -1,
   });
@@ -63,8 +65,43 @@ class MyFillInTheBlank3 extends StatelessWidget {
               borderRadius: BorderRadius.circular(25),
               
             ),
-            child: pickedImage == null
-                ? Center(
+            child: pickedImage != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(25),
+                    child: Image.memory(pickedImage!, fit: BoxFit.contain),
+                  )
+                : imageUrl != null && imageUrl!.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(25),
+                    child: Image.network(
+                      imageUrl!,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Center(
+                          child: Text(
+                            "Failed to load image",
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.red,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                : Center(
                     child: Text(
                       "Image Hint",
                       style: GoogleFonts.poppins(
@@ -73,10 +110,6 @@ class MyFillInTheBlank3 extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(25),
-                    child: Image.memory(pickedImage!, fit: BoxFit.contain),
                   ),
           ),
         ),
@@ -152,6 +185,8 @@ class MyFillInTheBlank3Settings extends StatefulWidget {
   final Function(Uint8List) onImagePicked;
   final Function(List<String>) onChoicesChanged;
   final Function(int) onCorrectAnswerSelected;
+  final List<String> initialChoices; // Add initial choices
+  final int initialCorrectIndex; // Add initial correct answer index
 
   const MyFillInTheBlank3Settings({
     super.key,
@@ -162,6 +197,8 @@ class MyFillInTheBlank3Settings extends StatefulWidget {
     required this.onImagePicked,
     required this.onChoicesChanged,
     required this.onCorrectAnswerSelected,
+    this.initialChoices = const [],
+    this.initialCorrectIndex = -1,
   });
 
   @override
@@ -181,9 +218,17 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
   @override
   void initState() {
     super.initState();
-    for (var controller in choiceControllers) {
-      controller.addListener(_onChoicesChanged);
+    
+    // Load initial choices into controllers
+    for (int i = 0; i < choiceControllers.length; i++) {
+      if (i < widget.initialChoices.length) {
+        choiceControllers[i].text = widget.initialChoices[i];
+      }
+      choiceControllers[i].addListener(_onChoicesChanged);
     }
+
+    // Set initial correct answer index
+    selectedChoiceIndex = widget.initialCorrectIndex;
   }
 
   @override
