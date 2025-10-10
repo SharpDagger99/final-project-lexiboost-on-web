@@ -134,11 +134,15 @@ class MyImageMatch extends StatelessWidget {
 class MyImageMatchSettings extends StatefulWidget {
   final Function(int, Uint8List) onImagePicked;
   final Function(int) onCountChanged;
+  final List<Uint8List?>? initialImages;
+  final int? initialCount;
 
   const MyImageMatchSettings({
     super.key,
     required this.onImagePicked,
     required this.onCountChanged,
+    this.initialImages,
+    this.initialCount,
   });
 
   @override
@@ -147,9 +151,49 @@ class MyImageMatchSettings extends StatefulWidget {
 
 class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
   int _count = 2;
-  final List<Uint8List?> _localImages = List.filled(8, null);
+  List<Uint8List?> _localImages = List.filled(8, null);
 
   final Map<int, int?> _matches = {};
+  
+  @override
+  void initState() {
+    super.initState();
+
+    // Initialize with provided data if available
+    if (widget.initialCount != null) {
+      _count = widget.initialCount!;
+    }
+
+    if (widget.initialImages != null) {
+      _localImages = List.from(widget.initialImages!);
+      // Ensure the list has exactly 8 elements
+      while (_localImages.length < 8) {
+        _localImages.add(null);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(MyImageMatchSettings oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update state when widget properties change (e.g., when switching pages)
+    if (widget.initialCount != null && widget.initialCount != _count) {
+      setState(() {
+        _count = widget.initialCount!;
+      });
+    }
+
+    if (widget.initialImages != null) {
+      setState(() {
+        _localImages = List.from(widget.initialImages!);
+        // Ensure the list has exactly 8 elements
+        while (_localImages.length < 8) {
+          _localImages.add(null);
+        }
+      });
+    }
+  }
 
   Future<void> _pickImage(int index) async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
@@ -260,6 +304,21 @@ class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
                   }
                 });
               },
+            ),
+          ),
+
+        if (!isOdd)
+          Container(
+            width: 100,
+            margin: const EdgeInsets.only(top: 6),
+            child: Text(
+              "${index + 1}",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
             ),
           ),
       ],

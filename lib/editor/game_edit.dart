@@ -66,6 +66,12 @@ class PageData {
   String listenAndRepeatAudioSource; // "uploaded" or "recorded"
   String? listenAndRepeatAudioUrl; // Firebase Storage URL for audio
   Uint8List? listenAndRepeatAudioBytes; // Audio file bytes
+  
+  // Math data
+  int mathTotalBoxes; // Total number of boxes
+  List<String> mathBoxValues; // Values in each box
+  List<String> mathOperators; // Operators between boxes
+  String mathAnswer; // The calculated result
 
   PageData({
     this.title = '',
@@ -99,6 +105,10 @@ class PageData {
     this.listenAndRepeatAudioSource = "",
     this.listenAndRepeatAudioUrl,
     this.listenAndRepeatAudioBytes,
+    this.mathTotalBoxes = 1,
+    this.mathBoxValues = const [],
+    this.mathOperators = const [],
+    this.mathAnswer = '0',
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null),
        guessAnswerImageUrls = guessAnswerImageUrls ?? [null, null, null],
@@ -126,12 +136,19 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   );
   final TextEditingController gameCodeController = TextEditingController();
   final TextEditingController hintController = TextEditingController();
+  final TextEditingController timerMinutesController = TextEditingController();
+  final TextEditingController timerSecondsController = TextEditingController();
 
   double progressValue = 0.1;
   String selectedGameType = 'Fill in the blank';
   String selectedDifficulty = 'easy';
   String selectedGameRule = 'none';
   String selectedGameSet = 'public';
+  
+  // Game Rules Configuration
+  bool heartEnabled = false;
+  int timerSeconds = 0;
+  Map<int, int> pageScores = {}; // Map of page index to score
 
   List<bool> visibleLetters = [];
   Uint8List? selectedImageBytes;
@@ -156,6 +173,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   Timer? _autoSaveTimer;
   String _autoSaveStatus = ''; // Auto-save status message
   bool _isLoading = false; // Loading state indicator
+  bool _isSaving = false; // Save button loading state
+  bool _showSaveSuccess = false; // Show save success message
+  bool _showValidationError = false; // Show validation error message
+  String _validationErrorMessage = ''; // Validation error message text
   bool _autoSaveEnabled = true; // Auto-save setting from user preferences
   final SettingsService _settingsService = SettingsService();
 
@@ -410,6 +431,34 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     });
   }
 
+  /// Validate all pages for required data
+  Map<int, String> _validatePages() {
+    Map<int, String> errors = {};
+
+    for (int i = 0; i < pages.length; i++) {
+      final page = pages[i];
+
+      // Validate Image Match
+      if (page.gameType == 'Image Match') {
+        int requiredImageCount = page.imageMatchCount;
+        int filledImageCount = 0;
+
+        for (int j = 0; j < requiredImageCount; j++) {
+          if (page.imageMatchImages[j] != null) {
+            filledImageCount++;
+          }
+        }
+
+        if (filledImageCount > 0 && filledImageCount < requiredImageCount) {
+          errors[i] =
+              'Image Match: ${requiredImageCount - filledImageCount} image(s) missing';
+        }
+      }
+    }
+
+    return errors;
+  }
+
   /// Trigger auto-save when any field changes
   void _triggerAutoSave() {
     _autoSaveTimer?.cancel();
@@ -527,6 +576,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       listenAndRepeatAudioSource: listenAndRepeatAudioSource,
       listenAndRepeatAudioUrl: pages[currentPageIndex].listenAndRepeatAudioUrl,
       listenAndRepeatAudioBytes: listenAndRepeatAudioBytes,
+      mathTotalBoxes: mathState.totalBoxes,
+      mathBoxValues: mathState.boxControllers.map((c) => c.text).toList(),
+      mathOperators: List.from(mathState.operators),
+      mathAnswer: mathState.resultController.text,
     );
   }
 
@@ -564,6 +617,19 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       guessAnswerImages = List.from(pageData.guessAnswerImages);
       imageMatchImages = List.from(pageData.imageMatchImages);
       imageMatchCount = pageData.imageMatchCount;
+      
+      // Debug Image Match loading
+      if (pageData.gameType == 'Image Match') {
+        debugPrint('Loading Image Match page with count: $imageMatchCount');
+        for (int i = 0; i < imageMatchImages.length; i++) {
+          if (imageMatchImages[i] != null) {
+            debugPrint(
+              'Image Match image $i loaded: ${imageMatchImages[i]!.length} bytes',
+            );
+          }
+        }
+      }
+      
       listenAndRepeatAudioPath = pageData.listenAndRepeatAudioPath;
       listenAndRepeatAudioSource = pageData.listenAndRepeatAudioSource;
       listenAndRepeatAudioBytes = pageData.listenAndRepeatAudioBytes;
@@ -595,6 +661,44 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         debugPrint(
           'Loaded What is it called imageBytes: ${whatCalledImageBytes != null ? '${whatCalledImageBytes!.length} bytes' : 'null'}',
         );
+      }
+      
+      // Load Math specific data
+      if (pageData.gameType == 'Math') {
+        debugPrint(
+          'Loading Math page with totalBoxes: ${pageData.mathTotalBoxes}',
+        );
+
+        // Set totalBoxes and rebuild controllers
+        while (mathState.totalBoxes < pageData.mathTotalBoxes) {
+          mathState.increment();
+        }
+        while (mathState.totalBoxes > pageData.mathTotalBoxes) {
+          mathState.decrement();
+        }
+
+        // Set box values
+        for (
+          int i = 0;
+          i < pageData.mathBoxValues.length &&
+              i < mathState.boxControllers.length;
+          i++
+        ) {
+          mathState.boxControllers[i].text = pageData.mathBoxValues[i];
+        }
+
+        // Set operators
+        for (
+          int i = 0;
+          i < pageData.mathOperators.length && i < mathState.operators.length;
+          i++
+        ) {
+          while (mathState.operators[i] != pageData.mathOperators[i]) {
+            mathState.cycleOperator(i);
+          }
+        }
+
+        debugPrint('Math page loaded successfully');
       }
 
       progressValue = (pageIndex + 1) / pages.length;
@@ -630,6 +734,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   }
 
   void _showPageSelector() {
+    // Get validation errors for all pages
+    final validationErrors = _validatePages();
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -655,82 +762,235 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 const SizedBox(height: 20),
                 Container(
                   constraints: const BoxConstraints(maxHeight: 300),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: pages.length,
-                    itemBuilder: (context, index) {
-                      final isCurrentPage = index == currentPageIndex;
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: Material(
-                          color: isCurrentPage
-                              ? Colors.green.withOpacity(0.3)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            onTap: () {
-                              if (!isCurrentPage) {
-                                _saveCurrentPageData();
-                                currentPageIndex = index;
-                                _loadPageData(currentPageIndex);
-                              }
-                              Navigator.of(context).pop();
-                            },
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    thickness: 6,
+                    radius: const Radius.circular(10),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: pages.length,
+                      itemBuilder: (context, index) {
+                        final isCurrentPage = index == currentPageIndex;
+                        final hasError = validationErrors.containsKey(index);
+                        
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 4,
+                          ),
+                          child: Material(
+                            color: isCurrentPage
+                                ? Colors.green.withOpacity(0.3)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isCurrentPage
-                                      ? Colors.green
-                                      : Colors.white.withOpacity(0.3),
-                                  width: isCurrentPage ? 2 : 1,
+                            child: InkWell(
+                              onTap: () {
+                                if (!isCurrentPage) {
+                                  _saveCurrentPageData();
+                                  currentPageIndex = index;
+                                  _loadPageData(currentPageIndex);
+                                }
+                                Navigator.of(context).pop();
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
                                 ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Page ${index + 1}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                      fontWeight: isCurrentPage
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: isCurrentPage
+                                        ? Colors.green
+                                        : Colors.white.withOpacity(0.3),
+                                    width: isCurrentPage ? 2 : 1,
                                   ),
-                                  if (pages[index].title.isNotEmpty)
-                                    Flexible(
-                                      child: Text(
-                                        pages[index].title,
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 14,
-                                          color: Colors.white70,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Page ${index + 1}',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            color: Colors.white,
+                                            fontWeight: isCurrentPage
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                          ),
                                         ),
-                                        overflow: TextOverflow.ellipsis,
+                                        if (hasError) ...[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.error,
+                                              color: Colors.white,
+                                              size: 16,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    if (selectedGameRule != 'score' &&
+                                        pages[index].title.isNotEmpty)
+                                      Flexible(
+                                        child: Text(
+                                          pages[index].title,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.white70,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                  if (isCurrentPage)
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                      size: 20,
-                                    ),
-                                ],
+                                    
+                                    if (isCurrentPage)
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: Colors.green,
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
+                // Score configuration section (outside of page items)
+                if (selectedGameRule == 'score') ...[
+                  const SizedBox(height: 20),
+                  const Divider(color: Colors.white24, thickness: 1),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Configure Scores',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: Scrollbar(
+                      thumbVisibility: true,
+                      thickness: 6,
+                      radius: const Radius.circular(10),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: pages.length,
+                        itemBuilder: (context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                              horizontal: 4,
+                            ),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 80,
+                                  child: Text(
+                                    'Page ${index + 1}:',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF3A3C3A),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.2),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 10,
+                                          ),
+                                          child: Icon(
+                                            Icons.star,
+                                            color: Colors.amber,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: TextEditingController(
+                                              text:
+                                                  pageScores[index]
+                                                      ?.toString() ??
+                                                  '',
+                                            ),
+                                            keyboardType: TextInputType.number,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                              LengthLimitingTextInputFormatter(
+                                                4,
+                                              ),
+                                            ],
+                                            textAlign: TextAlign.center,
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: "Enter score",
+                                              hintStyle: GoogleFonts.poppins(
+                                                color: Colors.white54,
+                                                fontSize: 14,
+                                              ),
+                                              border: InputBorder.none,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                            ),
+                                            onChanged: (value) {
+                                              setState(() {
+                                                if (value.isEmpty) {
+                                                  pageScores.remove(index);
+                                                } else {
+                                                  pageScores[index] =
+                                                      int.tryParse(value) ?? 0;
+                                                }
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 AnimatedButton(
                   width: 100,
@@ -1094,6 +1354,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         'gameCode': selectedGameSet == 'private'
             ? gameCodeController.text.trim()
             : '',
+        'heart': heartEnabled,
+        'timer': timerSeconds,
         'updated_at': FieldValue.serverTimestamp(),
       };
 
@@ -1148,10 +1410,25 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           selectedGameRule = (data['gameRule'] as String?) ?? 'none';
           selectedGameSet = (data['gameSet'] as String?) ?? 'public';
           gameCodeController.text = (data['gameCode'] as String?) ?? '';
+          
+          // Load game rules configuration
+          heartEnabled = (data['heart'] as bool?) ?? false;
+          timerSeconds = (data['timer'] as int?) ?? 0;
+
+          // Update timer controllers
+          int minutes = timerSeconds ~/ 60;
+          int seconds = timerSeconds % 60;
+          timerMinutesController.text = minutes > 0 ? minutes.toString() : '';
+          timerSecondsController.text = seconds > 0 ? seconds.toString() : '';
         });
         
         // Load game rounds data
         await _loadGameRounds();
+        
+        // Load page scores if score rule is selected
+        if (selectedGameRule == 'score') {
+          await _loadPageScores();
+        }
         
         // Game loaded successfully
         debugPrint('Game loaded successfully ✓');
@@ -1268,9 +1545,23 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           // Load the audio URL for Listen and Repeat
           debugPrint('Listen and Repeat audioUrl: ${gameTypeData['audio']}');
         } else if (gameType == 'Image Match') {
-          // Image Match specific fields
+          // Image Match specific fields - images will be loaded below
+          debugPrint('Image Match imageCount: ${gameTypeData['imageCount']}');
+          debugPrint('Image Match URLs loaded:');
+          for (int i = 1; i <= 8; i++) {
+            if (gameTypeData['image$i'] != null) {
+              debugPrint('  - image$i: ${gameTypeData['image$i']}');
+            }
+          }
         } else if (gameType == 'Math') {
-          // Math specific fields
+          // Math specific fields - will be loaded into MathState when page is displayed
+          debugPrint('Math totalBoxes: ${gameTypeData['totalBoxes']}');
+          debugPrint('Math answer: ${gameTypeData['answer']}');
+          for (int i = 1; i <= 10; i++) {
+            if (gameTypeData['box$i'] != null) {
+              debugPrint('  - box$i: ${gameTypeData['box$i']}');
+            }
+          }
         }
 
         // Debug print the loaded data for this game type
@@ -1342,6 +1633,30 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                     gameTypeData['image3'] as String?,
                   ]
                 : [null, null, null],
+            imageMatchImages: gameType == 'Image Match'
+                ? [
+                    gameTypeData['imageMatch1Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch2Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch3Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch4Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch5Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch6Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch7Bytes'] as Uint8List?,
+                    gameTypeData['imageMatch8Bytes'] as Uint8List?,
+                  ]
+                : List.filled(8, null),
+            imageMatchImageUrls: gameType == 'Image Match'
+                ? [
+                    gameTypeData['image1'] as String?,
+                    gameTypeData['image2'] as String?,
+                    gameTypeData['image3'] as String?,
+                    gameTypeData['image4'] as String?,
+                    gameTypeData['image5'] as String?,
+                    gameTypeData['image6'] as String?,
+                    gameTypeData['image7'] as String?,
+                    gameTypeData['image8'] as String?,
+                  ]
+                : List.filled(8, null),
             correctAnswerIndex: correctAnswerIndex,
             listenAndRepeatAudioUrl: gameType == 'Listen and Repeat'
                 ? (gameTypeData['audio'] as String?)
@@ -1349,6 +1664,34 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             listenAndRepeatAudioBytes: gameType == 'Listen and Repeat'
                 ? (gameTypeData['audioBytes'] as Uint8List?)
                 : null,
+            mathTotalBoxes: gameType == 'Math'
+                ? (gameTypeData['totalBoxes'] as int?) ?? 1
+                : 1,
+            mathBoxValues: gameType == 'Math'
+                ? () {
+                    List<String> values = [];
+                    int totalBoxes = (gameTypeData['totalBoxes'] as int?) ?? 1;
+                    for (int i = 1; i <= totalBoxes; i++) {
+                      values.add((gameTypeData['box$i'] ?? 0).toString());
+                    }
+                    return values;
+                  }()
+                : [],
+            mathOperators: gameType == 'Math'
+                ? () {
+                    List<String> operators = [];
+                    int totalBoxes = (gameTypeData['totalBoxes'] as int?) ?? 1;
+                    for (int i = 1; i < totalBoxes; i++) {
+                      operators.add(
+                        gameTypeData['operator${i}_${i + 1}'] ?? '+',
+                      );
+                    }
+                    return operators;
+                  }()
+                : [],
+            mathAnswer: gameType == 'Math'
+                ? (gameTypeData['answer'] ?? 0).toString()
+                : '0',
           ),
         );
       }
@@ -1356,9 +1699,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       debugPrint('Successfully loaded ${loadedPages.length} pages');
       setState(() {
         pages = loadedPages;
-        currentPageIndex = 0;
+        // Start at the last page instead of the first
+        currentPageIndex = pages.length - 1;
         if (pages.isNotEmpty) {
-          _loadPageData(0);
+          _loadPageData(currentPageIndex);
         }
       });
     } catch (e) {
@@ -1454,6 +1798,29 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               }
             } catch (e) {
               debugPrint('Failed to download image $i: $e');
+            }
+          }
+        }
+      } else if (gameType == 'Image Match') {
+        // Handle multiple images for Image Match (up to 8 images)
+        for (int i = 1; i <= 8; i++) {
+          String? imageUrl = data['image$i'];
+          if (imageUrl != null &&
+              imageUrl.isNotEmpty &&
+              !imageUrl.endsWith('game image')) {
+            try {
+              debugPrint('Downloading Image Match image $i from: $imageUrl');
+              final imageBytes = await _downloadImageFromUrl(imageUrl);
+              if (imageBytes != null) {
+                data['imageMatch${i}Bytes'] = imageBytes;
+                debugPrint(
+                  'Image Match image $i downloaded successfully, size: ${imageBytes.length} bytes',
+                );
+              } else {
+                debugPrint('Image Match image $i download returned null');
+              }
+            } catch (e) {
+              debugPrint('Failed to download Image Match image $i: $e');
             }
           }
         }
@@ -2000,6 +2367,37 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       return;
     }
 
+    // Validate all pages before saving
+    _saveCurrentPageData();
+    final validationErrors = _validatePages();
+    if (validationErrors.isNotEmpty) {
+      setState(() {
+        _showValidationError = true;
+        _validationErrorMessage =
+            'You cannot save your game due to missing requirements. Please try again after you fix the problem.';
+      });
+
+      // Hide error message after 3 seconds
+      Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _showValidationError = false;
+          });
+        }
+      });
+
+      debugPrint('Validation errors found:');
+      validationErrors.forEach((pageIndex, error) {
+        debugPrint('  Page ${pageIndex + 1}: $error');
+      });
+
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
     try {
       final Map<String, dynamic> gameData = {
         'title': titleController.text.trim(),
@@ -2011,6 +2409,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         'gameCode': selectedGameSet == 'private'
             ? gameCodeController.text.trim()
             : '',
+        'heart': heartEnabled,
+        'timer': timerSeconds,
       };
 
       if (gameId == null) {
@@ -2045,9 +2445,37 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
       // Save all pages to game_rounds subcollection
       await _saveGameRounds();
+      
+      // Save page scores if score rule is selected
+      if (selectedGameRule == 'score') {
+        await _savePageScores();
+      }
+
+      // Show success message
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _showSaveSuccess = true;
+        });
+
+        // Hide success message after 2 seconds
+        Timer(const Duration(seconds: 2), () {
+          if (mounted) {
+            setState(() {
+              _showSaveSuccess = false;
+            });
+          }
+        });
+      }
     } catch (e) {
       debugPrint('Failed to save game: $e');
       debugPrint('Failed to save: ${e.toString()}');
+      
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
@@ -2105,6 +2533,72 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('Failed to save game rounds: $e');
+    }
+  }
+
+  /// Save page scores to game_score subcollection
+  Future<void> _savePageScores() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameScoreRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_score');
+
+      // Delete all existing scores first
+      final existingScores = await gameScoreRef.get();
+      for (var doc in existingScores.docs) {
+        await doc.reference.delete();
+      }
+
+      // Save new scores
+      for (var entry in pageScores.entries) {
+        await gameScoreRef.add({
+          'page': entry.key + 1, // Store as 1-based page number
+          'score': entry.value,
+        });
+      }
+
+      debugPrint('Page scores saved successfully');
+    } catch (e) {
+      debugPrint('Failed to save page scores: $e');
+    }
+  }
+
+  /// Load page scores from game_score subcollection
+  Future<void> _loadPageScores() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) return;
+
+    try {
+      final gameScoreRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .collection('game_score');
+
+      final scoresSnapshot = await gameScoreRef.get();
+
+      setState(() {
+        pageScores.clear();
+        for (var doc in scoresSnapshot.docs) {
+          final data = doc.data();
+          final page = (data['page'] as int?) ?? 0;
+          final score = (data['score'] as int?) ?? 0;
+          if (page > 0) {
+            pageScores[page - 1] = score; // Convert to 0-based index
+          }
+        }
+      });
+
+      debugPrint('Page scores loaded successfully: $pageScores');
+    } catch (e) {
+      debugPrint('Failed to load page scores: $e');
     }
   }
 
@@ -2337,28 +2831,42 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           'gameType': 'listen_and_repeat',
         });
       } else if (pageData.gameType == 'Image Match') {
-        // Upload images for odd positions (1, 3, 5, 7) and store match data
+        // Upload images for all positions (1, 2, 3, 4, 5, 6, 7, 8) and store match data
         Map<String, dynamic> imageMatchData = {
           'imageCount': pageData.imageMatchCount,
           'image_configuration':
               pageData.imageMatchCount, // Configuration number
         };
 
-        // Upload images for all positions (1, 2, 3, 4, 5, 6, 7, 8) if they exist
+        // Upload images for all positions if new bytes exist, otherwise preserve existing URLs
         for (int i = 0; i < pageData.imageMatchImages.length; i++) {
           if (pageData.imageMatchImages[i] != null) {
+            // Upload new image
             try {
               final imageUrl = await _uploadImageToStorage(
                 pageData.imageMatchImages[i]!,
                 'image_match_${i + 1}',
               );
               imageMatchData['image${i + 1}'] = imageUrl;
+              // Update the URL in pageData for future saves
+              pageData.imageMatchImageUrls[i] = imageUrl;
+              debugPrint('Image Match image ${i + 1} uploaded: $imageUrl');
             } catch (e) {
               debugPrint('Failed to upload image ${i + 1} for Image Match: $e');
-              imageMatchData['image${i + 1}'] =
+              // Use existing URL if available, otherwise use placeholder
+              imageMatchData['image${i + 1}'] = 
+                  pageData.imageMatchImageUrls[i] ?? 
                   'gs://lexiboost-36801.firebasestorage.app/game image';
             }
+          } else if (pageData.imageMatchImageUrls[i] != null &&
+              pageData.imageMatchImageUrls[i]!.isNotEmpty) {
+            // Preserve existing URL
+            imageMatchData['image${i + 1}'] = pageData.imageMatchImageUrls[i];
+            debugPrint(
+              'Image Match image ${i + 1} preserved: ${pageData.imageMatchImageUrls[i]}',
+            );
           } else {
+            // No image data
             imageMatchData['image${i + 1}'] =
                 'gs://lexiboost-36801.firebasestorage.app/game image';
           }
@@ -2441,6 +2949,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     gameCodeController.dispose();
     hintController.removeListener(_triggerAutoSave);
     hintController.dispose();
+    timerMinutesController.dispose();
+    timerSecondsController.dispose();
     
     // Clear image cache to free memory
     clearImageCache();
@@ -2474,11 +2984,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E201E),
-      body: Padding(
-        padding: const EdgeInsets.all(30.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(30.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // -------- Column 1 --------
             Expanded(
               child: Column(
@@ -2707,49 +3219,182 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    width: 300,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: DropdownButton<String>(
-                      value: selectedGameRule,
-                      dropdownColor: Colors.white,
-                      underline: const SizedBox(),
-                      icon: const Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.black,
+                      Row(
+                        children: [
+                          Container(
+                            width: 300,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: DropdownButton<String>(
+                              value: selectedGameRule,
+                              dropdownColor: Colors.white,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.black,
+                              ),
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              isExpanded: true,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'none',
+                                  child: Text('None'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'heart',
+                                  child: Text('Heart Deduction'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'timer',
+                                  child: Text('Timer Countdown'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'score',
+                                  child: Text('Score'),
+                                ),
+                              ],
+                              onChanged: (String? newValue) {
+                                if (newValue != null) {
+                                  setState(() {
+                                    selectedGameRule = newValue;
+                                    // Update heart and timer states based on selection
+                                    heartEnabled = newValue == 'heart';
+                                    if (newValue != 'timer') {
+                                      timerMinutesController.clear();
+                                      timerSecondsController.clear();
+                                      timerSeconds = 0;
+                                    }
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+
+                          // Timer configuration (minutes and seconds)
+                          if (selectedGameRule == 'timer') ...[
+                            const SizedBox(width: 15),
+                            // Minutes field
+                            Container(
+                              width: 80,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: TextField(
+                                controller: timerMinutesController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(2),
+                                ],
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.black,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: "Min",
+                                  hintStyle: GoogleFonts.poppins(
+                                    color: Colors.black54,
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    int minutes = int.tryParse(value) ?? 0;
+                                    int seconds =
+                                        int.tryParse(
+                                          timerSecondsController.text,
+                                        ) ??
+                                        0;
+                                    timerSeconds = (minutes * 60) + seconds;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              ":",
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            // Seconds field
+                            Container(
+                              width: 80,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: TextField(
+                                controller: timerSecondsController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(2),
+                                ],
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.black,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: "Sec",
+                                  hintStyle: GoogleFonts.poppins(
+                                    color: Colors.black54,
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    int minutes =
+                                        int.tryParse(
+                                          timerMinutesController.text,
+                                        ) ??
+                                        0;
+                                    int seconds = int.tryParse(value) ?? 0;
+                                    // Limit seconds to 59
+                                    if (seconds > 59) {
+                                      seconds = 59;
+                                      timerSecondsController.text = '59';
+                                      timerSecondsController.selection =
+                                          TextSelection.fromPosition(
+                                            TextPosition(
+                                              offset: timerSecondsController
+                                                  .text
+                                                  .length,
+                                            ),
+                                          );
+                                    }
+                                    timerSeconds = (minutes * 60) + seconds;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        color: Colors.black,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      isExpanded: true,
-                      items: const [
-                        DropdownMenuItem(value: 'none', child: Text('None')),
-                        DropdownMenuItem(
-                          value: 'heart',
-                          child: Text('Heart Deduction'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'timer',
-                          child: Text('Timer Countdown'),
-                        ),
-                        DropdownMenuItem(value: 'score', child: Text('Score')),
-                      ],
-                      onChanged: (String? newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            selectedGameRule = newValue;
-                          });
-                        }
-                      },
-                    ),
-                  ),
 
                   const SizedBox(height: 20),
 
@@ -2962,18 +3607,32 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                           width: 100,
                           height: 50,
                           color: Colors.green,
-                          onPressed: () async {
-                            _saveCurrentPageData();
-                            await _saveToFirestore();
-                          },
-                          child: Text(
-                            "Save",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                              onPressed: _isSaving
+                                  ? () {}
+                                  : () async {
+                                      _saveCurrentPageData();
+                                      await _saveToFirestore();
+                                    },
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                      ),
+                                    )
+                                  : Text(
+                                      "Save",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
                         ),
                       ],
                     ),
@@ -3010,6 +3669,72 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                             ),
                           ),
                         ),
+
+                            // Hearts display (when heart rule is selected)
+                            if (heartEnabled)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(
+                                    5,
+                                    (index) => Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      child: Icon(
+                                        Icons.favorite,
+                                        color: Colors.red,
+                                        size: 30,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            // Timer display (when timer rule is selected)
+                            if (selectedGameRule == 'timer' && timerSeconds > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  right: 16,
+                                  top: 8,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.timer,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${(timerSeconds ~/ 60).toString().padLeft(2, '0')}:${(timerSeconds % 60).toString().padLeft(2, '0')}',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
 
                         Expanded(
                           child: Padding(
@@ -3113,18 +3838,32 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                     width: 350,
                                     height: 60,
                                     color: Colors.green,
-                                    onPressed: () async {
-                                      _saveCurrentPageData();
-                                      await _saveToFirestore();
-                                    },
-                                    child: Text(
-                                      "Confirm",
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black,
-                                      ),
-                                    ),
+                                        onPressed: _isSaving
+                                            ? () {}
+                                            : () async {
+                                                _saveCurrentPageData();
+                                                await _saveToFirestore();
+                                              },
+                                        child: _isSaving
+                                            ? const SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 3,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(Colors.black),
+                                                ),
+                                              )
+                                            : Text(
+                                                "Confirm",
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black,
+                                                ),
+                                              ),
                                   ),
                                 ),
                               ],
@@ -3234,6 +3973,39 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                       padding: const EdgeInsets.only(top: 10, bottom: 10),
                       child: Divider(color: Colors.white),
                     ),
+
+                        // Validation Warning Banner
+                        if (_validatePages().containsKey(currentPageIndex))
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 15),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.red, width: 2),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Colors.red,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _validatePages()[currentPageIndex] ??
+                                        'Error',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
                     if (selectedGameType == 'Fill in the blank')
                       MyFillTheBlankSettings(
@@ -3345,12 +4117,24 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                           setState(() {
                             imageMatchImages[index] = imageBytes;
                           });
+                              debugPrint(
+                                'Image Match image $index picked, size: ${imageBytes.length} bytes',
+                              );
+                              // Trigger auto-save when image is picked
+                              _triggerAutoSave();
                         },
                         onCountChanged: (int newCount) {
                           setState(() {
                             imageMatchCount = newCount;
                           });
+                              debugPrint(
+                                'Image Match count changed to: $newCount',
+                              );
+                              // Trigger auto-save when count changes
+                              _triggerAutoSave();
                         },
+                            initialImages: imageMatchImages,
+                            initialCount: imageMatchCount,
                       )
                     else if (selectedGameType == 'Math')
                       MyMathSettings(mathState: mathState),
@@ -3380,20 +4164,49 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                           ),
                         ),
 
-                        AnimatedButton(
-                          width: 150,
-                          height: 50,
-                          color: Colors.orange,
-                          onPressed: _showPageSelector,
-                          child: Text(
-                            "Page ${currentPageIndex + 1} of ${pages.length}",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                AnimatedButton(
+                                  width: 150,
+                                  height: 50,
+                                  color: Colors.orange,
+                                  onPressed: _showPageSelector,
+                                  child: Text(
+                                    "Page ${currentPageIndex + 1} of ${pages.length}",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                // Red error badge
+                                if (_validatePages().containsKey(
+                                  currentPageIndex,
+                                ))
+                                  Positioned(
+                                    top: -5,
+                                    right: -5,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFF1E201E),
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.error,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ),
 
                         AnimatedButton(
                           width: 50,
@@ -3456,8 +4269,168 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 ),
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          ),
+
+          // Success Message Overlay with Fade Animation
+          if (_showSaveSuccess)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 1500),
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                // Fade in for first 500ms, stay visible for 500ms, fade out for 500ms
+                double opacity;
+                if (value < 0.33) {
+                  // Fade in
+                  opacity = value * 3;
+                } else if (value < 0.67) {
+                  // Stay visible
+                  opacity = 1.0;
+                } else {
+                  // Fade out
+                  opacity = 1.0 - ((value - 0.67) * 3);
+                }
+
+                return Opacity(
+                  opacity: opacity,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.5),
+                    child: Center(
+                      child: Transform.scale(
+                        scale: value < 0.33 ? 0.8 + (value * 0.6) : 1.0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 30,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.green.withOpacity(0.5),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle_outline,
+                                color: Colors.white,
+                                size: 80,
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                "Game Saved",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                "Your game has been saved successfully!",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.white.withOpacity(0.9),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          // Validation Error Message Overlay with Fade Animation
+          if (_showValidationError)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 2000),
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                // Fade in for first 500ms, stay visible for 1000ms, fade out for 500ms
+                double opacity;
+                if (value < 0.25) {
+                  // Fade in
+                  opacity = value * 4;
+                } else if (value < 0.75) {
+                  // Stay visible
+                  opacity = 1.0;
+                } else {
+                  // Fade out
+                  opacity = 1.0 - ((value - 0.75) * 4);
+                }
+
+                return Opacity(
+                  opacity: opacity,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.5),
+                    child: Center(
+                      child: Transform.scale(
+                        scale: value < 0.25 ? 0.8 + (value * 0.8) : 1.0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 30,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.5),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.white,
+                                size: 80,
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                "Cannot Save",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: 400,
+                                child: Text(
+                                  _validationErrorMessage,
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
