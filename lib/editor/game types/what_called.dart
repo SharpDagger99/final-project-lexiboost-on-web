@@ -264,12 +264,12 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
         SettableMetadata(contentType: 'image/png'),
       );
 
-      // Return the Firebase Storage path instead of download URL
-      final storagePath = 'gs://lexiboost-36801.firebasestorage.app/$path';
-      print('Image uploaded successfully: $storagePath');
-      return storagePath;
+      // Return the download URL instead of storage path
+      final downloadUrl = await ref.getDownloadURL();
+      print('What is it called image uploaded successfully: $downloadUrl');
+      return downloadUrl;
     } catch (e) {
-      print('Error uploading image: $e');
+      print('Error uploading What is it called image: $e');
       rethrow;
     }
   }
@@ -334,7 +334,14 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
     if (widget.pickedImage != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(25),
-        child: Image.memory(widget.pickedImage!, fit: BoxFit.contain),
+        child: Image.memory(
+          widget.pickedImage!,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            print('Error displaying picked image: $error');
+            return _buildErrorWidget('Failed to display picked image');
+          },
+        ),
       );
     } else if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
       // Use FutureBuilder to load image with Firebase Storage SDK (bypasses CORS)
@@ -342,14 +349,23 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
         future: _loadImageFromFirebaseStorage(widget.imageUrl!),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 8),
+                  Text('Loading image...'),
+                ],
+              ),
+            );
           }
 
           if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
-            print('========== IMAGE LOAD ERROR ==========');
+            print('========== WHAT IS IT CALLED IMAGE LOAD ERROR ==========');
             print('Image load error for URL: ${widget.imageUrl}');
             print('Error: ${snapshot.error}');
-            print('======================================');
+            print('=======================================================');
 
             // Fallback to CachedNetworkImage if Firebase Storage fails
             return ClipRRect(
@@ -357,36 +373,19 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
               child: CachedNetworkImage(
                 imageUrl: widget.imageUrl!,
                 fit: BoxFit.contain,
-                placeholder: (context, url) =>
-                    const Center(child: CircularProgressIndicator()),
+                placeholder: (context, url) => const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 8),
+                      Text('Loading image...'),
+                    ],
+                  ),
+                ),
                 errorWidget: (context, url, error) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.error, color: Colors.red, size: 40),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Failed to load image',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'CORS issue - Configure Firebase Storage',
-                            style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  return _buildErrorWidget(
+                    'Failed to load image from Firebase Storage',
                   );
                 },
               ),
@@ -396,34 +395,112 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
           // Successfully loaded image bytes
           return ClipRRect(
             borderRadius: BorderRadius.circular(25),
-            child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+            child: Image.memory(
+              snapshot.data!,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                print('Error displaying loaded image: $error');
+                return _buildErrorWidget('Failed to display loaded image');
+              },
+            ),
           );
         },
       );
     } else {
       return Center(
-        child: Text(
-          "Image Hint",
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.blue,
-            fontWeight: FontWeight.w500,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(25),
+            border: Border.all(color: Colors.grey.shade300, width: 2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.image_outlined, size: 40, color: Colors.grey.shade600),
+              const SizedBox(height: 8),
+              Text(
+                "Image Hint",
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "Upload an image to start",
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            ],
           ),
         ),
       );
     }
   }
 
+  // Helper widget for error display
+  Widget _buildErrorWidget(String message) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: Colors.red.shade300, width: 2),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, color: Colors.red, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Check Firebase Storage configuration',
+              style: GoogleFonts.poppins(fontSize: 10, color: Colors.orange),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Load image from Firebase Storage using the SDK (bypasses CORS)
   Future<Uint8List?> _loadImageFromFirebaseStorage(String imageUrl) async {
     try {
+      print('========== WHAT IS IT CALLED IMAGE LOADING ==========');
+      print('Image URL received: $imageUrl');
+      print(
+        'URL type: ${imageUrl.startsWith('gs://')
+            ? 'Firebase Storage Path'
+            : imageUrl.contains('firebasestorage.googleapis.com')
+            ? 'Firebase Download URL'
+            : 'HTTP URL'}',
+      );
+      
       // Check if it's a Firebase Storage path (gs://)
       if (imageUrl.startsWith('gs://')) {
         // Extract the path from the gs:// URL
         final uri = Uri.parse(imageUrl);
         final path = uri.path;
 
-        print('Loading image from Firebase Storage path: $path');
+        print(
+          'Loading What is it called image from Firebase Storage path: $path',
+        );
 
         // Use Firebase Storage SDK to get the image
         final storage = FirebaseStorage.instanceFor(
@@ -432,12 +509,21 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
         final ref = storage.ref().child(path);
         final imageBytes = await ref.getData();
 
-        print('Image loaded successfully: ${imageBytes?.length ?? 0} bytes');
-        return imageBytes;
+        if (imageBytes != null) {
+          print(
+            'What is it called image loaded successfully: ${imageBytes.length} bytes',
+          );
+          return imageBytes;
+        } else {
+          print('What is it called image download returned null');
+          return null;
+        }
       }
-      // Check if it's a Firebase Storage URL (legacy support)
+      // Check if it's a Firebase Storage download URL
       else if (imageUrl.contains('firebasestorage.googleapis.com')) {
-        // Extract the path from the URL
+        print('Loading What is it called image from Firebase download URL');
+
+        // Try to extract path from download URL for SDK access
         final uri = Uri.parse(imageUrl);
         final pathSegments = uri.pathSegments;
 
@@ -447,7 +533,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
           // Decode the path (it's URL encoded)
           String filePath = Uri.decodeComponent(pathSegments[oIndex + 1]);
 
-          print('Loading image from Firebase Storage path: $filePath');
+          print('Extracted Firebase Storage path: $filePath');
 
           // Use Firebase Storage SDK to get the image
           final storage = FirebaseStorage.instanceFor(
@@ -456,22 +542,53 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
           final ref = storage.ref().child(filePath);
           final imageBytes = await ref.getData();
 
-          print('Image loaded successfully: ${imageBytes?.length ?? 0} bytes');
-          return imageBytes;
+          if (imageBytes != null) {
+            print(
+              'What is it called image loaded successfully via SDK: ${imageBytes.length} bytes',
+            );
+            return imageBytes;
+          } else {
+            print(
+              'What is it called image download via SDK returned null, trying HTTP fallback',
+            );
+          }
+        }
+        
+        // Fallback to HTTP request for download URL
+        print('Using HTTP fallback for Firebase download URL: $imageUrl');
+        final response = await http.get(Uri.parse(imageUrl));
+        if (response.statusCode == 200) {
+          print(
+            'What is it called image loaded via HTTP: ${response.bodyBytes.length} bytes',
+          );
+          return response.bodyBytes;
+        } else {
+          print(
+            'Failed to download What is it called image via HTTP: ${response.statusCode}',
+          );
+          return null;
         }
       }
 
-      // Fallback to HTTP request if not a Firebase Storage URL
-      print('Using HTTP fallback for URL: $imageUrl');
+      // Fallback to HTTP request for any other URL
+      print('Using HTTP fallback for What is it called image URL: $imageUrl');
       final response = await http.get(Uri.parse(imageUrl));
       if (response.statusCode == 200) {
+        print(
+          'What is it called image loaded via HTTP: ${response.bodyBytes.length} bytes',
+        );
         return response.bodyBytes;
+      } else {
+        print(
+          'Failed to download What is it called image via HTTP: ${response.statusCode}',
+        );
+        return null;
       }
     } catch (e) {
-      print('Error loading image from Firebase Storage: $e');
+      print('Error loading What is it called image from Firebase Storage: $e');
+      print('=======================================================');
+      return null;
     }
-
-    return null;
   }
 
   @override

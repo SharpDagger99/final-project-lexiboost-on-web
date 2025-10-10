@@ -124,4 +124,11 @@ class SettingsService {
     await _saveSettingsToFirestore();
     debugPrint('Multiple settings updated: $settings');
   }
+
+  /// Force refresh settings from Firestore (useful for testing)
+  Future<void> forceRefresh() async {
+    _settingsLoaded = false;
+    await _loadSettingsFromFirestore();
+    debugPrint('Settings force refreshed: autoSave=$_autoSaveEnabled');
+  }
 }

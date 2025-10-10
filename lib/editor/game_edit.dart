@@ -27,6 +27,7 @@ import 'package:lexi_on_web/editor/game%20types/what_called.dart';
 import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
+import 'package:lexi_on_web/services/settings_service.dart';
 
 // Page data class to store page content
 class PageData {
@@ -111,7 +112,7 @@ class MyGameEdit extends StatefulWidget {
   State<MyGameEdit> createState() => _MyGameEditState();
 }
 
-class _MyGameEditState extends State<MyGameEdit> {
+class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   final TextEditingController titleController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController descriptionFieldController =
@@ -155,8 +156,13 @@ class _MyGameEditState extends State<MyGameEdit> {
   Timer? _autoSaveTimer;
   String _autoSaveStatus = ''; // Auto-save status message
   bool _isLoading = false; // Loading state indicator
+  bool _autoSaveEnabled = true; // Auto-save setting from user preferences
+  final SettingsService _settingsService = SettingsService();
 
   final mathState = MathState();
+
+  // Image cache to reduce Firebase reads
+  static final Map<String, Uint8List> _imageCache = {};
 
   // Browser event listeners
   StreamSubscription<html.Event>? _beforeUnloadSubscription;
@@ -178,9 +184,43 @@ class _MyGameEditState extends State<MyGameEdit> {
     // Set up browser event listeners
     _setupBrowserEventListeners();
 
+    // Add observer for app lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAutoSaveSettings();
       _initializeGameEditor();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Refresh auto-save settings when app becomes active
+      _refreshAutoSaveSettings();
+    }
+  }
+
+  /// Load auto-save settings from user preferences
+  Future<void> _loadAutoSaveSettings() async {
+    try {
+      _autoSaveEnabled = await _settingsService.getAutoSaveEnabled();
+      debugPrint('Auto-save setting loaded: $_autoSaveEnabled');
+
+      if (mounted) {
+        setState(() {
+          // Update UI to reflect the current auto-save status
+          if (!_autoSaveEnabled) {
+            _autoSaveStatus = 'Auto-save disabled in settings';
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load auto-save settings: $e');
+      // Default to enabled if loading fails
+      _autoSaveEnabled = true;
+    }
   }
 
   void _setupBrowserEventListeners() {
@@ -377,8 +417,18 @@ class _MyGameEditState extends State<MyGameEdit> {
     // Show "Unsaved changes" status
     if (mounted) {
       setState(() {
-        _autoSaveStatus = 'Unsaved changes...';
+        if (!_autoSaveEnabled) {
+          _autoSaveStatus = 'Auto-save disabled - unsaved changes';
+        } else {
+          _autoSaveStatus = 'Unsaved changes...';
+        }
       });
+    }
+
+    // Only proceed with auto-save if it's enabled
+    if (!_autoSaveEnabled) {
+      debugPrint('Auto-save is disabled in settings - skipping auto-save');
+      return;
     }
 
     _autoSaveTimer = Timer(const Duration(seconds: 3), () async {
@@ -524,6 +574,17 @@ class _MyGameEditState extends State<MyGameEdit> {
         correctAnswerIndex = pageData.correctAnswerIndex >= 0
             ? pageData.correctAnswerIndex
             : 0;
+      }
+
+      // Load What is it called specific data
+      if (pageData.gameType == 'What is it called') {
+        whatCalledImageBytes = pageData.selectedImageBytes;
+        debugPrint(
+          'Loaded What is it called imageUrl: ${pageData.whatCalledImageUrl}',
+        );
+        debugPrint(
+          'Loaded What is it called imageBytes: ${whatCalledImageBytes != null ? '${whatCalledImageBytes!.length} bytes' : 'null'}',
+        );
       }
 
       progressValue = (pageIndex + 1) / pages.length;
@@ -772,6 +833,29 @@ class _MyGameEditState extends State<MyGameEdit> {
       }
     } catch (e) {
       debugPrint('Failed to delete page from Firestore: $e');
+    }
+  }
+
+  /// Refresh auto-save settings (call this when returning to the editor)
+  Future<void> _refreshAutoSaveSettings() async {
+    try {
+      final newAutoSaveEnabled = await _settingsService.getAutoSaveEnabled();
+      if (newAutoSaveEnabled != _autoSaveEnabled) {
+        _autoSaveEnabled = newAutoSaveEnabled;
+        debugPrint('Auto-save setting refreshed: $_autoSaveEnabled');
+
+        if (mounted) {
+          setState(() {
+            if (!_autoSaveEnabled) {
+              _autoSaveStatus = 'Auto-save disabled in settings';
+            } else {
+              _autoSaveStatus = '';
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to refresh auto-save settings: $e');
     }
   }
 
@@ -1167,6 +1251,8 @@ class _MyGameEditState extends State<MyGameEdit> {
         } else if (gameType == 'What is it called') {
           readSentence = gameTypeData['answer'] ?? '';
           hint = gameTypeData['gameHint'] ?? '';
+          // Load the image URL for What is it called
+          debugPrint('What is it called imageUrl: ${gameTypeData['imageUrl']}');
         } else if (gameType == 'Listen and Repeat') {
           listenAndRepeat = gameTypeData['answer'] ?? '';
         } else if (gameType == 'Image Match') {
@@ -1227,6 +1313,9 @@ class _MyGameEditState extends State<MyGameEdit> {
             imageUrl:
                 gameTypeData['imageUrl'] as String? ??
                 gameTypeData['image'] as String?,
+            whatCalledImageUrl: gameType == 'What is it called'
+                ? (gameTypeData['imageUrl'] as String?)
+                : null,
             guessAnswerImages: gameType == 'Guess the answer 2'
                 ? [
                     gameTypeData['image1Bytes'] as Uint8List?,
@@ -1365,11 +1454,39 @@ class _MyGameEditState extends State<MyGameEdit> {
 
         if (imageUrl != null) {
           try {
-            debugPrint('Downloading image from: $imageUrl');
-            // Keep the imageUrl in data even if download fails
-            data['imageUrl'] = imageUrl;
+            debugPrint('Processing image URL: $imageUrl');
 
-            final imageBytes = await _downloadImageFromUrl(imageUrl);
+            // Convert gs:// URL to downloadable URL if needed
+            String? finalImageUrl = imageUrl;
+            if (imageUrl.startsWith('gs://')) {
+              finalImageUrl = await _convertGsUrlToDownloadUrl(imageUrl);
+              if (finalImageUrl != null) {
+                data['imageUrl'] =
+                    finalImageUrl; // Update with downloadable URL
+                debugPrint(
+                  'Updated imageUrl with downloadable URL: $finalImageUrl',
+                );
+
+                // Update the Firestore document with the downloadable URL
+                try {
+                  await gameTypeRef.doc(gameTypeDocId).update({
+                    'imageUrl': finalImageUrl,
+                  });
+                  debugPrint(
+                    'Updated Firestore document with downloadable URL',
+                  );
+                } catch (e) {
+                  debugPrint(
+                    'Failed to update Firestore with downloadable URL: $e',
+                  );
+                }
+              }
+            }
+
+            // Download image bytes for caching
+            final imageBytes = await _downloadImageFromUrl(
+              finalImageUrl ?? imageUrl,
+            );
             if (imageBytes != null) {
               data['imageBytes'] = imageBytes;
               debugPrint(
@@ -1451,11 +1568,52 @@ class _MyGameEditState extends State<MyGameEdit> {
     }
   }
 
-  /// Download image from URL and return as Uint8List
+  /// Convert gs:// URL to downloadable URL
+  Future<String?> _convertGsUrlToDownloadUrl(String gsUrl) async {
+    try {
+      if (!gsUrl.startsWith('gs://')) {
+        return gsUrl; // Already a downloadable URL
+      }
+
+      // Extract the path from the gs:// URL
+      final uri = Uri.parse(gsUrl);
+      final path = uri.path;
+
+      debugPrint('Converting gs:// URL to download URL: $gsUrl');
+      debugPrint('Extracted path: $path');
+
+      // Use Firebase Storage SDK to get the download URL
+      final storage = FirebaseStorage.instanceFor(
+        bucket: 'gs://lexiboost-36801.firebasestorage.app',
+      );
+      final ref = storage.ref().child(path);
+      final downloadUrl = await ref.getDownloadURL();
+
+      debugPrint('Converted to download URL: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error converting gs:// URL to download URL: $e');
+      return gsUrl; // Return original URL if conversion fails
+    }
+  }
+
+  /// Download image from URL and return as Uint8List (with caching)
   Future<Uint8List?> _downloadImageFromUrl(String imageUrl) async {
     try {
+      // Check cache first
+      if (_imageCache.containsKey(imageUrl)) {
+        debugPrint('Image found in cache: $imageUrl');
+        return _imageCache[imageUrl];
+      }
+
+      debugPrint('Downloading image from URL: $imageUrl');
       final response = await http.get(Uri.parse(imageUrl));
       if (response.statusCode == 200) {
+        // Cache the image
+        _imageCache[imageUrl] = response.bodyBytes;
+        debugPrint(
+          'Image downloaded and cached: ${response.bodyBytes.length} bytes',
+        );
         return response.bodyBytes;
       } else {
         debugPrint('Failed to download image: ${response.statusCode}');
@@ -1465,6 +1623,12 @@ class _MyGameEditState extends State<MyGameEdit> {
       debugPrint('Error downloading image: $e');
       return null;
     }
+  }
+
+  /// Clear image cache (useful for memory management)
+  static void clearImageCache() {
+    _imageCache.clear();
+    debugPrint('Image cache cleared');
   }
 
   /// Get current user's role from Firestore
@@ -2147,6 +2311,9 @@ class _MyGameEditState extends State<MyGameEdit> {
 
   @override
   void dispose() {
+    // Remove observer
+    WidgetsBinding.instance.removeObserver(this);
+    
     _removeEventListeners();
     _debounceTimer?.cancel();
     _autoSaveTimer?.cancel();
@@ -2167,6 +2334,10 @@ class _MyGameEditState extends State<MyGameEdit> {
     gameCodeController.dispose();
     hintController.removeListener(_triggerAutoSave);
     hintController.dispose();
+    
+    // Clear image cache to free memory
+    clearImageCache();
+    
     super.dispose();
   }
 
@@ -2610,9 +2781,13 @@ class _MyGameEditState extends State<MyGameEdit> {
                                 ? Icons.check_circle
                                 : _autoSaveStatus.contains('Saving')
                                 ? Icons.sync
+                                : _autoSaveStatus.contains('disabled')
+                                ? Icons.settings_backup_restore
                                 : Icons.edit_note,
                             color: _autoSaveStatus.contains('✓')
                                 ? Colors.green
+                                : _autoSaveStatus.contains('disabled')
+                                ? Colors.grey
                                 : Colors.orange,
                             size: 16,
                           ),
@@ -2624,6 +2799,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                                 fontSize: 12,
                                 color: _autoSaveStatus.contains('✓')
                                     ? Colors.green
+                                    : _autoSaveStatus.contains('disabled')
+                                    ? Colors.grey
                                     : Colors.orange,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -2803,6 +2980,8 @@ class _MyGameEditState extends State<MyGameEdit> {
                                           sentenceController:
                                               readSentenceController,
                                           pickedImage: whatCalledImageBytes,
+                                          imageUrl: pages[currentPageIndex]
+                                              .whatCalledImageUrl,
                                         )
                                       : selectedGameType == 'Listen and Repeat'
                                       ? MyListenAndRepeat(

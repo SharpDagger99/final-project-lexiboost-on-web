@@ -13,7 +13,7 @@ class MySettingsAdmin extends StatefulWidget {
 }
 
 class _MySettingsAdminState extends State<MySettingsAdmin>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _autoSaveEnabled = true;
   bool _showAutoSaveHelp = false;
   bool _isLoading = true;
@@ -33,6 +33,9 @@ class _MySettingsAdminState extends State<MySettingsAdmin>
       parent: _helpAnimationController,
       curve: Curves.easeInOut,
     );
+
+    // Add observer for app lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
 
     // Load current settings
     _loadSettings();
@@ -81,7 +84,18 @@ class _MySettingsAdminState extends State<MySettingsAdmin>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Refresh settings when app becomes active
+      _loadSettings();
+    }
+  }
+
+  @override
   void dispose() {
+    // Remove observer
+    WidgetsBinding.instance.removeObserver(this);
     _helpAnimationController.dispose();
     super.dispose();
   }
