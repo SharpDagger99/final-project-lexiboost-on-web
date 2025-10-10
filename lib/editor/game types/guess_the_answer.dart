@@ -161,7 +161,9 @@ class MyGuessTheAnswer extends StatelessWidget {
                         color: Colors.lightBlue,
                         onPressed: () {},
                         child: Text(
-                          choice,
+                          choice.isNotEmpty
+                              ? choice
+                              : "Choice ${multipleChoices.indexOf(choice) + 1}",
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -258,7 +260,8 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
     TextEditingController(),
     TextEditingController(),
   ];
-  int selectedChoiceIndex = -1; // Track which choice is selected
+  int selectedChoiceIndex =
+      0; // Track which choice is selected (default to first choice)
 
   @override
   void initState() {
@@ -272,8 +275,15 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
       choiceControllers[i].addListener(_onChoicesChanged);
     }
 
-    // ✅ Set initial correct answer index
-    selectedChoiceIndex = widget.initialCorrectIndex;
+    // ✅ Set initial correct answer index (default to 0 if not provided)
+    selectedChoiceIndex = widget.initialCorrectIndex >= 0
+        ? widget.initialCorrectIndex
+        : 0;
+
+    // Notify parent of the default selection
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onCorrectAnswerSelected(selectedChoiceIndex);
+    });
   }
 
   @override
@@ -700,7 +710,7 @@ class _GuessTheAnswerGameManagerState extends State<GuessTheAnswerGameManager> {
   late List<TextEditingController> _choiceControllers;
   List<Uint8List?> _pickedImages = [null, null, null];
   List<String> _imageUrls = ['', '', ''];
-  int _selectedChoiceIndex = -1;
+  int _selectedChoiceIndex = 0; // Default to first choice
 
   @override
   void initState() {
@@ -761,7 +771,7 @@ class _GuessTheAnswerGameManagerState extends State<GuessTheAnswerGameManager> {
       return;
     }
 
-    if (_selectedChoiceIndex == -1) {
+    if (_selectedChoiceIndex < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a correct answer')),
       );

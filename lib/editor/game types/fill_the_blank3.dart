@@ -151,7 +151,9 @@ class MyFillInTheBlank3 extends StatelessWidget {
                         color: Colors.lightBlue,
                         onPressed: () {},
                         child: Text(
-                          choice,
+                          choice.isNotEmpty
+                              ? choice
+                              : "Choice ${multipleChoices.indexOf(choice) + 1}",
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -213,7 +215,8 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
     TextEditingController(),
     TextEditingController(),
   ];
-  int selectedChoiceIndex = -1; // Track which choice is selected
+  int selectedChoiceIndex =
+      0; // Track which choice is selected (default to first choice)
 
   @override
   void initState() {
@@ -227,8 +230,15 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
       choiceControllers[i].addListener(_onChoicesChanged);
     }
 
-    // Set initial correct answer index
-    selectedChoiceIndex = widget.initialCorrectIndex;
+    // Set initial correct answer index (default to 0 if not provided)
+    selectedChoiceIndex = widget.initialCorrectIndex >= 0
+        ? widget.initialCorrectIndex
+        : 0;
+
+    // Notify parent of the default selection
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onCorrectAnswerSelected(selectedChoiceIndex);
+    });
   }
 
   @override

@@ -31,37 +31,13 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _speechEnabled = false;
-  final TextEditingController _answerController = TextEditingController();
+  final TextEditingController _speechController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
     _initSpeech();
-    
-    // Initialize the internal controller with the parent controller's value
-    _answerController.text = widget.sentenceController.text;
-
-    // Listen to changes in the parent controller and update the internal controller
-    widget.sentenceController.addListener(_onParentControllerChanged);
-  }
-
-  void _onParentControllerChanged() {
-    if (_answerController.text != widget.sentenceController.text) {
-      _answerController.text = widget.sentenceController.text;
-    }
-  }
-
-  @override
-  void didUpdateWidget(MyWhatItIsCalled oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    // Update internal controller if parent controller changed
-    if (oldWidget.sentenceController != widget.sentenceController) {
-      oldWidget.sentenceController.removeListener(_onParentControllerChanged);
-      widget.sentenceController.addListener(_onParentControllerChanged);
-      _answerController.text = widget.sentenceController.text;
-    }
   }
 
   void _initSpeech() async {
@@ -75,8 +51,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
 
   @override
   void dispose() {
-    widget.sentenceController.removeListener(_onParentControllerChanged);
-    _answerController.dispose();
+    _speechController.dispose();
     super.dispose();
   }
 
@@ -119,23 +94,20 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
         final result = {
           'answer': data['answer'] ?? '', // The answer text (e.g., "sample")
           'gameHint': data['gameHint'] ?? '', // The game hint (e.g., "sample")
-          'imageUrl':
-              data['imageUrl'] ?? data['image'] ?? '', // Firebase Storage URL
-          'image':
-              data['image'] ??
-              data['imageUrl'] ??
-              '', // Alternative image field
+          'imageUrl': data['imageUrl'] ?? '', // Firebase Storage path/URL
           'gameType': data['gameType'] ?? 'what_called',
           'createdAt': data['createdAt'],
           'timestamp': data['timestamp'],
         };
 
-        // Download image bytes if URL exists
+        // Download image bytes if imageUrl exists
         final imageUrl = result['imageUrl'] as String?;
         if (imageUrl != null && imageUrl.isNotEmpty) {
           try {
             print('Downloading What is it called image from: $imageUrl');
-            final imageBytes = await _downloadImageFromUrl(imageUrl);
+            final imageBytes = await _downloadImageFromFirebaseStorage(
+              imageUrl,
+            );
             if (imageBytes != null) {
               result['imageBytes'] = imageBytes;
               print(
@@ -161,18 +133,41 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
     }
   }
 
-  /// Download image from URL and return as Uint8List
-  static Future<Uint8List?> _downloadImageFromUrl(String imageUrl) async {
+  /// Download image from Firebase Storage path and return as Uint8List
+  static Future<Uint8List?> _downloadImageFromFirebaseStorage(
+    String storagePath,
+  ) async {
     try {
-      final response = await http.get(Uri.parse(imageUrl));
-      if (response.statusCode == 200) {
-        return response.bodyBytes;
+      // Check if it's a Firebase Storage path (gs://)
+      if (storagePath.startsWith('gs://')) {
+        // Extract the path from the gs:// URL
+        final uri = Uri.parse(storagePath);
+        final path = uri.path;
+
+        print('Loading image from Firebase Storage path: $path');
+
+        // Use Firebase Storage SDK to get the image
+        final storage = FirebaseStorage.instanceFor(
+          bucket: 'gs://lexiboost-36801.firebasestorage.app',
+        );
+        final ref = storage.ref().child(path);
+        final imageBytes = await ref.getData();
+
+        print('Image loaded successfully: ${imageBytes?.length ?? 0} bytes');
+        return imageBytes;
       } else {
-        print('Failed to download image: ${response.statusCode}');
-        return null;
+        // Fallback to HTTP request if not a Firebase Storage path
+        print('Using HTTP fallback for URL: $storagePath');
+        final response = await http.get(Uri.parse(storagePath));
+        if (response.statusCode == 200) {
+          return response.bodyBytes;
+        } else {
+          print('Failed to download image: ${response.statusCode}');
+          return null;
+        }
       }
     } catch (e) {
-      print('Error downloading image: $e');
+      print('Error downloading image from Firebase Storage: $e');
       return null;
     }
   }
@@ -234,12 +229,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
       final data = {
         'answer': answer, // The answer text (e.g., "sample")
         'gameHint': gameHint, // The game hint (e.g., "sample")
-        'image':
-            finalImageUrl ??
-            'gs://lexiboost-36801.firebasestorage.app/game image',
-        'imageUrl':
-            finalImageUrl ??
-            'gs://lexiboost-36801.firebasestorage.app/game image',
+        'imageUrl': finalImageUrl ?? '', // Firebase Storage path/URL
         'gameType': 'what_called',
         'createdAt': FieldValue.serverTimestamp(),
         'timestamp': FieldValue.serverTimestamp(),
@@ -269,14 +259,15 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
       final path = 'game image/$fileName';
 
       final ref = storage.ref().child(path);
-      final uploadTask = await ref.putData(
+      await ref.putData(
         imageBytes,
         SettableMetadata(contentType: 'image/png'),
       );
 
-      final downloadUrl = await uploadTask.ref.getDownloadURL();
-      print('Image uploaded successfully: $downloadUrl');
-      return downloadUrl;
+      // Return the Firebase Storage path instead of download URL
+      final storagePath = 'gs://lexiboost-36801.firebasestorage.app/$path';
+      print('Image uploaded successfully: $storagePath');
+      return storagePath;
     } catch (e) {
       print('Error uploading image: $e');
       rethrow;
@@ -301,9 +292,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
             print('Recognized words: ${result.recognizedWords}');
             if (mounted) {
               setState(() {
-                _answerController.text = result.recognizedWords;
-                // Also update the parent controller
-                widget.sentenceController.text = result.recognizedWords;
+                _speechController.text = result.recognizedWords;
               });
             }
           },
@@ -333,11 +322,9 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
     }
   }
 
-  void _clearAnswer() {
+  void _clearSpeechAnswer() {
     setState(() {
-      _answerController.clear();
-      // Also clear the parent controller
-      widget.sentenceController.clear();
+      _speechController.clear();
     });
   }
 
@@ -430,8 +417,26 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
   /// Load image from Firebase Storage using the SDK (bypasses CORS)
   Future<Uint8List?> _loadImageFromFirebaseStorage(String imageUrl) async {
     try {
-      // Check if it's a Firebase Storage URL
-      if (imageUrl.contains('firebasestorage.googleapis.com')) {
+      // Check if it's a Firebase Storage path (gs://)
+      if (imageUrl.startsWith('gs://')) {
+        // Extract the path from the gs:// URL
+        final uri = Uri.parse(imageUrl);
+        final path = uri.path;
+
+        print('Loading image from Firebase Storage path: $path');
+
+        // Use Firebase Storage SDK to get the image
+        final storage = FirebaseStorage.instanceFor(
+          bucket: 'gs://lexiboost-36801.firebasestorage.app',
+        );
+        final ref = storage.ref().child(path);
+        final imageBytes = await ref.getData();
+
+        print('Image loaded successfully: ${imageBytes?.length ?? 0} bytes');
+        return imageBytes;
+      }
+      // Check if it's a Firebase Storage URL (legacy support)
+      else if (imageUrl.contains('firebasestorage.googleapis.com')) {
         // Extract the path from the URL
         final uri = Uri.parse(imageUrl);
         final pathSegments = uri.pathSegments;
@@ -530,7 +535,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
           child: TextField(
             readOnly: true,
             maxLines: 6,
-            controller: _answerController,
+            controller: _speechController,
             style: GoogleFonts.poppins(fontSize: 14, color: Colors.black),
             decoration: InputDecoration(
               hintText: "Say something first...",
@@ -562,7 +567,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
                   width: 70,
                   height: 70,
                   color: Colors.pinkAccent,
-                  onPressed: _clearAnswer,
+                  onPressed: _clearSpeechAnswer,
                   child: const Icon(
                     Icons.restart_alt_rounded,
                     color: Colors.black,
@@ -806,7 +811,7 @@ class _WhatCalledGameManagerState extends State<WhatCalledGameManager> {
         setState(() {
           _sentenceController.text = data['answer'] ?? '';
           _hintController.text = data['gameHint'] ?? '';
-          _imageUrl = data['imageUrl'] ?? data['image'] ?? '';
+          _imageUrl = data['imageUrl'] ?? '';
           _pickedImage = data['imageBytes'] as Uint8List?;
         });
 
