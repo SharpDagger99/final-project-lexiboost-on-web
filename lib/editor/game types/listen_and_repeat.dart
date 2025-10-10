@@ -1,4 +1,4 @@
-// ignore_for_file: avoid_print, deprecated_member_use, unused_field, prefer_final_fields, unused_import, unnecessary_import
+// ignore_for_file: avoid_print, deprecated_member_use, unused_field, prefer_final_fields, unused_import, unnecessary_import, use_build_context_synchronously
 
 import 'package:animated_button/animated_button.dart';
 import 'package:flutter/material.dart';
@@ -16,12 +16,14 @@ class MyListenAndRepeat extends StatefulWidget {
   final TextEditingController sentenceController;
   final String? audioPath; // Audio path from settings
   final String audioSource; // "uploaded" or "recorded"
+  final String? audioUrl; // Firebase Storage URL for audio
 
   const MyListenAndRepeat({
     super.key,
     required this.sentenceController,
     this.audioPath,
     this.audioSource = "",
+    this.audioUrl,
   });
 
   @override
@@ -141,6 +143,30 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
 
 
   Future<void> _playAudio() async {
+    // Check if we have audio URL from Firebase Storage first
+    if (widget.audioUrl != null && widget.audioUrl!.isNotEmpty) {
+      print('Playing audio from Firebase Storage URL: ${widget.audioUrl}');
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+        setState(() => _isPlaying = false);
+      } else {
+        try {
+          await _audioPlayer.play(UrlSource(widget.audioUrl!));
+          setState(() => _isPlaying = true);
+        } catch (e) {
+          print('Error playing audio from URL: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error playing audio: $e'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    // Fallback to local audio path
     if (widget.audioPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

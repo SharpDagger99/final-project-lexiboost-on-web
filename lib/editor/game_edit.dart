@@ -568,6 +568,16 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       listenAndRepeatAudioSource = pageData.listenAndRepeatAudioSource;
       listenAndRepeatAudioBytes = pageData.listenAndRepeatAudioBytes;
       
+      // Load Listen and Repeat specific data
+      if (pageData.gameType == 'Listen and Repeat') {
+        debugPrint(
+          'Loaded Listen and Repeat audioUrl: ${pageData.listenAndRepeatAudioUrl}',
+        );
+        debugPrint(
+          'Loaded Listen and Repeat audioBytes: ${listenAndRepeatAudioBytes != null ? '${listenAndRepeatAudioBytes!.length} bytes' : 'null'}',
+        );
+      }
+      
       // Load correct answer index for Guess the answer and Guess the answer 2
       if (pageData.gameType == 'Guess the answer' ||
           pageData.gameType == 'Guess the answer 2') {
@@ -1255,6 +1265,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           debugPrint('What is it called imageUrl: ${gameTypeData['imageUrl']}');
         } else if (gameType == 'Listen and Repeat') {
           listenAndRepeat = gameTypeData['answer'] ?? '';
+          // Load the audio URL for Listen and Repeat
+          debugPrint('Listen and Repeat audioUrl: ${gameTypeData['audio']}');
         } else if (gameType == 'Image Match') {
           // Image Match specific fields
         } else if (gameType == 'Math') {
@@ -1331,6 +1343,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   ]
                 : [null, null, null],
             correctAnswerIndex: correctAnswerIndex,
+            listenAndRepeatAudioUrl: gameType == 'Listen and Repeat'
+                ? (gameTypeData['audio'] as String?)
+                : null,
+            listenAndRepeatAudioBytes: gameType == 'Listen and Repeat'
+                ? (gameTypeData['audioBytes'] as Uint8List?)
+                : null,
           ),
         );
       }
@@ -1505,6 +1523,67 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         }
       }
 
+      // Handle audio URL for Listen and Repeat
+      if (gameType == 'Listen and Repeat') {
+        String? audioUrl;
+        if (data['audio'] != null &&
+            data['audio'] is String &&
+            (data['audio'] as String).isNotEmpty) {
+          audioUrl = data['audio'];
+        }
+
+        if (audioUrl != null) {
+          try {
+            debugPrint('Processing audio URL: $audioUrl');
+
+            // Convert gs:// URL to downloadable URL if needed
+            String? finalAudioUrl = audioUrl;
+            if (audioUrl.startsWith('gs://')) {
+              finalAudioUrl = await _convertGsUrlToDownloadUrl(audioUrl);
+              if (finalAudioUrl != null) {
+                data['audio'] = finalAudioUrl; // Update with downloadable URL
+                debugPrint(
+                  'Updated audio URL with downloadable URL: $finalAudioUrl',
+                );
+
+                // Update the Firestore document with the downloadable URL
+                try {
+                  await gameTypeRef.doc(gameTypeDocId).update({
+                    'audio': finalAudioUrl,
+                  });
+                  debugPrint(
+                    'Updated Firestore document with downloadable audio URL',
+                  );
+                } catch (e) {
+                  debugPrint(
+                    'Failed to update Firestore with downloadable audio URL: $e',
+                  );
+                }
+              }
+            }
+
+            // Download audio bytes for caching
+            final audioBytes = await _downloadAudioFromUrl(
+              finalAudioUrl ?? audioUrl,
+            );
+            if (audioBytes != null) {
+              data['audioBytes'] = audioBytes;
+              debugPrint(
+                'Audio downloaded successfully, size: ${audioBytes.length} bytes',
+              );
+            } else {
+              debugPrint('Audio download returned null, will use URL directly');
+            }
+          } catch (e) {
+            debugPrint('Failed to download audio: $e');
+            // Keep audioUrl so it can be used directly
+            data['audio'] = audioUrl;
+          }
+        } else {
+          debugPrint('No valid audio URL found in data');
+        }
+      }
+
       return data;
     } catch (e) {
       debugPrint('Failed to load game type data: $e');
@@ -1621,6 +1700,34 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('Error downloading image: $e');
+      return null;
+    }
+  }
+
+  /// Download audio from URL and return as Uint8List (with caching)
+  Future<Uint8List?> _downloadAudioFromUrl(String audioUrl) async {
+    try {
+      // Check cache first
+      if (_imageCache.containsKey(audioUrl)) {
+        debugPrint('Audio found in cache: $audioUrl');
+        return _imageCache[audioUrl];
+      }
+
+      debugPrint('Downloading audio from URL: $audioUrl');
+      final response = await http.get(Uri.parse(audioUrl));
+      if (response.statusCode == 200) {
+        // Cache the audio
+        _imageCache[audioUrl] = response.bodyBytes;
+        debugPrint(
+          'Audio downloaded and cached: ${response.bodyBytes.length} bytes',
+        );
+        return response.bodyBytes;
+      } else {
+        debugPrint('Failed to download audio: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Error downloading audio: $e');
       return null;
     }
   }
@@ -2990,6 +3097,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           audioPath: listenAndRepeatAudioPath,
                                           audioSource:
                                               listenAndRepeatAudioSource,
+                                          audioUrl: pages[currentPageIndex]
+                                              .listenAndRepeatAudioUrl,
                                         )
                                       : selectedGameType == 'Image Match'
                                       ? MyImageMatch(
