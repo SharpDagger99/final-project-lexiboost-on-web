@@ -7,6 +7,7 @@ import 'dart:html' as html;
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:animated_button/animated_button.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -2946,11 +2947,22 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       backgroundColor: const Color(0xFF1E201E),
       body: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(30.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: MediaQuery.of(context).size.width,
+                ),
+                child: IntrinsicWidth(
+                  child: Padding(
+                    padding: const EdgeInsets.all(30.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
             // -------- Column 1 --------
             Expanded(
               child: Column(
@@ -4232,7 +4244,11 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 ),
               ),
             ),
-              ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
 
