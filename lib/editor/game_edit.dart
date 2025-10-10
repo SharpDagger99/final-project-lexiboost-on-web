@@ -138,6 +138,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   final TextEditingController hintController = TextEditingController();
   final TextEditingController timerMinutesController = TextEditingController();
   final TextEditingController timerSecondsController = TextEditingController();
+  
+  // Scroll controller for page selector
+  final ScrollController _pageSelectorScrollController = ScrollController();
 
   double progressValue = 0.1;
   String selectedGameType = 'Fill in the blank';
@@ -763,13 +766,24 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 Container(
                   constraints: const BoxConstraints(maxHeight: 300),
                   child: Scrollbar(
+                    controller: _pageSelectorScrollController,
                     thumbVisibility: true,
-                    thickness: 6,
+                    trackVisibility: true,
+                    thickness: 8,
                     radius: const Radius.circular(10),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: pages.length,
-                      itemBuilder: (context, index) {
+                    child: GestureDetector(
+                      onPanUpdate: (details) {
+                        // Drag to scroll functionality
+                        _pageSelectorScrollController.position.moveTo(
+                          _pageSelectorScrollController.offset -
+                              details.delta.dy,
+                        );
+                      },
+                      child: ListView.builder(
+                        controller: _pageSelectorScrollController,
+                        shrinkWrap: true,
+                        itemCount: pages.length,
+                        itemBuilder: (context, index) {
                         final isCurrentPage = index == currentPageIndex;
                         final hasError = validationErrors.containsKey(index);
                         
@@ -778,211 +792,157 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                             vertical: 4,
                             horizontal: 4,
                           ),
-                          child: Material(
-                            color: isCurrentPage
-                                ? Colors.green.withOpacity(0.3)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              onTap: () {
-                                if (!isCurrentPage) {
-                                  _saveCurrentPageData();
-                                  currentPageIndex = index;
-                                  _loadPageData(currentPageIndex);
-                                }
-                                Navigator.of(context).pop();
-                              },
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: isCurrentPage
-                                        ? Colors.green
-                                        : Colors.white.withOpacity(0.3),
-                                    width: isCurrentPage ? 2 : 1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Page ${index + 1}',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            color: Colors.white,
-                                            fontWeight: isCurrentPage
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                          ),
-                                        ),
-                                        if (hasError) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.error,
-                                              color: Colors.white,
-                                              size: 16,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                    if (selectedGameRule != 'score' &&
-                                        pages[index].title.isNotEmpty)
-                                      Flexible(
-                                        child: Text(
-                                          pages[index].title,
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 14,
-                                            color: Colors.white70,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    
-                                    if (isCurrentPage)
-                                      const Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                        size: 20,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                // Score configuration section (outside of page items)
-                if (selectedGameRule == 'score') ...[
-                  const SizedBox(height: 20),
-                  const Divider(color: Colors.white24, thickness: 1),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Configure Scores',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    child: Scrollbar(
-                      thumbVisibility: true,
-                      thickness: 6,
-                      radius: const Radius.circular(10),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: pages.length,
-                        itemBuilder: (context, index) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 6,
-                              horizontal: 4,
-                            ),
                             child: Row(
                               children: [
-                                SizedBox(
-                                  width: 80,
-                                  child: Text(
-                                    'Page ${index + 1}:',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
+                                // Page button section
                                 Expanded(
-                                  child: Container(
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF3A3C3A),
+                                  flex: selectedGameRule == 'score' ? 3 : 1,
+                                  child: Material(
+                                    color: isCurrentPage
+                                        ? Colors.green.withOpacity(0.3)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: InkWell(
+                                      onTap: () {
+                                        if (!isCurrentPage) {
+                                          _saveCurrentPageData();
+                                          currentPageIndex = index;
+                                          _loadPageData(currentPageIndex);
+                                        }
+                                        Navigator.of(context).pop();
+                                      },
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Colors.white.withOpacity(0.2),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            left: 10,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: isCurrentPage
+                                                ? Colors.green
+                                                : Colors.white.withOpacity(0.3),
+                                            width: isCurrentPage ? 2 : 1,
                                           ),
-                                          child: Icon(
-                                            Icons.star,
-                                            color: Colors.amber,
-                                            size: 20,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
                                           ),
                                         ),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: TextEditingController(
-                                              text:
-                                                  pageScores[index]
-                                                      ?.toString() ??
-                                                  '',
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              'Page ${index + 1}',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 16,
+                                                color: Colors.white,
+                                                fontWeight: isCurrentPage
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
                                             ),
-                                            keyboardType: TextInputType.number,
-                                            inputFormatters: [
-                                              FilteringTextInputFormatter
-                                                  .digitsOnly,
-                                              LengthLimitingTextInputFormatter(
-                                                4,
+                                            if (hasError) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.error,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
                                               ),
                                             ],
-                                            textAlign: TextAlign.center,
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                            decoration: InputDecoration(
-                                              hintText: "Enter score",
-                                              hintStyle: GoogleFonts.poppins(
-                                                color: Colors.white54,
-                                                fontSize: 14,
-                                              ),
-                                              border: InputBorder.none,
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
+                                            if (selectedGameRule != 'score' &&
+                                                pages[index].title.isNotEmpty)
+                                              Flexible(
+                                                child: Text(
+                                                  pages[index].title,
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 14,
+                                                    color: Colors.white70,
                                                   ),
-                                            ),
-                                            onChanged: (value) {
-                                              setState(() {
-                                                if (value.isEmpty) {
-                                                  pageScores.remove(index);
-                                                } else {
-                                                  pageScores[index] =
-                                                      int.tryParse(value) ?? 0;
-                                                }
-                                              });
-                                            },
-                                          ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            if (isCurrentPage)
+                                              const Icon(
+                                                Icons.check_circle,
+                                                color: Colors.green,
+                                                size: 20,
+                                              ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
+                                // Score text field section (separate from page button)
+                                if (selectedGameRule == 'score') ...[
+                                const SizedBox(width: 10),
+                                Expanded(
+                                    flex: 1,
+                                    child: Container(
+                                      height:
+                                          48, // Match page button height (12*2 + 24 for text)
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF3A3C3A),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.2),
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: TextField(
+                                          controller: TextEditingController(
+                                            text:
+                                                pageScores[index]?.toString() ??
+                                                '',
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                            LengthLimitingTextInputFormatter(4),
+                                          ],
+                                          textAlign: TextAlign.center,
+                                          textAlignVertical:
+                                              TextAlignVertical.center,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          decoration: InputDecoration(
+                                            hintText: "Score",
+                                            hintStyle: GoogleFonts.poppins(
+                                              color: Colors.white54,
+                                              fontSize: 14,
+                                            ),
+                                            border: InputBorder.none,
+                                            contentPadding: EdgeInsets.zero,
+                                            isDense: true,
+                                          ),
+                                          onChanged: (value) {
+                                            setState(() {
+                                              if (value.isEmpty) {
+                                                pageScores.remove(index);
+                                              } else {
+                                                pageScores[index] =
+                                                    int.tryParse(value) ?? 0;
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           );
@@ -990,7 +950,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                ],
+                ),
                 const SizedBox(height: 20),
                 AnimatedButton(
                   width: 100,
@@ -3670,25 +3630,28 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                           ),
                         ),
 
-                            // Hearts display (when heart rule is selected)
+                            // Hearts display (when heart rule is selected) - moved to left side below progress bar
                             if (heartEnabled)
                               Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
+                                padding: const EdgeInsets.only(
+                                  left: 16,
+                                  top: 8,
                                 ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: List.generate(
-                                    5,
-                                    (index) => Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: Icon(
-                                        Icons.favorite,
-                                        color: Colors.red,
-                                        size: 30,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: List.generate(
+                                      5,
+                                      (index) => Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                        ),
+                                        child: Icon(
+                                          Icons.favorite,
+                                          color: Colors.red,
+                                          size: 30,
+                                        ),
                                       ),
                                     ),
                                   ),
