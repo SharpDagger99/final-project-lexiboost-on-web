@@ -4091,172 +4091,228 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                       child: Divider(color: Colors.white),
                     ),
 
-                        // Validation Warning Banner
-                        if (_validatePages().containsKey(currentPageIndex))
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 15),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.red, width: 2),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.warning_amber_rounded,
-                                  color: Colors.red,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 12),
+                                // Scrollable game-specific settings area
                                 Expanded(
-                                  child: Text(
-                                    _validatePages()[currentPageIndex] ??
-                                        'Error',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.w600,
+                                  child: SingleChildScrollView(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Validation Warning Banner
+                                        if (_validatePages().containsKey(
+                                          currentPageIndex,
+                                        ))
+                                          Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 15,
+                                            ),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.withOpacity(
+                                                0.2,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: Colors.red,
+                                                width: 2,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.warning_amber_rounded,
+                                                  color: Colors.red,
+                                                  size: 24,
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Text(
+                                                    _validatePages()[currentPageIndex] ??
+                                                        'Error',
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 14,
+                                                      color: Colors.red,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        if (selectedGameType ==
+                                            'Fill in the blank')
+                                          MyFillTheBlankSettings(
+                                            answerController: answerController,
+                                            hintController: hintController,
+                                            visibleLetters: visibleLetters,
+                                            onToggle: _toggleLetter,
+                                          )
+                                        else if (selectedGameType ==
+                                            'Fill in the blank 2')
+                                          MyFillInTheBlank2Settings(
+                                            answerController: answerController,
+                                            hintController: hintController,
+                                            visibleLetters: visibleLetters,
+                                            onToggle: _toggleLetter,
+                                            onImagePicked: (Uint8List imageBytes) {
+                                              setState(() {
+                                                selectedImageBytes = imageBytes;
+                                              });
+                                              // Trigger auto-save when image is picked
+                                              _triggerAutoSave();
+                                            },
+                                          )
+                                        else if (selectedGameType ==
+                                            'Guess the answer')
+                                          MyFillInTheBlank3Settings(
+                                            hintController: hintController,
+                                            questionController:
+                                                descriptionFieldController,
+                                            visibleLetters: visibleLetters,
+                                            onToggle: _toggleLetter,
+                                            onImagePicked:
+                                                (Uint8List imageBytes) {
+                                                  setState(() {
+                                                    selectedImageBytes =
+                                                        imageBytes;
+                                                  });
+                                                },
+                                            onChoicesChanged:
+                                                (List<String> choices) {
+                                                  setState(() {
+                                                    multipleChoices = choices;
+                                                  });
+                                                },
+                                            onCorrectAnswerSelected:
+                                                (int index) {
+                                                  setState(() {
+                                                    correctAnswerIndex = index;
+                                                  });
+                                                },
+                                            initialChoices: multipleChoices,
+                                            initialCorrectIndex:
+                                                correctAnswerIndex,
+                                          )
+                                        else if (selectedGameType ==
+                                            'Guess the answer 2')
+                                          MyGuessTheAnswerSettings(
+                                            hintController: hintController,
+                                            questionController:
+                                                descriptionFieldController,
+                                            visibleLetters: visibleLetters,
+                                            onToggle: _toggleLetter,
+                                            onImagePicked:
+                                                (
+                                                  int index,
+                                                  Uint8List imageBytes,
+                                                ) {
+                                                  setState(() {
+                                                    guessAnswerImages[index] =
+                                                        imageBytes;
+                                                  });
+                                                },
+                                            onChoicesChanged:
+                                                (List<String> choices) {
+                                                  setState(() {
+                                                    multipleChoices = choices;
+                                                  });
+                                                },
+                                            onCorrectAnswerSelected:
+                                                (int index) {
+                                                  setState(() {
+                                                    correctAnswerIndex = index;
+                                                  });
+                                                },
+                                            initialChoices: multipleChoices,
+                                            initialCorrectIndex:
+                                                correctAnswerIndex,
+                                          )
+                                        else if (selectedGameType ==
+                                            'Read the sentence')
+                                          MyReadTheSentenceSettings(
+                                            sentenceController:
+                                                readSentenceController,
+                                          )
+                                        else if (selectedGameType ==
+                                            'What is it called')
+                                          MyWhatItIsCalledSettings(
+                                            sentenceController:
+                                                readSentenceController,
+                                            hintController: hintController,
+                                            onImagePicked:
+                                                (Uint8List imageBytes) {
+                                                  setState(() {
+                                                    whatCalledImageBytes =
+                                                        imageBytes;
+                                                  });
+                                                },
+                                          )
+                                        else if (selectedGameType ==
+                                            'Listen and Repeat')
+                                          MyListenAndRepeatSettings(
+                                            sentenceController:
+                                                listenAndRepeatController,
+                                            onAudioChanged:
+                                                (
+                                                  String? audioPath,
+                                                  String audioSource,
+                                                  Uint8List? audioBytes,
+                                                ) {
+                                                  print(
+                                                    "Audio changed callback received: path=$audioPath, source=$audioSource, bytes=${audioBytes?.length}",
+                                                  );
+                                                  setState(() {
+                                                    listenAndRepeatAudioPath =
+                                                        audioPath;
+                                                    listenAndRepeatAudioSource =
+                                                        audioSource;
+                                                    listenAndRepeatAudioBytes =
+                                                        audioBytes;
+                                                  });
+                                                  // Save the current page data immediately when audio changes
+                                                  _saveCurrentPageData();
+                                                },
+                                          )
+                                        else if (selectedGameType ==
+                                            'Image Match')
+                                          MyImageMatchSettings(
+                                            onImagePicked:
+                                                (
+                                                  int index,
+                                                  Uint8List imageBytes,
+                                                ) {
+                                                  setState(() {
+                                                    imageMatchImages[index] =
+                                                        imageBytes;
+                                                  });
+                                                  debugPrint(
+                                                    'Image Match image $index picked, size: ${imageBytes.length} bytes',
+                                                  );
+                                                  // Trigger auto-save when image is picked
+                                                  _triggerAutoSave();
+                                                },
+                                            onCountChanged: (int newCount) {
+                                              setState(() {
+                                                imageMatchCount = newCount;
+                                              });
+                                              debugPrint(
+                                                'Image Match count changed to: $newCount',
+                                              );
+                                              // Trigger auto-save when count changes
+                                              _triggerAutoSave();
+                                            },
+                                            initialImages: imageMatchImages,
+                                            initialCount: imageMatchCount,
+                                          )
+                                        else if (selectedGameType == 'Math')
+                                          MyMathSettings(mathState: mathState),
+                                      ],
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-
-                    if (selectedGameType == 'Fill in the blank')
-                      MyFillTheBlankSettings(
-                        answerController: answerController,
-                        hintController: hintController,
-                        visibleLetters: visibleLetters,
-                        onToggle: _toggleLetter,
-                      )
-                    else if (selectedGameType == 'Fill in the blank 2')
-                      MyFillInTheBlank2Settings(
-                        answerController: answerController,
-                        hintController: hintController,
-                        visibleLetters: visibleLetters,
-                        onToggle: _toggleLetter,
-                        onImagePicked: (Uint8List imageBytes) {
-                          setState(() {
-                            selectedImageBytes = imageBytes;
-                          });
-                          // Trigger auto-save when image is picked
-                          _triggerAutoSave();
-                        },
-                      )
-                    else if (selectedGameType == 'Guess the answer')
-                      MyFillInTheBlank3Settings(
-                        hintController: hintController,
-                        questionController: descriptionFieldController,
-                        visibleLetters: visibleLetters,
-                        onToggle: _toggleLetter,
-                        onImagePicked: (Uint8List imageBytes) {
-                          setState(() {
-                            selectedImageBytes = imageBytes;
-                          });
-                        },
-                        onChoicesChanged: (List<String> choices) {
-                          setState(() {
-                            multipleChoices = choices;
-                          });
-                        },
-                        onCorrectAnswerSelected: (int index) {
-                          setState(() {
-                            correctAnswerIndex = index;
-                          });
-                        },
-                        initialChoices: multipleChoices,
-                        initialCorrectIndex: correctAnswerIndex,
-                      )
-                    else if (selectedGameType == 'Guess the answer 2')
-                      MyGuessTheAnswerSettings(
-                        hintController: hintController,
-                        questionController: descriptionFieldController,
-                        visibleLetters: visibleLetters,
-                        onToggle: _toggleLetter,
-                        onImagePicked: (int index, Uint8List imageBytes) {
-                          setState(() {
-                            guessAnswerImages[index] = imageBytes;
-                          });
-                        },
-                        onChoicesChanged: (List<String> choices) {
-                          setState(() {
-                            multipleChoices = choices;
-                          });
-                        },
-                        onCorrectAnswerSelected: (int index) {
-                          setState(() {
-                            correctAnswerIndex = index;
-                          });
-                        },
-                        initialChoices: multipleChoices,
-                        initialCorrectIndex: correctAnswerIndex,
-                      )
-                    else if (selectedGameType == 'Read the sentence')
-                      MyReadTheSentenceSettings(
-                        sentenceController: readSentenceController,
-                      )
-                    else if (selectedGameType == 'What is it called')
-                      MyWhatItIsCalledSettings(
-                        sentenceController: readSentenceController,
-                        hintController: hintController,
-                        onImagePicked: (Uint8List imageBytes) {
-                          setState(() {
-                            whatCalledImageBytes = imageBytes;
-                          });
-                        },
-                      )
-                    else if (selectedGameType == 'Listen and Repeat')
-                      MyListenAndRepeatSettings(
-                        sentenceController: listenAndRepeatController,
-                        onAudioChanged:
-                            (
-                              String? audioPath,
-                              String audioSource,
-                              Uint8List? audioBytes,
-                            ) {
-                              print(
-                                "Audio changed callback received: path=$audioPath, source=$audioSource, bytes=${audioBytes?.length}",
-                              );
-                              setState(() {
-                                listenAndRepeatAudioPath = audioPath;
-                                listenAndRepeatAudioSource = audioSource;
-                                listenAndRepeatAudioBytes = audioBytes;
-                              });
-                              // Save the current page data immediately when audio changes
-                              _saveCurrentPageData();
-                            },
-                      )
-                    else if (selectedGameType == 'Image Match')
-                      MyImageMatchSettings(
-                        onImagePicked: (int index, Uint8List imageBytes) {
-                          setState(() {
-                            imageMatchImages[index] = imageBytes;
-                          });
-                              debugPrint(
-                                'Image Match image $index picked, size: ${imageBytes.length} bytes',
-                              );
-                              // Trigger auto-save when image is picked
-                              _triggerAutoSave();
-                        },
-                        onCountChanged: (int newCount) {
-                          setState(() {
-                            imageMatchCount = newCount;
-                          });
-                              debugPrint(
-                                'Image Match count changed to: $newCount',
-                              );
-                              // Trigger auto-save when count changes
-                              _triggerAutoSave();
-                        },
-                            initialImages: imageMatchImages,
-                            initialCount: imageMatchCount,
-                      )
-                    else if (selectedGameType == 'Math')
-                      MyMathSettings(mathState: mathState),
-
-                    const Spacer(),
 
                     Padding(
                       padding: const EdgeInsets.only(top: 10, bottom: 10),
