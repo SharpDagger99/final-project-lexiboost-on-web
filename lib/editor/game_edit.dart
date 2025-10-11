@@ -183,6 +183,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   String _validationErrorMessage = ''; // Validation error message text
   bool _autoSaveEnabled = true; // Auto-save setting from user preferences
   final SettingsService _settingsService = SettingsService();
+  bool _gameTest = false; // Track if game has been tested
 
   final mathState = MathState();
 
@@ -375,6 +376,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
+
+                    
                   ],
                 ),
               ],
@@ -1317,6 +1320,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             : '',
         'heart': heartEnabled,
         'timer': timerSeconds,
+        'game_test': _gameTest,
         'updated_at': FieldValue.serverTimestamp(),
       };
 
@@ -1375,6 +1379,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           // Load game rules configuration
           heartEnabled = (data['heart'] as bool?) ?? false;
           timerSeconds = (data['timer'] as int?) ?? 0;
+          
+          // Load game_test status
+          _gameTest = (data['game_test'] as bool?) ?? false;
 
           // Update timer controllers
           int minutes = timerSeconds ~/ 60;
@@ -2372,6 +2379,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             : '',
         'heart': heartEnabled,
         'timer': timerSeconds,
+        'game_test': _gameTest,
       };
 
       if (gameId == null) {
@@ -2957,7 +2965,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 constraints: BoxConstraints(
                   minWidth: MediaQuery.of(context).size.width,
                 ),
-                child: IntrinsicWidth(
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width,
                   child: Padding(
                     padding: const EdgeInsets.all(30.0),
                     child: Row(
@@ -4422,13 +4431,24 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                         AnimatedButton(
                           width: 100,
                           height: 50,
-                          color: Colors.green,
-                          onPressed: () {
+                                      color: _gameTest
+                                          ? Colors.orange
+                                          : Colors.green,
+                                      onPressed: () async {
                             _saveCurrentPageData();
-                            // Add test functionality here
+                            
+                                        if (_gameTest) {
+                                          // Launch functionality - save and navigate
+                                          await _saveToFirestore();
+                                          _removeEventListeners();
+                                          await _navigateBasedOnRole();
+                                        } else {
+                                          // Test functionality - navigate to testing page
+                                          Get.toNamed('/testing');
+                                        }
                           },
                           child: Text(
-                            "Test",
+                                        _gameTest ? "Launch" : "Test",
                             style: GoogleFonts.poppins(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,

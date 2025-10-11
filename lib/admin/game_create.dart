@@ -108,6 +108,7 @@ class _MyGameCreateState extends State<MyGameCreate> {
                           await docRef.set({
                             "title": title,
                             "created_at": FieldValue.serverTimestamp(),
+                            "game_test": false,
                           });
 
                           Navigator.pop(context); // close dialog
