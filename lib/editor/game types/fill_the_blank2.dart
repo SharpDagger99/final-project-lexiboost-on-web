@@ -37,10 +37,12 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
   late TextEditingController _userInputController;
   late List<String> _userAnswers;
   String _previousInput = "";
+  String _previousAnswer = "";
 
   @override
   void initState() {
     super.initState();
+    _previousAnswer = widget.answerController.text;
     _initializeUserAnswers();
     _userInputController = TextEditingController();
     _userInputController.addListener(_handleInput);
@@ -64,6 +66,12 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
       }
       return "";
     });
+  }
+
+  void _resetUserInput() {
+    _userInputController.clear();
+    _previousInput = "";
+    _initializeUserAnswers();
   }
 
   // Build the appropriate image widget based on available data
@@ -252,6 +260,12 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
   @override
   Widget build(BuildContext context) {
     final answer = widget.answerController.text;
+
+    // Check if answer changed (new page loaded) and reset
+    if (_previousAnswer != answer) {
+      _previousAnswer = answer;
+      _resetUserInput();
+    }
 
     if (_userAnswers.length != answer.length) {
       _initializeUserAnswers();

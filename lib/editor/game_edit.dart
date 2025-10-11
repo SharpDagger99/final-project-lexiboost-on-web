@@ -184,6 +184,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   bool _autoSaveEnabled = true; // Auto-save setting from user preferences
   final SettingsService _settingsService = SettingsService();
   bool _gameTest = false; // Track if game has been tested
+  bool _isPublished = false; // Track if game is already published
+  bool _isLaunching = false; // Loading state for launch button
+  bool _showLaunchSuccess = false; // Show launch success message
 
   final mathState = MathState();
 
@@ -1382,6 +1385,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           
           // Load game_test status
           _gameTest = (data['game_test'] as bool?) ?? false;
+          
+          // Load publish status
+          _isPublished = (data['publish'] as bool?) ?? false;
 
           // Update timer controllers
           int minutes = timerSeconds ~/ 60;
@@ -2443,6 +2449,76 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           _isSaving = false;
+        });
+      }
+    }
+  }
+
+  /// Publish game by setting publish field to true and adding to published_games collection
+  Future<void> _publishGame() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || gameId == null) {
+      debugPrint('Cannot publish: user or gameId is null');
+      return;
+    }
+
+    // Set loading state
+    setState(() {
+      _isLaunching = true;
+    });
+
+    try {
+      // Update the game document to set publish = true
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('created_games')
+          .doc(gameId)
+          .update({
+            'publish': true,
+            'published_at': FieldValue.serverTimestamp(),
+          });
+
+      // Also add to root-level published_games collection for easy querying
+      await FirebaseFirestore.instance
+          .collection('published_games')
+          .doc(gameId)
+          .set({
+            'gameId': gameId,
+            'userId': user.uid,
+            'title': titleController.text.trim(),
+            'description': descriptionController.text.trim(),
+            'difficulty': selectedDifficulty,
+            'prizeCoins': prizeCoinsController.text.replaceAll(',', '').trim(),
+            'gameSet': selectedGameSet,
+            'published_at': FieldValue.serverTimestamp(),
+          });
+
+      debugPrint('Game published successfully');
+
+      // Update state to show success
+      if (mounted) {
+        setState(() {
+          _isLaunching = false;
+          _isPublished = true;
+          _showLaunchSuccess = true;
+        });
+
+        // Hide success message after 3 seconds
+        Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _showLaunchSuccess = false;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to publish game: $e');
+
+      if (mounted) {
+        setState(() {
+          _isLaunching = false;
         });
       }
     }
@@ -4432,29 +4508,58 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                           width: 100,
                           height: 50,
                                       color: _gameTest
-                                          ? Colors.orange
+                                          ? (_isPublished
+                                                ? Colors.grey
+                                                : Colors.orange)
                                           : Colors.green,
-                                      onPressed: () async {
-                            _saveCurrentPageData();
-                            
-                                        if (_gameTest) {
-                                          // Launch functionality - save and navigate
-                                          await _saveToFirestore();
-                                          _removeEventListeners();
-                                          await _navigateBasedOnRole();
-                                        } else {
-                                          // Test functionality - navigate to testing page
-                                          Get.toNamed('/testing');
-                                        }
-                          },
-                          child: Text(
-                                        _gameTest ? "Launch" : "Test",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                                      onPressed: _gameTest
+                                          ? (_isPublished || _isLaunching
+                                                ? () {} // Disabled when already published or launching
+                                                : () async {
+                                                    _saveCurrentPageData();
+                                                    await _publishGame();
+                                                  })
+                                          : () async {
+                                              // Test functionality - navigate to testing page with gameId
+                                              if (gameId != null) {
+                                                await Get.toNamed(
+                                                  '/testing',
+                                                  arguments: {'gameId': gameId},
+                                                );
+                                                // Refresh game data when returning from test
+                                                await _loadFromFirestore(
+                                                  gameId!,
+                                                );
+                                              } else {
+                                                debugPrint(
+                                                  'No gameId available for testing',
+                                                );
+                                              }
+                                            },
+                                      child: _gameTest && _isLaunching
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.white),
+                                              ),
+                                            )
+                                          : Text(
+                                              _gameTest
+                                                  ? (_isPublished
+                                                        ? "Launched"
+                                                        : "Launch")
+                                                  : "Test",
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
                         ),
                       ],
                     ),
@@ -4616,6 +4721,91 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                     fontSize: 16,
                                     color: Colors.white.withOpacity(0.9),
                                   ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          // Launch Success Message Overlay with Fade Animation
+          if (_showLaunchSuccess)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 2000),
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                // Fade in for first 500ms, stay visible for 1000ms, fade out for 500ms
+                double opacity;
+                if (value < 0.25) {
+                  // Fade in
+                  opacity = value * 4;
+                } else if (value < 0.75) {
+                  // Stay visible
+                  opacity = 1.0;
+                } else {
+                  // Fade out
+                  opacity = 1.0 - ((value - 0.75) * 4);
+                }
+
+                return Opacity(
+                  opacity: opacity,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.5),
+                    child: Center(
+                      child: Transform.scale(
+                        scale: value < 0.25 ? 0.8 + (value * 0.8) : 1.0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 30,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.shade600,
+                                Colors.deepOrange.shade600,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.orange.withOpacity(0.5),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.rocket_launch,
+                                color: Colors.white,
+                                size: 80,
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                "Game Successfully Launch!",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                "Your game is now published and available to everyone!",
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.white.withOpacity(0.9),
                                 ),
                               ),
                             ],

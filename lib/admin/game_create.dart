@@ -50,12 +50,14 @@ class _MyGameCreateState extends State<MyGameCreate> {
                   // ---------------- Title Input ---------------- //
                   TextField(
                     controller: titleController,
-                    style: const TextStyle( // ✅ text color
+                    style: const TextStyle(
+                      // ✅ text color
                       color: Colors.white,
                     ),
                     decoration: InputDecoration(
                       hintText: "Enter game title",
-                      hintStyle: const TextStyle( // ✅ hint color
+                      hintStyle: const TextStyle(
+                        // ✅ hint color
                         color: Colors.white54,
                       ),
                       border: OutlineInputBorder(
@@ -67,7 +69,6 @@ class _MyGameCreateState extends State<MyGameCreate> {
                       ),
                     ),
                   ),
-
 
                   const Spacer(),
 
@@ -114,7 +115,10 @@ class _MyGameCreateState extends State<MyGameCreate> {
                           Navigator.pop(context); // close dialog
 
                           // Navigate to editor and pass the generated gameId
-                          Get.toNamed("/game_edit", arguments: {"gameId": docRef.id});
+                          Get.toNamed(
+                            "/game_edit",
+                            arguments: {"gameId": docRef.id},
+                          );
                         },
                         child: Text(
                           "Create",
@@ -252,7 +256,7 @@ class _MyGameCreateState extends State<MyGameCreate> {
                       color: Colors.white,
                       shadowDegree: ShadowDegree.light,
                       onPressed: () {
-                        debugPrint("Published Levels button clicked");
+                        Get.toNamed("/game_published");
                       },
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,

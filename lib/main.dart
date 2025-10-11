@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:lexi_on_web/admin/admin.dart';
 import 'package:lexi_on_web/editor/game_edit.dart';
+import 'package:lexi_on_web/editor/game_published.dart';
 import 'package:lexi_on_web/editor/game_save.dart';
 import 'package:lexi_on_web/editor/testing.dart';
 import 'package:lexi_on_web/teacher/teacher_home.dart';
@@ -43,6 +44,7 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/game_save', page: () => const MyGameSave()),
         GetPage(name: '/teacher_home', page: () => const MyTeacherHome()),
         GetPage(name: '/testing', page: () => const MyTesting()),
+        GetPage(name: '/game_published', page: () => const MyGamePublished()),
       ],
     );
   }
