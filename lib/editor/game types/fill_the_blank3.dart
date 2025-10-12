@@ -18,6 +18,8 @@ class MyFillInTheBlank3 extends StatelessWidget {
   final String? imageUrl; // Add imageUrl parameter
   final List<String> multipleChoices;
   final int correctAnswerIndex;
+  final int selectedAnswerIndex;
+  final Function(int) onAnswerSelected;
 
   const MyFillInTheBlank3({
     super.key,
@@ -28,6 +30,8 @@ class MyFillInTheBlank3 extends StatelessWidget {
     this.imageUrl,
     this.multipleChoices = const [],
     this.correctAnswerIndex = -1,
+    this.selectedAnswerIndex = -1,
+    required this.onAnswerSelected,
   });
 
   @override
@@ -36,7 +40,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+      children: [ 
         Text(
           "Guess the answer:",
           style: GoogleFonts.poppins(
@@ -142,18 +146,24 @@ class MyFillInTheBlank3 extends StatelessWidget {
             child: Column(
               children: multipleChoices
                   .where((choice) => choice.trim().isNotEmpty)
+                  .toList()
+                  .asMap()
+                  .entries
                   .map(
-                    (choice) => Padding(
+                    (entry) {
+                    final index = entry.key;
+                    final choice = entry.value;
+                    final isSelected = selectedAnswerIndex == index;
+
+                    return Padding(
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: AnimatedButton(
                         width: 200,
                         height: 50,
-                        color: Colors.lightBlue,
-                        onPressed: () {},
+                        color: isSelected ? Colors.green : Colors.lightBlue,
+                        onPressed: () => onAnswerSelected(index),
                         child: Text(
-                          choice.isNotEmpty
-                              ? choice
-                              : "Choice ${multipleChoices.indexOf(choice) + 1}",
+                          choice.isNotEmpty ? choice : "Choice ${index + 1}",
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -163,7 +173,8 @@ class MyFillInTheBlank3 extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
+                    );
+                  },
                   )
                   .toList(),
             ),
@@ -239,6 +250,31 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onCorrectAnswerSelected(selectedChoiceIndex);
     });
+  }
+
+  @override
+  void didUpdateWidget(MyFillInTheBlank3Settings oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update choices when widget properties change (e.g., when switching pages)
+    if (widget.initialChoices != oldWidget.initialChoices) {
+      for (int i = 0; i < choiceControllers.length; i++) {
+        if (i < widget.initialChoices.length) {
+          choiceControllers[i].text = widget.initialChoices[i];
+        } else {
+          choiceControllers[i].text = '';
+        }
+      }
+    }
+
+    // Update correct answer index when widget properties change
+    if (widget.initialCorrectIndex != oldWidget.initialCorrectIndex) {
+      setState(() {
+        selectedChoiceIndex = widget.initialCorrectIndex >= 0
+            ? widget.initialCorrectIndex
+            : 0;
+      });
+    }
   }
 
   @override
@@ -413,13 +449,16 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                   children: [
                     SizedBox(
                       width: 350,
-                      height: 50,
                       child: TextField(
                         controller: choiceControllers[i],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
                         decoration: InputDecoration(
                           hintText: "Choice ${i + 1}...",
                           filled: true,
                           fillColor: Colors.white,
+                          counterText: "",
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 14,
@@ -485,11 +524,12 @@ Future<String> uploadFillTheBlank3ImageToFirebase({
 
 /// Saves Fill The Blank 3 game data to Firebase
 ///
-/// Structure: users/{userId}/created_games/{gameId}/game_rounds/{roundDocId}
+/// Structure: users/{userId}/created_games/{gameId}/game_rounds/{roundDocId}/game_type/{gameTypeDocId}
 ///
 /// @param userId - The user ID
 /// @param gameId - The game ID from created_games collection
 /// @param roundDocId - The auto document ID from game_rounds collection
+/// @param gameTypeDocId - The auto document ID from game_type subcollection
 /// @param question - The question string
 /// @param gameHint - The game hint string
 /// @param answer - The correct answer index (0-3)
@@ -502,6 +542,7 @@ Future<void> saveFillTheBlank3ToFirebase({
   required String userId,
   required String gameId,
   required String roundDocId,
+  required String gameTypeDocId,
   required String question,
   required String gameHint,
   required int answer,
@@ -521,7 +562,9 @@ Future<void> saveFillTheBlank3ToFirebase({
         .collection('created_games')
         .doc(gameId)
         .collection('game_rounds')
-        .doc(roundDocId);
+        .doc(roundDocId)
+        .collection('game_type')
+        .doc(gameTypeDocId);
 
     // Prepare the data
     final data = {
@@ -552,11 +595,13 @@ Future<void> saveFillTheBlank3ToFirebase({
 /// @param userId - The user ID
 /// @param gameId - The game ID from created_games collection
 /// @param roundDocId - The document ID from game_rounds collection
+/// @param gameTypeDocId - The document ID from game_type subcollection
 /// @returns Map containing question, gameHint, answer, image, and multiple choices
 Future<Map<String, dynamic>?> loadFillTheBlank3FromFirebase({
   required String userId,
   required String gameId,
   required String roundDocId,
+  required String gameTypeDocId,
 }) async {
   try {
     final firestore = FirebaseFirestore.instance;
@@ -568,7 +613,9 @@ Future<Map<String, dynamic>?> loadFillTheBlank3FromFirebase({
         .collection('created_games')
         .doc(gameId)
         .collection('game_rounds')
-        .doc(roundDocId);
+        .doc(roundDocId)
+        .collection('game_type')
+        .doc(gameTypeDocId);
 
     // Get the document
     final docSnapshot = await docRef.get();

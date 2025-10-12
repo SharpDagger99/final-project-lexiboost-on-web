@@ -171,6 +171,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
   List<PageData> pages = [PageData()];
   int currentPageIndex = 0;
+  int _selectedAnswerIndex =
+      -1; // Track selected answer for multiple choice games
 
   String? gameId;
   Timer? _debounceTimer;
@@ -441,6 +443,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     });
   }
 
+  // Callback function to handle answer selection for multiple choice games
+  void _onAnswerSelected(int index) {
+    setState(() {
+      _selectedAnswerIndex = index;
+    });
+  }
+
   /// Validate all pages for required data
   Map<int, String> _validatePages() {
     Map<int, String> errors = {};
@@ -562,13 +571,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       visibleLetters: List.from(visibleLetters),
       selectedImageBytes: selectedImageBytes,
       whatCalledImageBytes: whatCalledImageBytes,
-      multipleChoices: List.from(multipleChoices),
+      multipleChoices: List.from(pages[currentPageIndex].multipleChoices),
       guessAnswerImages: List.from(guessAnswerImages),
       imageMatchImages: List.from(imageMatchImages),
       imageMatchCount: imageMatchCount,
       prizeCoins: '',
       hint: hintController.text,
-      correctAnswerIndex: correctAnswerIndex,
+      correctAnswerIndex: pages[currentPageIndex].correctAnswerIndex,
       docId: pages[currentPageIndex].docId, // Preserve the document ID
       gameTypeDocId: pages[currentPageIndex]
           .gameTypeDocId, // Preserve the game type document ID
@@ -740,6 +749,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         currentPageIndex++;
       });
       _loadPageData(currentPageIndex);
+      // Reset test status when adding new page
+      _resetGameTestStatus();
     }
   }
 
@@ -814,6 +825,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                         if (!isCurrentPage) {
                                           _saveCurrentPageData();
                                           currentPageIndex = index;
+                                          _selectedAnswerIndex =
+                                              -1; // Reset selected answer
                                           _loadPageData(currentPageIndex);
                                         }
                                         Navigator.of(context).pop();
@@ -1026,6 +1039,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 });
                  
                 _loadPageData(currentPageIndex);
+                // Reset test status when deleting page
+                _resetGameTestStatus();
               },
               child: Text(
                 'Delete',
@@ -1070,6 +1085,32 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('Failed to delete page from Firestore: $e');
+    }
+  }
+
+  /// Reset game test status when game is modified
+  Future<void> _resetGameTestStatus() async {
+    if (_gameTest || _isPublished) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || gameId == null) return;
+
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('created_games')
+            .doc(gameId)
+            .update({'game_test': false, 'publish': false});
+
+        setState(() {
+          _gameTest = false;
+          _isPublished = false;
+        });
+
+        debugPrint('Game test status reset due to modifications');
+      } catch (e) {
+        debugPrint('Failed to reset game test status: $e');
+      }
     }
   }
 
@@ -2735,7 +2776,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         gameTypeData.addAll({
           'question': pageData.descriptionField,
           'gameHint': pageData.hint,
-          'answer': correctAnswerIndex,
+          'answer': pageData.correctAnswerIndex,
           'image': imageUrl,
           'multipleChoice1': pageData.multipleChoices.isNotEmpty
               ? pageData.multipleChoices[0]
@@ -2787,7 +2828,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           'multipleChoice4': pageData.multipleChoices.length > 3
               ? pageData.multipleChoices[3]
               : '',
-          'correctAnswerIndex': correctAnswerIndex,
+          'correctAnswerIndex': pageData.correctAnswerIndex,
         });
       } else if (pageData.gameType == 'Read the sentence') {
         gameTypeData.addAll({'sentence': pageData.readSentence});
@@ -3990,6 +4031,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           multipleChoices: multipleChoices,
                                           correctAnswerIndex:
                                               correctAnswerIndex,
+                                                      selectedAnswerIndex:
+                                                          _selectedAnswerIndex,
+                                                      onAnswerSelected:
+                                                          _onAnswerSelected,
                                         )
                                       : selectedGameType == 'Guess the answer 2'
                                       ? MyGuessTheAnswer(
@@ -4003,6 +4048,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           multipleChoices: multipleChoices,
                                           correctAnswerIndex:
                                               correctAnswerIndex,
+                                                      selectedAnswerIndex:
+                                                          _selectedAnswerIndex,
+                                                      onAnswerSelected:
+                                                          _onAnswerSelected,
                                         )
                                       : selectedGameType == 'Read the sentence'
                                       ? MyReadTheSentence(
@@ -4164,6 +4213,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                 setState(() {
                                   selectedGameType = newValue;
                                 });
+                                            // Reset test status when game type is changed
+                                            _resetGameTestStatus();
                               }
                             },
                           ),
@@ -4269,13 +4320,25 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                 (List<String> choices) {
                                                   setState(() {
                                                     multipleChoices = choices;
+                                                // Also update the current page's data immediately
+                                                pages[currentPageIndex]
+                                                        .multipleChoices =
+                                                    List.from(choices);
                                                   });
+                                              // Reset test status when choices are changed
+                                              _resetGameTestStatus();
                                                 },
                                             onCorrectAnswerSelected:
                                                 (int index) {
                                                   setState(() {
                                                     correctAnswerIndex = index;
+                                                // Also update the current page's data immediately
+                                                pages[currentPageIndex]
+                                                        .correctAnswerIndex =
+                                                    index;
                                                   });
+                                              // Reset test status when answer is changed
+                                              _resetGameTestStatus();
                                                 },
                                             initialChoices: multipleChoices,
                                             initialCorrectIndex:
@@ -4303,13 +4366,25 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                 (List<String> choices) {
                                                   setState(() {
                                                     multipleChoices = choices;
+                                                // Also update the current page's data immediately
+                                                pages[currentPageIndex]
+                                                        .multipleChoices =
+                                                    List.from(choices);
                                                   });
+                                              // Reset test status when choices are changed
+                                              _resetGameTestStatus();
                                                 },
                                             onCorrectAnswerSelected:
                                                 (int index) {
                                                   setState(() {
                                                     correctAnswerIndex = index;
+                                                // Also update the current page's data immediately
+                                                pages[currentPageIndex]
+                                                        .correctAnswerIndex =
+                                                    index;
                                                   });
+                                              // Reset test status when answer is changed
+                                              _resetGameTestStatus();
                                                 },
                                             initialChoices: multipleChoices,
                                             initialCorrectIndex:

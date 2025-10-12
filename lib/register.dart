@@ -207,49 +207,6 @@ class _MyRegisterState extends State<MyRegister> {
 
                       const SizedBox(height: 20),
 
-                      // --- DIVIDER ---
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 30),
-                        child: Row(
-                          children: [
-                            Expanded(child: Divider(color: Colors.white, thickness: 2, endIndent: 10)),
-                            Text("or", style: TextStyle(color: Colors.white, fontSize: 14)),
-                            Expanded(child: Divider(color: Colors.white, thickness: 2, indent: 10)),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // --- GOOGLE LOGIN BUTTON (not connected yet) ---
-                      Container(
-                        width: 300,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Center(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Image.asset("assets/logo/google.png", width: 20, height: 20),
-                              const SizedBox(width: 10),
-                              Text(
-                                "Google",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
                       // --- SIGN UP REDIRECT ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,

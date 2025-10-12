@@ -18,6 +18,8 @@ class MyGuessTheAnswer extends StatelessWidget {
   final List<String?> imageUrls; // ✅ Add image URLs parameter
   final List<String> multipleChoices;
   final int correctAnswerIndex;
+  final int selectedAnswerIndex;
+  final Function(int) onAnswerSelected;
 
   const MyGuessTheAnswer({
     super.key,
@@ -27,7 +29,9 @@ class MyGuessTheAnswer extends StatelessWidget {
     this.pickedImages = const [null, null, null],
     this.imageUrls = const [null, null, null],
     this.multipleChoices = const [],
-    this.correctAnswerIndex = -1, 
+    this.correctAnswerIndex = -1,
+    this.selectedAnswerIndex = -1,
+    required this.onAnswerSelected,
   });
 
   @override
@@ -152,18 +156,24 @@ class MyGuessTheAnswer extends StatelessWidget {
             child: Column(
               children: multipleChoices
                   .where((choice) => choice.trim().isNotEmpty)
+                  .toList()
+                  .asMap()
+                  .entries
                   .map(
-                    (choice) => Padding(
+                    (entry) {
+                    final index = entry.key;
+                    final choice = entry.value;
+                    final isSelected = selectedAnswerIndex == index;
+
+                    return Padding(
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: AnimatedButton(
                         width: 200,
                         height: 50,
-                        color: Colors.lightBlue,
-                        onPressed: () {},
+                        color: isSelected ? Colors.green : Colors.lightBlue,
+                        onPressed: () => onAnswerSelected(index),
                         child: Text(
-                          choice.isNotEmpty
-                              ? choice
-                              : "Choice ${multipleChoices.indexOf(choice) + 1}",
+                          choice.isNotEmpty ? choice : "Choice ${index + 1}",
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -173,7 +183,8 @@ class MyGuessTheAnswer extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
+                    );
+                  },
                   )
                   .toList(),
             ),
@@ -181,41 +192,6 @@ class MyGuessTheAnswer extends StatelessWidget {
           const SizedBox(height: 20),
         ],
 
-        // Game Hint display
-        if (hintController.text.isNotEmpty) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.amber[100],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber[300]!, width: 1),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Hint:",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber[800],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  hintController.text,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.amber[800],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
 
         const Spacer(),
       ],
@@ -284,6 +260,31 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onCorrectAnswerSelected(selectedChoiceIndex);
     });
+  }
+
+  @override
+  void didUpdateWidget(MyGuessTheAnswerSettings oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update choices when widget properties change (e.g., when switching pages)
+    if (widget.initialChoices != oldWidget.initialChoices) {
+      for (int i = 0; i < choiceControllers.length; i++) {
+        if (i < widget.initialChoices.length) {
+          choiceControllers[i].text = widget.initialChoices[i];
+        } else {
+          choiceControllers[i].text = '';
+        }
+      }
+    }
+
+    // Update correct answer index when widget properties change
+    if (widget.initialCorrectIndex != oldWidget.initialCorrectIndex) {
+      setState(() {
+        selectedChoiceIndex = widget.initialCorrectIndex >= 0
+            ? widget.initialCorrectIndex
+            : 0;
+      });
+    }
   }
 
   @override
@@ -467,13 +468,16 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                   children: [
                     SizedBox(
                       width: 350,
-                      height: 50,
                       child: TextField(
                         controller: choiceControllers[i],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
                         decoration: InputDecoration(
                           hintText: "Choice ${i + 1}...",
                           filled: true,
                           fillColor: Colors.white,
+                          counterText: "",
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 14,
@@ -886,6 +890,8 @@ class _GuessTheAnswerGameManagerState extends State<GuessTheAnswerGameManager> {
                     .map((controller) => controller.text)
                     .toList(),
                 correctAnswerIndex: _selectedChoiceIndex,
+                selectedAnswerIndex: -1, // Not used in this example
+                onAnswerSelected: (index) {}, // Not used in this example
               ),
             ),
           ),

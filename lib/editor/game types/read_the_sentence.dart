@@ -8,8 +8,14 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 // First widget (Column 2)
 class MyReadTheSentence extends StatefulWidget {
   final TextEditingController sentenceController; // ✅ controller from game_edit
+  final TextEditingController?
+  userAnswerController; // ✅ controller for user's spoken answer
 
-  const MyReadTheSentence({super.key, required this.sentenceController});
+  const MyReadTheSentence({
+    super.key,
+    required this.sentenceController,
+    this.userAnswerController,
+  });
 
   @override
   State<MyReadTheSentence> createState() => _MyReadTheSentenceState();
@@ -19,12 +25,13 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _speechEnabled = false;
-  final TextEditingController _answerController = TextEditingController();
+  late TextEditingController _answerController;
 
   @override
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
+    _answerController = widget.userAnswerController ?? TextEditingController();
     _initSpeech();
   }
 
@@ -39,7 +46,10 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
 
   @override
   void dispose() {
-    _answerController.dispose();
+    // Only dispose if it's our internal controller
+    if (widget.userAnswerController == null) {
+      _answerController.dispose();
+    }
     super.dispose();
   }
 
