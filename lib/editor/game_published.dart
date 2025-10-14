@@ -30,11 +30,16 @@ class _MyGamePublishedState extends State<MyGamePublished> {
         .doc(gameId)
         .update({'publish': false});
 
-    // Remove from published_games collection
-    await FirebaseFirestore.instance
-        .collection("published_games")
-        .doc(gameId)
-        .delete();
+    // Also remove from root-level published_games collection if it exists
+    try {
+      await FirebaseFirestore.instance
+          .collection("published_games")
+          .doc(gameId)
+          .delete();
+    } catch (e) {
+      // Ignore error if document doesn't exist in published_games
+      print('Note: Could not delete from published_games collection: $e');
+    }
   }
 
   /// Get current user's role from Firestore
@@ -167,13 +172,36 @@ class _MyGamePublishedState extends State<MyGamePublished> {
             const SizedBox(width: 48),
           ],
         ),
-        body: StreamBuilder<QuerySnapshot>(
-          // Query from root-level published_games collection
-          stream: FirebaseFirestore.instance
-              .collection("published_games")
-              .orderBy("published_at", descending: true)
-              .snapshots(),
-          builder: (context, snapshot) {
+        body: user == null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_off_outlined,
+                      size: 80,
+                      color: Colors.white30,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Please log in to view your published games.",
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : StreamBuilder<QuerySnapshot>(
+                // Query only current user's published games from their created_games subcollection
+                stream: FirebaseFirestore.instance
+                    .collection("users")
+                    .doc(user!.uid)
+                    .collection("created_games")
+                    .where("publish", isEqualTo: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
                 child: CircularProgressIndicator(color: Colors.white),
@@ -241,10 +269,20 @@ class _MyGamePublishedState extends State<MyGamePublished> {
 
             final games = snapshot.data!.docs;
 
+                  // Sort games by published_at in descending order (client-side sorting)
+                  games.sort((a, b) {
+                    final aTime = a["published_at"] as Timestamp?;
+                    final bTime = b["published_at"] as Timestamp?;
+                    if (aTime == null && bTime == null) return 0;
+                    if (aTime == null) return 1;
+                    if (bTime == null) return -1;
+                    return bTime.compareTo(aTime); // Descending order
+                  });
+
             // Debug: Print number of games found
             print('Published games found: ${games.length}');
             for (var game in games) {
-              print('Game: ${game["title"]} - gameId: ${game["gameId"]}');
+                    print('Game: ${game["title"]} - gameId: ${game.id}');
             }
 
             return LayoutBuilder(
@@ -287,16 +325,13 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                   itemBuilder: (context, index) {
                     final game = games[index];
                     final title = game["title"] ?? "Untitled";
-                    final gameId = game["gameId"] ?? game.id;
-                    final userId = game["userId"] ?? "";
+                          final gameId = game.id; // Document ID is the gameId
+                          final userId = user!.uid; // Current user is the owner
                     final description = game["description"] ?? "";
                     final difficulty = game["difficulty"] ?? "easy";
                     final prizeCoins = game["prizeCoins"] ?? "0";
 
                     final isUnpublishing = unpublishingGameId == gameId;
-
-                    // Only allow unpublishing if current user is the owner
-                    final canUnpublish = user != null && userId == user!.uid;
 
                     return GestureDetector(
                       onTap: () {
@@ -311,20 +346,16 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                           );
                         }
                       },
-                      onLongPress: canUnpublish
-                          ? () {
+                            onLongPress: () {
                               setState(() {
                                 unpublishingGameId = gameId;
                               });
-                            }
-                          : null,
-                      onSecondaryTap: canUnpublish
-                          ? () {
+                            },
+                            onSecondaryTap: () {
                               setState(() {
                                 unpublishingGameId = gameId;
                               });
-                            }
-                          : null,
+                            },
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 300),
                         child: isUnpublishing

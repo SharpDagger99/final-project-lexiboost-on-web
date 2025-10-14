@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, prefer_final_fields
+// ignore_for_file: deprecated_member_use, prefer_final_fields, avoid_print
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -300,21 +300,47 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
       return;
     }
 
-    // Get current teacher's full name
-    final teacherDoc = await _firestore.collection('users').doc(currentUser.uid).get();
-    final teacherName = teacherDoc.data()?['fullname'] ?? '';
-
-    if (teacherName.isEmpty) {
+    // Get current user's data (role and full name)
+    final teacherDoc = await _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+    
+    if (!teacherDoc.exists) {
       yield [];
       return;
     }
 
+    final teacherData = teacherDoc.data();
+    final userRole = teacherData?['role'] ?? '';
+    final teacherName = teacherData?['fullname'] ?? '';
+
+    // Check if user is a teacher
+    if (userRole != 'teacher') {
+      print('User is not a teacher. Role: $userRole');
+      yield [];
+      return;
+    }
+
+    // Check if teacher has a full name
+    if (teacherName.isEmpty) {
+      print('Teacher full name is empty');
+      yield [];
+      return;
+    }
+
+    print('Teacher role verified: $teacherName');
+
     // Query all users to find students who have this teacher with status false
-    await for (var usersSnapshot in _firestore.collection('users').where('role', isEqualTo: 'student').snapshots()) {
+    await for (var usersSnapshot
+        in _firestore.collection('users').snapshots()) {
       List<Map<String, dynamic>> requests = [];
 
       for (var userDoc in usersSnapshot.docs) {
-        // Check if this student has the current teacher in their subcollection
+        // Skip if it's the current user
+        if (userDoc.id == currentUser.uid) continue;
+
+        // Check if this user has the current teacher in their subcollection
         final teacherSubDoc = await _firestore
             .collection('users')
             .doc(userDoc.id)
@@ -322,23 +348,31 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
             .doc(teacherName)
             .get();
 
+        // If the document exists with teacher's full name, this user requested this teacher
         if (teacherSubDoc.exists) {
-          final teacherData = teacherSubDoc.data();
-          final status = teacherData?['status'] ?? false;
+          final teacherRequestData = teacherSubDoc.data();
+          final status = teacherRequestData?['status'] ?? false;
 
           // Only include pending requests (status = false)
           if (!status) {
             final userData = userDoc.data();
+            
+            print(
+              'Found pending request from user: ${userData['username']} (ID: ${userDoc.id})',
+            );
+            
             requests.add({
               'studentId': userDoc.id,
-              'username': userData['username'] ?? 'Unknown',
+              'username':
+                  userData['username'] ?? userData['fullname'] ?? 'Unknown',
               'email': userData['email'] ?? '',
-              'addedAt': teacherData?['addedAt'],
+              'addedAt': teacherRequestData?['addedAt'],
             });
           }
         }
       }
 
+      print('Total pending requests: ${requests.length}');
       yield requests;
     }
   }

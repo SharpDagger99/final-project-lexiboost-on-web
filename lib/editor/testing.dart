@@ -588,6 +588,9 @@ class _MyTestingState extends State<MyTesting> {
       // Clear user answer for Read the sentence
       userAnswerController.clear();
 
+      // Clear user answer for Math game
+      mathState.previewResultController.clear();
+
       // Update progress
       progressValue = (pageIndex + 1) / pages.length;
 
@@ -655,6 +658,9 @@ class _MyTestingState extends State<MyTesting> {
     } else if (currentPage.gameType == 'Read the sentence') {
       // Check if user has provided an answer (speech recognition result)
       return userAnswerController.text.trim().isNotEmpty;
+    } else if (currentPage.gameType == 'Math') {
+      // Check if user has entered an answer
+      return mathState.previewResultController.text.trim().isNotEmpty;
     }
 
     // For other game types, always return true (they have their own validation)
@@ -676,6 +682,11 @@ class _MyTestingState extends State<MyTesting> {
       final targetText = _normalizeText(currentPage.readSentence);
       final userAnswer = _normalizeText(userAnswerController.text);
       return targetText == userAnswer;
+    } else if (currentPage.gameType == 'Math') {
+      // For Math game, compare user's answer with the correct answer from Firebase
+      final userAnswer = mathState.previewResultController.text.trim();
+      final correctAnswer = currentPage.mathAnswer.trim();
+      return userAnswer == correctAnswer;
     }
 
     // For other game types, assume correct if validation passes

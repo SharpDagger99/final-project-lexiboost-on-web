@@ -2966,32 +2966,30 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
         gameTypeData.addAll(imageMatchData);
       } else if (pageData.gameType == 'Math') {
-        // Get the math state from the current page
-
+        // Use the math data from pageData instead of mathState to avoid duplicate values across pages
         Map<String, dynamic> mathData = {
-          'totalBoxes': mathState.totalBoxes,
-          'answer': double.tryParse(mathState.resultController.text) ?? 0,
+          'totalBoxes': pageData.mathTotalBoxes,
+          'answer': double.tryParse(pageData.mathAnswer) ?? 0,
         };
 
         // Add operators as individual fields (operator1_2, operator2_3, etc.)
-        for (int i = 0; i < mathState.operators.length && i < 9; i++) {
-          mathData['operator${i + 1}_${i + 2}'] = mathState.operators[i];
+        for (int i = 0; i < pageData.mathOperators.length && i < 9; i++) {
+          mathData['operator${i + 1}_${i + 2}'] = pageData.mathOperators[i];
         }
 
         // Fill remaining operators with empty string if less than 9 operators
-        for (int i = mathState.operators.length; i < 9; i++) {
+        for (int i = pageData.mathOperators.length; i < 9; i++) {
           mathData['operator${i + 1}_${i + 2}'] = '';
         }
 
         // Add box values (box1 to box10)
-        for (int i = 0; i < mathState.boxControllers.length && i < 10; i++) {
-          final boxValue =
-              double.tryParse(mathState.boxControllers[i].text) ?? 0;
+        for (int i = 0; i < pageData.mathBoxValues.length && i < 10; i++) {
+          final boxValue = double.tryParse(pageData.mathBoxValues[i]) ?? 0;
           mathData['box${i + 1}'] = boxValue;
         }
 
         // Fill remaining boxes with 0 if less than 10 boxes
-        for (int i = mathState.boxControllers.length; i < 10; i++) {
+        for (int i = pageData.mathBoxValues.length; i < 10; i++) {
           mathData['box${i + 1}'] = 0;
         }
 

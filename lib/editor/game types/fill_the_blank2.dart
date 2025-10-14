@@ -503,7 +503,7 @@ class _MyFillInTheBlank2SettingsState
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: TextField(
                 controller: widget.answerController,
-                maxLength: 25,
+                maxLength: 150,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   color: Colors.black,
@@ -820,7 +820,7 @@ class _FillTheBlank2GameManagerState extends State<FillTheBlank2GameManager> {
     if (_answerController.text.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter an answer')));
+      ).showSnackBar(const SnackBar(content: Text('Please enter an answer'))); 
       return;
     }
 

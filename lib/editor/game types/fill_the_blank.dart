@@ -309,7 +309,7 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: TextField(
                 controller: widget.answerController,
-                maxLength: 25,
+                maxLength: 150,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   color: Colors.black,
@@ -485,7 +485,7 @@ Future<void> saveFillTheBlankToFirebase({
 /// @param roundDocId - The document ID from game_rounds collection
 /// @param gameTypeDocId - The document ID from game_type subcollection
 /// @returns Map containing answer, visibleLetters, and gameHint
-Future<Map<String, dynamic>?> loadFillTheBlankFromFirebase({
+Future<Map<String, dynamic>?> loadFillTheBlankFromFirebase({ 
   required String userId,
   required String gameId,
   required String roundDocId,
