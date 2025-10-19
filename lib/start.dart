@@ -1,10 +1,10 @@
-// ignore_for_file: deprecated_member_use, avoid_print, avoid_web_libraries_in_flutter
+// ignore_for_file: deprecated_member_use, avoid_print
 
 import 'dart:ui'; // needed for ImageFilter
-import 'dart:html' as html; // ✅ needed for window.open
 import 'package:animated_button/animated_button.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MyStart extends StatefulWidget {
   const MyStart({super.key});
@@ -47,9 +47,13 @@ class _MyStartState extends State<MyStart> {
                         color: Colors.black,
                       ),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
                       // ✅ Open in new tab
-                      html.window.open("/#/register", "_blank");
+                      final url = Uri.parse('${Uri.base.origin}/#/register');
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
                     },
                   ),
 
@@ -67,9 +71,13 @@ class _MyStartState extends State<MyStart> {
                         color: Colors.black,
                       ),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
                       // ✅ Open in new tab
-                      html.window.open("/#/register2", "_blank");
+                      final url = Uri.parse('${Uri.base.origin}/#/register2');
+                      await launchUrl(
+                        url,
+                        mode: LaunchMode.externalApplication,
+                      );
                     },
                   ),
                 ],

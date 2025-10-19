@@ -1,10 +1,8 @@
 // ===== game_edit.dart =====
 
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_web_libraries_in_flutter, avoid_print, unnecessary_import
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_import
 
 import 'dart:async';
-import 'dart:html' as html;
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:animated_button/animated_button.dart';
 import 'package:flutter/gestures.dart';
@@ -29,6 +27,7 @@ import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
 import 'package:lexi_on_web/services/settings_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Page data class to store page content
 class PageData {
@@ -212,11 +211,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   // Image cache to reduce Firebase reads
   static final Map<String, Uint8List> _imageCache = {};
 
-  // Browser event listeners
-  StreamSubscription<html.Event>? _beforeUnloadSubscription;
-  StreamSubscription<html.PopStateEvent>? _popStateSubscription;
-  StreamSubscription<html.Event>? _reloadSubscription;
-
   @override
   void initState() {
     super.initState();
@@ -228,9 +222,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     readSentenceController.addListener(_triggerAutoSave);
     listenAndRepeatController.addListener(_triggerAutoSave);
     hintController.addListener(_triggerAutoSave);
-
-    // Set up browser event listeners
-    _setupBrowserEventListeners();
 
     // Add observer for app lifecycle changes
     WidgetsBinding.instance.addObserver(this);
@@ -289,153 +280,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     }
   }
 
-  void _setupBrowserEventListeners() {
-    // Prevent page reload (F5, Ctrl+R, etc.)
-    _beforeUnloadSubscription = html.window.onBeforeUnload.listen((event) {
-      final beforeUnloadEvent = event as html.BeforeUnloadEvent;
-      beforeUnloadEvent.returnValue =
-          'You have unsaved changes. Are you sure you want to leave?';
-    });
+  // Browser event listeners removed - using Flutter's WillPopScope instead
+  // Note: For full browser back button prevention, consider using a routing solution
 
-    // Handle browser back button
-    _popStateSubscription = html.window.onPopState.listen((event) {
-      // Prevent default back navigation
-      html.window.history.pushState(null, '', html.window.location.href);
-
-      // Show confirmation dialog
-      _showBrowserBackConfirmation();
-    });
-
-    // Handle browser reload events
-    _reloadSubscription = html.window.onBeforeUnload.listen((event) {
-      // Save current data before reload
-      _saveCurrentPageData();
-      _autoSaveToFirestore();
-    });
-
-    // Push initial state to enable popstate detection
-    html.window.history.pushState(null, '', html.window.location.href);
-  }
-
-  Future<void> _showBrowserBackConfirmation() async {
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: const Color(0xFF2A2C2A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Container(
-            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_back, color: Colors.orange, size: 50),
-                const SizedBox(height: 20),
-                Text(
-                  'Leave Game Editor?',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'You are about to leave the game editor. Do you want to save your changes before leaving?',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    AnimatedButton(
-                      width: 80,
-                      height: 40,
-                      color: Colors.grey,
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        // Stay on current page - push state again
-                        html.window.history.pushState(
-                          null,
-                          '',
-                          html.window.location.href,
-                        );
-                      },
-                      child: Text(
-                        'Stay',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    AnimatedButton(
-                      width: 80,
-                      height: 40,
-                      color: Colors.red,
-                      onPressed: () async {
-                        Navigator.of(context).pop();
-                        _removeEventListeners();
-                        await _navigateBasedOnRole();
-                      },
-                      child: Text(
-                        'Leave',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    AnimatedButton(
-                      width: 80,
-                      height: 40,
-                      color: Colors.green,
-                      onPressed: () async {
-                        Navigator.of(context).pop();
-                        _saveCurrentPageData();
-                        await _saveToFirestore();
-                        _removeEventListeners();
-                        await _navigateBasedOnRole();
-                      },
-                      child: Text(
-                        'Save',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-
-                    
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _removeEventListeners() {
-    _beforeUnloadSubscription?.cancel();
-    _popStateSubscription?.cancel();
-    _reloadSubscription?.cancel();
-    _beforeUnloadSubscription = null;
-    _popStateSubscription = null;
-    _reloadSubscription = null;
-  }
+  // Event listeners removed - no longer needed
 
   void _syncVisibleLetters() {
     final text = answerController.text;
@@ -1227,48 +1075,42 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   /// Extract gameId from URL query parameters
   String? _getGameIdFromUrl() {
     try {
-      final uri = Uri.parse(html.window.location.href);
-      return uri.queryParameters['gameId'];
+      return Uri.base.queryParameters['gameId'];
     } catch (e) {
       debugPrint('Failed to parse URL: $e');
       return null;
     }
   }
 
-  /// Save gameId to browser session storage
+  /// Save gameId to shared preferences
   Future<void> _saveGameIdToSession(String gameId) async {
     try {
-      html.window.sessionStorage['currentGameId'] = gameId;
-      debugPrint('GameId saved to session storage: $gameId');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('currentGameId', gameId);
+      debugPrint('GameId saved to shared preferences: $gameId');
     } catch (e) {
-      debugPrint('Failed to save gameId to session storage: $e');
+      debugPrint('Failed to save gameId to shared preferences: $e');
     }
   }
 
-  /// Get gameId from browser session storage
+  /// Get gameId from shared preferences
   Future<String?> _getGameIdFromSession() async {
     try {
-      final gameId = html.window.sessionStorage['currentGameId'];
-      debugPrint('GameId from session storage: $gameId');
+      final prefs = await SharedPreferences.getInstance();
+      final gameId = prefs.getString('currentGameId');
+      debugPrint('GameId from shared preferences: $gameId');
       return gameId;
     } catch (e) {
-      debugPrint('Failed to get gameId from session storage: $e');
+      debugPrint('Failed to get gameId from shared preferences: $e');
       return null;
     }
   }
 
   /// Update URL with gameId for bookmarking
+  /// Note: URL manipulation removed to avoid dart:html dependency
+  /// GameId is now stored in SharedPreferences instead
   void _updateUrlWithGameId(String gameId) {
-    try {
-      final uri = Uri.parse(html.window.location.href);
-      final newUri = uri.replace(
-        queryParameters: {...uri.queryParameters, 'gameId': gameId},
-      );
-      html.window.history.replaceState(null, '', newUri.toString());
-      debugPrint('URL updated with gameId: $gameId');
-    } catch (e) {
-      debugPrint('Failed to update URL: $e');
-    }
+    debugPrint('GameId would be added to URL: $gameId (feature disabled)');
   }
 
   /// Show loading error to user
@@ -2274,7 +2116,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                       color: Colors.red,
                       onPressed: () async {
                         Navigator.of(context).pop();
-                        _removeEventListeners();
                         await _navigateBasedOnRole();
                       },
                       child: Text(
@@ -2294,7 +2135,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                         Navigator.of(context).pop();
                         _saveCurrentPageData();
                         await _saveToFirestore();
-                        _removeEventListeners();
                         await _navigateBasedOnRole();
                       },
                       child: Text(
@@ -2428,7 +2268,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       // Then delete the main game document
       await gameDocRef.delete();
 
-      _removeEventListeners();
       await _navigateBasedOnRole();
     } catch (e) {
       debugPrint('Failed to delete game: $e');
@@ -2937,32 +2776,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             debugPrint('Failed to upload audio for Listen and Repeat: $e');
             print("Error details: $e");
           }
-        } else if (pageData.listenAndRepeatAudioPath != null) {
-          // Fallback: try to read from file path if bytes are not available
-          try {
-            print(
-              "Attempting to read audio file: ${pageData.listenAndRepeatAudioPath}",
-            );
-            final audioFile = File(pageData.listenAndRepeatAudioPath!);
-            if (await audioFile.exists()) {
-              print("Audio file exists, reading bytes...");
-              final audioBytes = await audioFile.readAsBytes();
-              print("Audio bytes read: ${audioBytes.length} bytes");
-              audioUrl = await _uploadAudioToStorage(
-                audioBytes,
-                'listen_and_repeat_audio',
-              );
-              pageData.listenAndRepeatAudioUrl = audioUrl;
-              print("Audio uploaded successfully: $audioUrl");
-            } else {
-              print(
-                "Audio file does not exist at path: ${pageData.listenAndRepeatAudioPath}",
-              );
-            }
-          } catch (e) {
-            debugPrint('Failed to upload audio for Listen and Repeat: $e');
-            print("Error details: $e");
-          }
         } else {
           print("No audio data provided for Listen and Repeat");
           // Set a default placeholder URL if no audio is available
@@ -3083,7 +2896,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     // Remove observer
     WidgetsBinding.instance.removeObserver(this);
     
-    _removeEventListeners();
     _debounceTimer?.cancel();
     _autoSaveTimer?.cancel();
     titleController.removeListener(_onTitleChanged);
