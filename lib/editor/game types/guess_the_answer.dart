@@ -19,7 +19,7 @@ class MyGuessTheAnswer extends StatelessWidget {
   final List<String> multipleChoices;
   final int correctAnswerIndex;
   final int selectedAnswerIndex;
-  final Function(int) onAnswerSelected;
+  final Function(int) onAnswerSelected; 
 
   const MyGuessTheAnswer({
     super.key,
@@ -380,25 +380,27 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
             color: Colors.white,
           ),
         ),
-        const SizedBox(width: 10),
-        Container(
-          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
-          height: 50,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.black, width: 1),
-            color: Colors.white,
-          ),
-          child: TextField(
-            controller: widget.questionController,
-            maxLength: 80,
-            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-            decoration: InputDecoration(
-              counterText: "",
-              hintText: "Enter your question...",
-              hintStyle: GoogleFonts.poppins(color: Colors.black54),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 1),
+              color: Colors.white,
+            ),
+            child: TextField(
+              controller: widget.questionController,
+              maxLength: 80,
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+              decoration: InputDecoration(
+                counterText: "",
+                hintText: "Enter your question...",
+                hintStyle: GoogleFonts.poppins(color: Colors.black54),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
             ),
           ),
         ),
@@ -414,25 +416,27 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
             color: Colors.white,
           ),
         ),
-        const SizedBox(width: 10),
-        Container(
-          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
-          height: 50,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.black, width: 1),
-            color: Colors.white,
-          ),
-          child: TextField(
-            controller: widget.hintController,
-            maxLength: 100,
-            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-            decoration: InputDecoration(
-              counterText: "",
-              hintText: "Enter game hint...",
-              hintStyle: GoogleFonts.poppins(color: Colors.black54),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 1),
+              color: Colors.white,
+            ),
+            child: TextField(
+              controller: widget.hintController,
+              maxLength: 100,
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+              decoration: InputDecoration(
+                counterText: "",
+                hintText: "Enter game hint...",
+                hintStyle: GoogleFonts.poppins(color: Colors.black54),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
             ),
           ),
         ),
@@ -458,25 +462,27 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                 padding: const EdgeInsets.only(bottom: 12.0),
                 child: Row(
                   children: [
-                    SizedBox(
-                      width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 350),
-                      child: TextField(
-                        controller: choiceControllers[i],
-                        maxLength: 50,
-                        maxLines: 3,
-                        minLines: 1,
-                        decoration: InputDecoration(
-                          hintText: "Choice ${i + 1}...",
-                          filled: true,
-                          fillColor: Colors.white,
-                          counterText: "",
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 350),
+                        child: TextField(
+                          controller: choiceControllers[i],
+                          maxLength: 50,
+                          maxLines: 3,
+                          minLines: 1,
+                          decoration: InputDecoration(
+                            hintText: "Choice ${i + 1}...",
+                            filled: true,
+                            fillColor: Colors.white,
+                            counterText: "",
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide.none,
+                            ),
                           ),
                         ),
                       ),

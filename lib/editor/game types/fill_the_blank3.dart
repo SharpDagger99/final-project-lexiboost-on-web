@@ -35,7 +35,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) { 
     final question = questionController.text;
 
     return Column(
@@ -353,77 +353,73 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
         const SizedBox(height: 20),
 
         // Question input
-        Row(
-          children: [
-            Text(
-              "Question:",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        Text(
+          "Question:",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 1),
+              color: Colors.white,
+            ),
+            child: TextField(
+              controller: widget.questionController,
+              maxLength: 80,
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+              decoration: InputDecoration(
+                counterText: "",
+                hintText: "Enter your question...",
+                hintStyle: GoogleFonts.poppins(color: Colors.black54),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               ),
             ),
-            const SizedBox(width: 10),
-            Container(
-              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black, width: 1),
-                color: Colors.white,
-              ),
-              child: TextField(
-                controller: widget.questionController,
-                maxLength: 80,
-                style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-                decoration: InputDecoration(
-                  counterText: "",
-                  hintText: "Enter your question...",
-                  hintStyle: GoogleFonts.poppins(color: Colors.black54),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
 
         const SizedBox(height: 20),
 
         // Game Hint input
-        Row(
-          children: [
-            Text(
-              "Game Hint:",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        Text(
+          "Game Hint:",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 1),
+              color: Colors.white,
+            ),
+            child: TextField(
+              controller: widget.hintController,
+              maxLength: 100,
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+              decoration: InputDecoration(
+                counterText: "",
+                hintText: "Enter game hint...",
+                hintStyle: GoogleFonts.poppins(color: Colors.black54),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               ),
             ),
-            const SizedBox(width: 10),
-            Container(
-              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black, width: 1),
-                color: Colors.white,
-              ),
-              child: TextField(
-                controller: widget.hintController,
-                maxLength: 100,
-                style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-                decoration: InputDecoration(
-                  counterText: "",
-                  hintText: "Enter game hint...",
-                  hintStyle: GoogleFonts.poppins(color: Colors.black54),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
 
         const SizedBox(height: 30),
@@ -447,25 +443,27 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                 padding: const EdgeInsets.only(bottom: 12.0),
                 child: Row(
                   children: [
-                    SizedBox(
-                      width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
-                      child: TextField(
-                        controller: choiceControllers[i],
-                        maxLength: 50,
-                        maxLines: 3,
-                        minLines: 1,
-                        decoration: InputDecoration(
-                          hintText: "Choice ${i + 1}...",
-                          filled: true,
-                          fillColor: Colors.white,
-                          counterText: "",
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 300),
+                        child: TextField(
+                          controller: choiceControllers[i],
+                          maxLength: 50,
+                          maxLines: 3,
+                          minLines: 1,
+                          decoration: InputDecoration(
+                            hintText: "Choice ${i + 1}...",
+                            filled: true,
+                            fillColor: Colors.white,
+                            counterText: "",
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide.none,
+                            ),
                           ),
                         ),
                       ),
