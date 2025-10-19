@@ -188,7 +188,7 @@ class _MyFillTheBlankState extends State<MyFillTheBlank> {
         // Display TextField (shows the answer with blanks filled)
         Center(
           child: SizedBox(
-            width: 400,
+            width: (MediaQuery.of(context).size.width * 0.8).clamp(0, 400),
             child: TextField(
               enabled: false,
               controller: TextEditingController(text: displayAnswer),
@@ -219,7 +219,7 @@ class _MyFillTheBlankState extends State<MyFillTheBlank> {
         // Input field - now always visible
         Center(
           child: SizedBox(
-            width: 400,
+            width: (MediaQuery.of(context).size.width * 0.8).clamp(0, 400),
             child: TextField(
               controller: _userInputController,
               autofocus: true,
@@ -299,7 +299,7 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -344,7 +344,7 @@ class _MyFillTheBlankSettingsState extends State<MyFillTheBlankSettings> {
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,

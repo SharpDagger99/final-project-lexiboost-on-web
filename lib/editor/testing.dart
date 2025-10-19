@@ -32,6 +32,8 @@ class TestPageData {
   List<Uint8List?> guessAnswerImages;
   List<Uint8List?> imageMatchImages;
   int imageMatchCount;
+  Map<int, int>
+  imageMatchMappings; // Stores which odd image matches which even image
   String hint;
   String? imageUrl;
   String? whatCalledImageUrl;
@@ -59,6 +61,7 @@ class TestPageData {
     List<Uint8List?>? guessAnswerImages,
     List<Uint8List?>? imageMatchImages,
     this.imageMatchCount = 2,
+    Map<int, int>? imageMatchMappings,
     this.hint = '',
     this.imageUrl,
     this.whatCalledImageUrl,
@@ -74,6 +77,7 @@ class TestPageData {
     this.gameTypeDocId,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null),
+       imageMatchMappings = imageMatchMappings ?? {},
        guessAnswerImageUrls = guessAnswerImageUrls ?? [null, null, null];
 }
 
@@ -110,6 +114,10 @@ class _MyTestingState extends State<MyTesting> {
   List<Uint8List?> guessAnswerImages = [null, null, null];
   List<Uint8List?> imageMatchImages = List.filled(8, null);
   int imageMatchCount = 2;
+  Map<int, int> imageMatchMappings = {}; // Correct match mappings
+  Set<int> matchedImages = {}; // Track correctly matched images
+  int? selectedOdd; // Currently selected odd image
+  int? selectedEven; // Currently selected even image
   int correctAnswerIndex = -1;
   String? listenAndRepeatAudioPath;
   String listenAndRepeatAudioSource = "";
@@ -159,6 +167,10 @@ class _MyTestingState extends State<MyTesting> {
 
   // Selected answer state for multiple choice games
   int _selectedAnswerIndex = -1;
+  
+  // Error message overlay state
+  bool _showErrorMessage = false;
+  String _errorMessageText = '';
 
   // Callback function to handle answer selection
   void _onAnswerSelected(int index) {
@@ -401,6 +413,27 @@ class _MyTestingState extends State<MyTesting> {
                   ]
                 : List.filled(8, null),
             imageMatchCount: gameTypeData['imageCount'] ?? 2,
+            imageMatchMappings: gameType == 'Image Match'
+                ? () {
+                    Map<int, int> mappings = {};
+                    // Load match data from Firestore (1-based) and convert to 0-based
+                    debugPrint('Loading Image Match mappings from Firestore:');
+                    for (int i = 1; i <= 7; i += 2) {
+                      if (gameTypeData['image_match$i'] != null) {
+                        int matchValue = gameTypeData['image_match$i'] as int;
+                        if (matchValue > 0) {
+                          // Convert from 1-based to 0-based indexing
+                          mappings[i - 1] = matchValue - 1;
+                          debugPrint(
+                            '  image_match$i: $matchValue → [${i - 1}] → [${matchValue - 1}]',
+                          );
+                        }
+                      }
+                    }
+                    debugPrint('Final mappings (0-based): $mappings');
+                    return mappings;
+                  }()
+                : {},
             listenAndRepeatAudioUrl: gameType == 'Listen and Repeat'
                 ? (gameTypeData['audio'] as String?)
                 : null,
@@ -572,6 +605,10 @@ class _MyTestingState extends State<MyTesting> {
       guessAnswerImages = List.from(pageData.guessAnswerImages);
       imageMatchImages = List.from(pageData.imageMatchImages);
       imageMatchCount = pageData.imageMatchCount;
+      imageMatchMappings = Map.from(pageData.imageMatchMappings);
+      matchedImages = {}; // Reset matched images for new page
+      selectedOdd = null; // Reset selections
+      selectedEven = null;
       correctAnswerIndex = pageData.correctAnswerIndex;
       imageUrl = pageData.imageUrl;
       whatCalledImageUrl = pageData.whatCalledImageUrl;
@@ -661,6 +698,9 @@ class _MyTestingState extends State<MyTesting> {
     } else if (currentPage.gameType == 'Math') {
       // Check if user has entered an answer
       return mathState.previewResultController.text.trim().isNotEmpty;
+    } else if (currentPage.gameType == 'Image Match') {
+      // Check if all images have been matched
+      return matchedImages.length == currentPage.imageMatchCount;
     }
 
     // For other game types, always return true (they have their own validation)
@@ -695,16 +735,30 @@ class _MyTestingState extends State<MyTesting> {
 
   Future<void> _handleConfirm() async {
     if (!_validateAnswer()) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Please complete the question before proceeding!',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Show error message specific to game type
+      final currentPage = pages[currentPageIndex];
+      String errorMessage = 'Please complete the question before proceeding!';
+
+      if (currentPage.gameType == 'Image Match') {
+        int remaining = currentPage.imageMatchCount - matchedImages.length;
+        errorMessage = 'Please match all images! $remaining pair(s) remaining.';
+      }
+
+      // Show floating error message
+      setState(() {
+        _errorMessageText = errorMessage;
+        _showErrorMessage = true;
+      });
+
+      // Auto-hide after 3 seconds
+      await Future.delayed(const Duration(seconds: 3));
+
+      if (mounted) {
+        setState(() {
+          _showErrorMessage = false;
+        });
+      }
+      
       return;
     }
 
@@ -729,21 +783,21 @@ class _MyTestingState extends State<MyTesting> {
         // Check if game over (no hearts left)
         if (remainingHearts <= 0) {
           // Show game over message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Game Over! No hearts remaining. Try again!',
-                style: GoogleFonts.poppins(),
-              ),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          setState(() {
+            _errorMessageText = 'Game Over! No hearts remaining. Try again!';
+            _showErrorMessage = true;
+          });
           
           // Wait a bit then go back to game edit
-          await Future.delayed(const Duration(milliseconds: 2000));
+          await Future.delayed(const Duration(seconds: 3));
 
           if (mounted) {
+            setState(() {
+              _showErrorMessage = false;
+            });
+
+            // Go back after hiding message
+            await Future.delayed(const Duration(milliseconds: 500));
             Get.back(); // Go back to game_edit.dart
           }
           return;
@@ -816,33 +870,23 @@ class _MyTestingState extends State<MyTesting> {
 
       debugPrint('game_test updated to true');
 
-      // Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Game tested successfully!',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-
-      // Go back to game edit
+      // Go back to game edit immediately (success message will be shown in game_edit)
       Get.back();
     } catch (e) {
       debugPrint('Error updating game_test: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error updating game test status',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() {
+          _errorMessageText = 'Error updating game test status';
+          _showErrorMessage = true;
+        });
+
+        await Future.delayed(const Duration(seconds: 3));
+
+        if (mounted) {
+          setState(() {
+            _showErrorMessage = false;
+          });
+        }
       }
     }
   }
@@ -1097,9 +1141,93 @@ class _MyTestingState extends State<MyTesting> {
                                         audioUrl: listenAndRepeatAudioUrl,
                                       )
                                     : selectedGameType == 'Image Match'
-                                    ? MyImageMatch(
+                                    ? MyImageMatchTesting(
                                         pickedImages: imageMatchImages,
                                         count: imageMatchCount,
+                                        matchMappings: imageMatchMappings,
+                                        matchedImages: matchedImages,
+                                        selectedOdd: selectedOdd,
+                                        selectedEven: selectedEven,
+                                        onImageTap: (int index) {
+                                          setState(() {
+                                            bool isOdd =
+                                                (index % 2) ==
+                                                0; // 0-based: 0,2,4,6 are odd positions
+                                            debugPrint(
+                                              'Image $index tapped (${isOdd ? "odd" : "even"})',
+                                            );
+
+                                            // Don't allow tapping matched images
+                                            if (matchedImages.contains(index)) {
+                                              debugPrint(
+                                                'Image $index is already matched',
+                                              );
+                                              return;
+                                            }
+
+                                            if (isOdd) {
+                                              // Toggle odd selection
+                                              selectedOdd =
+                                                  (selectedOdd == index)
+                                                  ? null
+                                                  : index;
+                                              debugPrint(
+                                                'Selected odd: $selectedOdd',
+                                              );
+                                            } else {
+                                              // Toggle even selection
+                                              selectedEven =
+                                                  (selectedEven == index)
+                                                  ? null
+                                                  : index;
+                                              debugPrint(
+                                                'Selected even: $selectedEven',
+                                              );
+                                            }
+
+                                            // Check for match when both are selected
+                                            if (selectedOdd != null &&
+                                                selectedEven != null) {
+                                              debugPrint(
+                                                'Checking match: [$selectedOdd] → [${imageMatchMappings[selectedOdd]}] vs selected [$selectedEven]',
+                                              );
+                                              if (imageMatchMappings[selectedOdd] ==
+                                                  selectedEven) {
+                                                // Correct match!
+                                                debugPrint(
+                                                  '✅ Correct match! Adding to matched images',
+                                                );
+                                                matchedImages.addAll([
+                                                  selectedOdd!,
+                                                  selectedEven!,
+                                                ]);
+                                                debugPrint(
+                                                  'Matched images: $matchedImages',
+                                                );
+                                                selectedOdd = null;
+                                                selectedEven = null;
+                                              } else {
+                                                // Wrong match - reset after a short delay
+                                                debugPrint(
+                                                  '❌ Wrong match! Resetting selections',
+                                                );
+                                                Future.delayed(
+                                                  const Duration(
+                                                    milliseconds: 500,
+                                                  ),
+                                                  () {
+                                                    if (mounted) {
+                                                      setState(() {
+                                                        selectedOdd = null;
+                                                        selectedEven = null;
+                                                      });
+                                                    }
+                                                  },
+                                                );
+                                              }
+                                            }
+                                          });
+                                        },
                                       )
                                     : MyMath(mathState: mathState),
                               ),
@@ -1360,6 +1488,92 @@ class _MyTestingState extends State<MyTesting> {
                                       blurRadius: 3,
                                     ),
                                   ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          // Error message overlay (floating at top)
+          if (_showErrorMessage)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 1500),
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                double opacity;
+                double translateY;
+
+                if (value < 0.3) {
+                  // Fade in and slide down (0 to 0.3)
+                  opacity = value * 3.33;
+                  translateY = -50 + (value * 166.67); // -50 to 0
+                } else if (value < 0.7) {
+                  // Stay visible (0.3 to 0.7)
+                  opacity = 1.0;
+                  translateY = 0;
+                } else {
+                  // Fade out and slide up (0.7 to 1.0)
+                  opacity = 1.0 - ((value - 0.7) * 3.33);
+                  translateY = -((value - 0.7) * 166.67); // 0 to -50
+                }
+
+                return Positioned(
+                  top: 20,
+                  left: 0,
+                  right: 0,
+                  child: Transform.translate(
+                    offset: Offset(0, translateY),
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Center(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.red.shade600,
+                                Colors.red.shade700,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.4),
+                                blurRadius: 15,
+                                spreadRadius: 3,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Flexible(
+                                child: Text(
+                                  _errorMessageText,
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ],

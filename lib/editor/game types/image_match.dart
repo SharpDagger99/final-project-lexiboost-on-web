@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:typed_data';
 import 'package:animated_button/animated_button.dart';
 import 'package:file_picker/file_picker.dart';
@@ -129,20 +131,179 @@ class MyImageMatch extends StatelessWidget {
 }
 
 // ================================
+// Testing Widget (Interactive)
+// ================================
+class MyImageMatchTesting extends StatelessWidget {
+  final List<Uint8List?> pickedImages;
+  final int count;
+  final Map<int, int> matchMappings; // Correct match mappings
+  final Set<int> matchedImages; // Already matched images
+  final int? selectedOdd;
+  final int? selectedEven;
+  final Function(int) onImageTap;
+
+  const MyImageMatchTesting({
+    super.key,
+    required this.pickedImages,
+    required this.count,
+    required this.matchMappings,
+    required this.matchedImages,
+    required this.selectedOdd,
+    required this.selectedEven,
+    required this.onImageTap,
+  });
+
+  Widget _buildImageBox(Uint8List? img, int index) {
+    bool isMatched = matchedImages.contains(index);
+    bool isSelected = (index == selectedOdd || index == selectedEven);
+    bool isOdd = (index % 2) == 0; // 0-based: 0,2,4,6 are odd
+    bool isDisabled =
+        !isMatched &&
+        !isSelected &&
+        ((isOdd && selectedOdd != null && selectedOdd != index) ||
+            (!isOdd && selectedEven != null && selectedEven != index));
+
+    Color borderColor;
+    double borderWidth;
+
+    if (isMatched) {
+      borderColor = Colors.green;
+      borderWidth = 4;
+    } else if (isSelected) {
+      borderColor = Colors.blue;
+      borderWidth = 4;
+    } else if (isDisabled) {
+      borderColor = Colors.grey;
+      borderWidth = 2;
+    } else {
+      borderColor = Colors.black26;
+      borderWidth = 2;
+    }
+
+    return AnimatedButton(
+      onPressed: isMatched ? () {} : () => onImageTap(index),
+      width: 100,
+      height: 100,
+      color: Colors.white,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: borderColor, width: borderWidth),
+          borderRadius: BorderRadius.circular(10),
+          color: isDisabled ? Colors.grey.withOpacity(0.3) : Colors.white,
+        ),
+        child: img != null
+            ? Opacity(
+                opacity: isDisabled ? 0.5 : 1.0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(img, fit: BoxFit.contain),
+                ),
+              )
+            : Center(
+                child: Text(
+                  "Image\n${index + 1}",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  List<Widget> _buildRows(List<Widget> boxes) {
+    final rows = <Widget>[];
+    for (int i = 0; i < boxes.length; i += 2) {
+      final rowChildren = <Widget>[];
+      rowChildren.add(boxes[i]);
+      if (i + 1 < boxes.length) {
+        rowChildren.add(boxes[i + 1]);
+      }
+      rows.add(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: rowChildren,
+        ),
+      );
+    }
+
+    return rows.expand((row) => [row, const SizedBox(height: 10)]).toList()
+      ..removeLast();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = List<Uint8List?>.from(pickedImages);
+    while (images.length < count) {
+      images.add(null);
+    }
+
+    // Split into odd (top) and even (bottom)
+    final oddBoxes = <Widget>[];
+    final evenBoxes = <Widget>[];
+
+    for (int i = 0; i < count; i++) {
+      if ((i + 1) % 2 == 1) {
+        oddBoxes.add(_buildImageBox(images[i], i));
+      } else {
+        evenBoxes.add(_buildImageBox(images[i], i));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Image Match:",
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        Text(
+          "Tap one image from each row to match them.",
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        if (oddBoxes.isNotEmpty) Column(children: _buildRows(oddBoxes)),
+
+        if (oddBoxes.isNotEmpty && evenBoxes.isNotEmpty)
+          const Divider(color: Colors.black26, thickness: 1, height: 30),
+
+        if (evenBoxes.isNotEmpty) Column(children: _buildRows(evenBoxes)),
+      ],
+    );
+  }
+}
+
+// ================================
 // Column 3 - Settings Widget
 // ================================
 class MyImageMatchSettings extends StatefulWidget {
   final Function(int, Uint8List) onImagePicked;
   final Function(int) onCountChanged;
+  final Function(Map<int, int>) onMatchChanged;
   final List<Uint8List?>? initialImages;
   final int? initialCount;
+  final Map<int, int>? initialMatches;
 
   const MyImageMatchSettings({
     super.key,
     required this.onImagePicked,
     required this.onCountChanged,
+    required this.onMatchChanged,
     this.initialImages,
     this.initialCount,
+    this.initialMatches,
   });
 
   @override
@@ -171,6 +332,11 @@ class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
         _localImages.add(null);
       }
     }
+    
+    // Initialize matches with provided data
+    if (widget.initialMatches != null) {
+      _matches.addAll(widget.initialMatches!);
+    }
   }
 
   @override
@@ -191,6 +357,14 @@ class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
         while (_localImages.length < 8) {
           _localImages.add(null);
         }
+      });
+    }
+    
+    // Update matches when switching pages
+    if (widget.initialMatches != null) {
+      setState(() {
+        _matches.clear();
+        _matches.addAll(widget.initialMatches!);
       });
     }
   }
@@ -256,6 +430,8 @@ class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
                 ),
         ),
 
+
+        //select match dropdown f1
         if (isOdd)
           Container(
             width: 100,
@@ -302,6 +478,14 @@ class _MyImageMatchSettingsState extends State<MyImageMatchSettings> {
                   } else {
                     _matches[index] = null;
                   }
+                  
+                  // Notify parent of match changes - filter out null values
+                  final validMatches = Map<int, int>.fromEntries(
+                    _matches.entries
+                        .where((e) => e.value != null)
+                        .map((e) => MapEntry(e.key, e.value!)),
+                  );
+                  widget.onMatchChanged(validMatches);
                 });
               },
             ),

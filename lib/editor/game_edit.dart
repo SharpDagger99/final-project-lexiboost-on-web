@@ -46,6 +46,8 @@ class PageData {
   List<Uint8List?> guessAnswerImages;
   List<Uint8List?> imageMatchImages;
   int imageMatchCount;
+  Map<int, int>
+  imageMatchMappings; // Stores which odd image (key) matches to which even image (value)
   String difficulty;
   String prizeCoins;
   String gameRule;
@@ -89,6 +91,7 @@ class PageData {
     List<Uint8List?>? guessAnswerImages,
     List<Uint8List?>? imageMatchImages,
     this.imageMatchCount = 2,
+    Map<int, int>? imageMatchMappings,
     this.difficulty = 'easy',
     this.prizeCoins = '100',
     this.gameRule = 'none',
@@ -112,6 +115,7 @@ class PageData {
     this.mathAnswer = '0',
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null),
+       imageMatchMappings = imageMatchMappings ?? {},
        guessAnswerImageUrls = guessAnswerImageUrls ?? [null, null, null],
        imageMatchImageUrls = imageMatchImageUrls ?? List.filled(8, null);
 }
@@ -162,6 +166,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   List<Uint8List?> guessAnswerImages = [null, null, null];
   List<Uint8List?> imageMatchImages = List.filled(8, null);
   int imageMatchCount = 2;
+  Map<int, int> imageMatchMappings =
+      {}; // Track which odd image matches to which even image
   int correctAnswerIndex = -1; // Track correct answer for Guess the answer
   
   // Audio state for Listen and Repeat
@@ -173,6 +179,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   int currentPageIndex = 0;
   int _selectedAnswerIndex =
       -1; // Track selected answer for multiple choice games
+
+  // Responsive design state
+  bool _isSmallScreen = false;
+  bool _showSidebar = false;
+
+  // Scroll controller for sidebar
+  final ScrollController _sidebarScrollController = ScrollController();
 
   String? gameId;
   Timer? _debounceTimer;
@@ -221,7 +234,21 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAutoSaveSettings();
       _initializeGameEditor();
+      _checkScreenSize();
     });
+  }
+
+  /// Check screen size and update responsive state
+  void _checkScreenSize() {
+    if (mounted) {
+      final screenWidth = MediaQuery.of(context).size.width;
+      setState(() {
+        _isSmallScreen = screenWidth <= 1366;
+        if (!_isSmallScreen) {
+          _showSidebar = false; // Hide sidebar on large screens
+        }
+      });
+    }
   }
 
   @override
@@ -575,6 +602,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       guessAnswerImages: List.from(guessAnswerImages),
       imageMatchImages: List.from(imageMatchImages),
       imageMatchCount: imageMatchCount,
+      imageMatchMappings: Map.from(imageMatchMappings),
       prizeCoins: '',
       hint: hintController.text,
       correctAnswerIndex: pages[currentPageIndex].correctAnswerIndex,
@@ -636,10 +664,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       guessAnswerImages = List.from(pageData.guessAnswerImages);
       imageMatchImages = List.from(pageData.imageMatchImages);
       imageMatchCount = pageData.imageMatchCount;
+      imageMatchMappings = Map.from(pageData.imageMatchMappings);
       
       // Debug Image Match loading
       if (pageData.gameType == 'Image Match') {
         debugPrint('Loading Image Match page with count: $imageMatchCount');
+        debugPrint('Loading Image Match mappings: $imageMatchMappings');
         for (int i = 0; i < imageMatchImages.length; i++) {
           if (imageMatchImages[i] != null) {
             debugPrint(
@@ -1568,6 +1598,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               debugPrint('  - image$i: ${gameTypeData['image$i']}');
             }
           }
+          // Load match mappings
+          debugPrint('Image Match mappings loaded:');
+          for (int i = 1; i <= 7; i += 2) {
+            if (gameTypeData['image_match$i'] != null) {
+              debugPrint('  - image_match$i: ${gameTypeData['image_match$i']}');
+            }
+          }
         } else if (gameType == 'Math') {
           // Math specific fields - will be loaded into MathState when page is displayed
           debugPrint('Math totalBoxes: ${gameTypeData['totalBoxes']}');
@@ -1624,6 +1661,22 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             visibleLetters: visibleLetters,
             multipleChoices: multipleChoices,
             imageMatchCount: gameTypeData['imageCount'] ?? 2,
+            imageMatchMappings: gameType == 'Image Match'
+                ? () {
+                    Map<int, int> mappings = {};
+                    // Load match data from Firestore (1-based) and convert to 0-based
+                    for (int i = 1; i <= 7; i += 2) {
+                      if (gameTypeData['image_match$i'] != null) {
+                        int matchValue = gameTypeData['image_match$i'] as int;
+                        if (matchValue > 0) {
+                          // Convert from 1-based to 0-based indexing
+                          mappings[i - 1] = matchValue - 1;
+                        }
+                      }
+                    }
+                    return mappings;
+                  }()
+                : {},
             hint: hint,
             docId: doc.id,
             gameTypeDocId: gameTypeDocId,
@@ -2958,10 +3011,19 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           }
         }
 
-        // Add match data only for odd positions (1, 3, 5, 7)
-        // These are the positions that can be matched to even positions (2, 4, 6, 8)
-        for (int i = 1; i <= 7; i += 2) {
-          imageMatchData['image_match$i'] = 0; // Default match value
+        // Add match data for odd positions (1, 3, 5, 7) based on user selections
+        // The key is the odd image index (0-based), value is the even image index (0-based)
+        // We need to convert to 1-based for Firestore storage
+        for (int i = 0; i < 7; i += 2) {
+          // 0, 2, 4, 6 (0-based odd positions)
+          if (pageData.imageMatchMappings.containsKey(i)) {
+            // Convert from 0-based to 1-based for storage
+            // image_match1 corresponds to index 0, image_match3 to index 2, etc.
+            imageMatchData['image_match${i + 1}'] =
+                pageData.imageMatchMappings[i]! + 1;
+          } else {
+            imageMatchData['image_match${i + 1}'] = 0; // No match selected
+          }
         }
 
         gameTypeData.addAll(imageMatchData);
@@ -3035,6 +3097,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     hintController.dispose();
     timerMinutesController.dispose();
     timerSecondsController.dispose();
+    _sidebarScrollController.dispose();
     
     // Clear image cache to free memory
     clearImageCache();
@@ -3042,8 +3105,595 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// Build Column 1 content (used in sidebar for small screens)
+  Widget _buildColumn1Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Title:",
+          style: GoogleFonts.poppins(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 400),
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextField(
+            controller: titleController,
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              hintText: "Enter title",
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.black54,
+                fontSize: 14,
+              ),
+              border: InputBorder.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Description:",
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 400,
+          height: 120,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextField(
+            maxLines: 4,
+            controller: descriptionController,
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              hintText: "Enter description here...",
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.black54,
+                fontSize: 14,
+              ),
+              border: InputBorder.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Difficulty:",
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 400,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DropdownButton<String>(
+            value: selectedDifficulty,
+            dropdownColor: Colors.white,
+            underline: const SizedBox(),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              color: Colors.black,
+              fontWeight: FontWeight.w500,
+            ),
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(value: 'easy', child: Text('Easy')),
+              DropdownMenuItem(
+                value: 'easy-normal',
+                child: Text('Easy-Normal'),
+              ),
+              DropdownMenuItem(value: 'normal', child: Text('Normal')),
+              DropdownMenuItem(value: 'hard', child: Text('Hard')),
+              DropdownMenuItem(value: 'insane', child: Text('Insane')),
+              DropdownMenuItem(value: 'brainstorm', child: Text('Brainstorm')),
+              DropdownMenuItem(
+                value: 'hard-brainstorm',
+                child: Text('Hard Brainstorm'),
+              ),
+            ],
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  selectedDifficulty = newValue;
+                });
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Prize Coin:",
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 400,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: TextField(
+            controller: prizeCoinsController,
+            keyboardType: const TextInputType.numberWithOptions(
+              signed: false,
+              decimal: false,
+            ),
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              hintText: "Enter prize amount",
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.black54,
+                fontSize: 14,
+              ),
+              border: InputBorder.none,
+            ),
+            onChanged: (value) {
+              if (value.isNotEmpty) {
+                String cleanValue = value.replaceAll(',', '');
+                int? coins = int.tryParse(cleanValue);
+
+                if (coins != null) {
+                  if (coins > 99999) {
+                    prizeCoinsController.text = NumberFormat(
+                      '#,##0',
+                    ).format(99999);
+                    prizeCoinsController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: prizeCoinsController.text.length),
+                    );
+                  } else {
+                    String formatted = NumberFormat('#,##0').format(coins);
+                    if (formatted != value) {
+                      prizeCoinsController.text = formatted;
+                      prizeCoinsController.selection =
+                          TextSelection.fromPosition(
+                            TextPosition(offset: formatted.length),
+                          );
+                    }
+                  }
+                } else if (cleanValue.isEmpty) {
+                  prizeCoinsController.text = '';
+                }
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Game Rules:",
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Container(
+              width: 400,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: DropdownButton<String>(
+                value: selectedGameRule,
+                dropdownColor: Colors.white,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w500,
+                ),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text('None')),
+                  DropdownMenuItem(
+                    value: 'heart',
+                    child: Text('Heart Deduction'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'timer',
+                    child: Text('Timer Countdown'),
+                  ),
+                  DropdownMenuItem(value: 'score', child: Text('Score')),
+                ],
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedGameRule = newValue;
+                      heartEnabled = newValue == 'heart';
+                      if (newValue != 'timer') {
+                        timerMinutesController.clear();
+                        timerSecondsController.clear();
+                        timerSeconds = 0;
+                      }
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        if (selectedGameRule == 'timer') ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                width: 80,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: TextField(
+                  controller: timerMinutesController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+                  decoration: InputDecoration(
+                    hintText: "Min",
+                    hintStyle: GoogleFonts.poppins(
+                      color: Colors.black54,
+                      fontSize: 14,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      int minutes = int.tryParse(value) ?? 0;
+                      int seconds =
+                          int.tryParse(timerSecondsController.text) ?? 0;
+                      timerSeconds = (minutes * 60) + seconds;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                ":",
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                width: 80,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: TextField(
+                  controller: timerSecondsController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+                  decoration: InputDecoration(
+                    hintText: "Sec",
+                    hintStyle: GoogleFonts.poppins(
+                      color: Colors.black54,
+                      fontSize: 14,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      int minutes =
+                          int.tryParse(timerMinutesController.text) ?? 0;
+                      int seconds = int.tryParse(value) ?? 0;
+                      if (seconds > 59) {
+                        seconds = 59;
+                        timerSecondsController.text = '59';
+                        timerSecondsController.selection =
+                            TextSelection.fromPosition(
+                              TextPosition(
+                                offset: timerSecondsController.text.length,
+                              ),
+                            );
+                      }
+                      timerSeconds = (minutes * 60) + seconds;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 20),
+        Text(
+          "Game Set:",
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 400,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: DropdownButton<String>(
+                value: selectedGameSet,
+                dropdownColor: Colors.white,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w500,
+                ),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'public', child: Text('Public')),
+                  DropdownMenuItem(value: 'private', child: Text('Private')),
+                ],
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedGameSet = newValue;
+                      if (newValue == 'public') {
+                        gameCodeController.clear();
+                      }
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        if (selectedGameSet == 'private') ...[
+          const SizedBox(height: 10),
+          Container(
+            width: 120,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TextField(
+              controller: gameCodeController,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: false,
+                decimal: false,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(8),
+              ],
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.black,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                hintText: "Game Code...",
+                hintStyle: GoogleFonts.poppins(
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+              ),
+              onChanged: (value) {
+                String cleanValue = value.replaceAll('-', '');
+                if (cleanValue.length >= 5) {
+                  String formatted = '';
+                  for (int i = 0; i < cleanValue.length; i++) {
+                    if (i == 4) {
+                      formatted += '-${cleanValue[i]}';
+                    } else {
+                      formatted += cleanValue[i];
+                    }
+                  }
+                  if (formatted != value) {
+                    gameCodeController.text = formatted;
+                    gameCodeController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: formatted.length),
+                    );
+                  }
+                }
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 40),
+        Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 10),
+          child: Divider(color: Colors.white),
+        ),
+        if (_autoSaveStatus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Icon(
+                  _autoSaveStatus.contains('✓')
+                      ? Icons.check_circle
+                      : _autoSaveStatus.contains('Saving')
+                      ? Icons.sync
+                      : _autoSaveStatus.contains('disabled')
+                      ? Icons.settings_backup_restore
+                      : Icons.edit_note,
+                  color: _autoSaveStatus.contains('✓')
+                      ? Colors.green
+                      : _autoSaveStatus.contains('disabled')
+                      ? Colors.grey
+                      : Colors.orange,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _autoSaveStatus,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: _autoSaveStatus.contains('✓')
+                          ? Colors.green
+                          : _autoSaveStatus.contains('disabled')
+                          ? Colors.grey
+                          : Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              AnimatedButton(
+                width: 100,
+                height: 50,
+                color: Colors.red,
+                onPressed: () {
+                  _showDeleteConfirmationDialog();
+                },
+                child: Text(
+                  "Delete",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+              AnimatedButton(
+                width: 100,
+                height: 50,
+                color: Colors.blue,
+                onPressed: () {
+                  _showCloseConfirmationDialog();
+                },
+                child: Text(
+                  "Close",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+              AnimatedButton(
+                width: 100,
+                height: 50,
+                color: Colors.green,
+                onPressed: _isSaving
+                    ? () {}
+                    : () async {
+                        _saveCurrentPageData();
+                        await _saveToFirestore();
+                      },
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                    : Text(
+                        "Save",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Check screen size immediately for responsiveness
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth <= 1366;
+
+    debugPrint(
+      'Screen width: $screenWidth, isSmallScreen: $isSmallScreen, _isSmallScreen: $_isSmallScreen',
+    );
+
+    // Update state if screen size changed
+    if (isSmallScreen != _isSmallScreen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _isSmallScreen = isSmallScreen;
+            if (!_isSmallScreen) {
+              _showSidebar = false; // Hide sidebar on large screens
+            }
+          });
+        }
+      });
+    }
+    
     // Show loading indicator while initializing
     if (_isLoading) {
       return Scaffold(
@@ -3070,6 +3720,20 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       backgroundColor: const Color(0xFF1E201E),
       body: Stack(
         children: [
+          // Dark overlay background when sidebar is open
+          if (_isSmallScreen && _showSidebar)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _showSidebar = false;
+                  });
+                },
+                child: Container(color: Colors.black.withOpacity(0.5)),
+              ),
+            ),
+
+          // Main content area
           ScrollConfiguration(
             behavior: ScrollConfiguration.of(context).copyWith(
               dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
@@ -3078,20 +3742,24 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               scrollDirection: Axis.horizontal,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minWidth: MediaQuery.of(context).size.width,
+                  minWidth: (MediaQuery.of(context).size.width * 0.6).clamp(
+                    0,
+                    400,
+                  ),
                 ),
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width,
                   child: Padding(
-                    padding: const EdgeInsets.all(30.0),
+                    padding: EdgeInsets.all(_isSmallScreen ? 10.0 : 30.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-            // -------- Column 1 --------
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                        // -------- Column 1 -------- (Hidden on small screens)
+                        if (!_isSmallScreen)
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                               Expanded(
                                 child: SingleChildScrollView(
                                   child: Column(
@@ -3108,7 +3776,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                       ),
                                       const SizedBox(height: 8),
                                       Container(
-                                        width: 300,
+                                          width:
+                                              (MediaQuery.of(
+                                                        context,
+                                                      ).size.width *
+                                                      0.6)
+                                                  .clamp(0, 400),
                                         height: 50,
                                         decoration: BoxDecoration(
                                           color: Colors.white,
@@ -3148,7 +3821,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                       ),
                                       const SizedBox(height: 8),
                                       Container(
-                                        width: 300,
+                                          width:
+                                              (MediaQuery.of(
+                                                        context,
+                                                      ).size.width *
+                                                      0.6)
+                                                  .clamp(0, 300),
                                         height: 120,
                                         decoration: BoxDecoration(
                                           color: Colors.white,
@@ -3267,7 +3945,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                       ),
                                       const SizedBox(height: 8),
                                       Container(
-                                        width: 300,
+                                          width:
+                                              (MediaQuery.of(
+                                                        context,
+                                                      ).size.width *
+                                                      0.6)
+                                                  .clamp(0, 300),
                                         height: 50,
                                         decoration: BoxDecoration(
                                           color: Colors.white,
@@ -3436,7 +4119,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             const SizedBox(width: 15),
                                             // Minutes field
                                             Container(
-                                              width: 80,
+                                                width:
+                                                    (MediaQuery.of(
+                                                              context,
+                                                            ).size.width *
+                                                            0.6)
+                                                        .clamp(0, 300),
                                               height: 50,
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
@@ -3503,7 +4191,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             const SizedBox(width: 5),
                                             // Seconds field
                                             Container(
-                                              width: 80,
+                                                width:
+                                                    (MediaQuery.of(
+                                                              context,
+                                                            ).size.width *
+                                                            0.6)
+                                                        .clamp(0, 80),
                                               height: 50,
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
@@ -3647,7 +4340,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             const SizedBox(width: 20),
 
                                             Container(
-                                              width: 120,
+                                                width:
+                                                    (MediaQuery.of(
+                                                              context,
+                                                            ).size.width *
+                                                            0.6)
+                                                        .clamp(0, 120),
                                               height: 50,
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
@@ -3884,11 +4582,11 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               child: Center(
                 child: SizedBox(
                   width: 428,
-                  height: 900,
+                              height: double.infinity,
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4082,39 +4780,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                       : MyMath(mathState: mathState),
                                 ),
 
-                                Center(
-                                  child: AnimatedButton(
-                                    width: 350,
-                                    height: 60,
-                                    color: Colors.green,
-                                        onPressed: _isSaving
-                                            ? () {}
-                                            : () async {
-                                                _saveCurrentPageData();
-                                                await _saveToFirestore();
-                                              },
-                                        child: _isSaving
-                                            ? const SizedBox(
-                                                width: 24,
-                                                height: 24,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 3,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                        Color
-                                                      >(Colors.black),
-                                                ),
-                                              )
-                                            : Text(
-                                                "Confirm",
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                  ),
-                                ),
+                                
                               ],
                             ),
                           ),
@@ -4145,7 +4811,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                         ),
                         const SizedBox(width: 12),
                         Container(
-                          width: 300,
+                                      width: 210,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 4,
@@ -4462,8 +5128,19 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               // Trigger auto-save when count changes
                                               _triggerAutoSave();
                                             },
+                                            onMatchChanged: (Map<int, int> matches) {
+                                              setState(() {
+                                                imageMatchMappings = matches;
+                                              });
+                                              debugPrint(
+                                                'Image Match mappings changed: $matches',
+                                              );
+                                              // Trigger auto-save when matches change
+                                              _triggerAutoSave();
+                                            },
                                             initialImages: imageMatchImages,
                                             initialCount: imageMatchCount,
+                                            initialMatches: imageMatchMappings,
                                           )
                                         else if (selectedGameType == 'Math')
                                           MyMathSettings(mathState: mathState),
@@ -4499,12 +5176,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                               clipBehavior: Clip.none,
                               children: [
                                 AnimatedButton(
-                                  width: 150,
+                                          width: 80,
                                   height: 50,
-                                  color: Colors.orange,
+                                          color: Colors.green,
                                   onPressed: _showPageSelector,
                                   child: Text(
-                                    "Page ${currentPageIndex + 1} of ${pages.length}",
+                                            "${currentPageIndex + 1} of ${pages.length}",
                                     style: GoogleFonts.poppins(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -4889,6 +5566,77 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   ),
                 );
               },
+            ),
+
+          // Sliding sidebar for small screens (appears on right side, in front of main content)
+          if (_isSmallScreen && _showSidebar)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: 450,
+                decoration: BoxDecoration(
+                  color: const Color(
+                    0xFF1E201E,
+                  ), // Same background color as game_edit.dart
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    // Handle mouse drag scrolling with better sensitivity
+                    if (details.delta.dy != 0) {
+                      final newOffset =
+                          _sidebarScrollController.offset -
+                          (details.delta.dy * 2);
+                      final maxScroll =
+                          _sidebarScrollController.position.maxScrollExtent;
+                      final clampedOffset = newOffset.clamp(0.0, maxScroll);
+
+                      _sidebarScrollController.jumpTo(clampedOffset);
+                    }
+                  },
+                  child: SingleChildScrollView(
+                    controller: _sidebarScrollController,
+                    padding: const EdgeInsets.all(20.0),
+                    physics: const BouncingScrollPhysics(),
+                    child: _buildColumn1Content(),
+                  ),
+                ),
+              ),
+            ),
+
+          // Hamburger menu button for small screens (highest z-index)
+          if (_isSmallScreen)
+            Positioned(
+              top: 20,
+              left: 20,
+              child: AnimatedButton(
+                onPressed: () {
+                  debugPrint(
+                    'Hamburger button pressed! Current _showSidebar: $_showSidebar',
+                  );
+                  setState(() {
+                    _showSidebar = !_showSidebar;
+                  });
+                  debugPrint('New _showSidebar: $_showSidebar');
+                },
+                width: 50,
+                height: 50,
+                color: Colors.orange,
+                child: Icon(
+                  _showSidebar ? Icons.close : Icons.menu,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
             ),
         ],
       ),

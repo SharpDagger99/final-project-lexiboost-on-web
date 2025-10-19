@@ -335,7 +335,7 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
         // Display Answer TextField (disabled)
         Center(
           child: SizedBox(
-            width: 400,
+            width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 400),
             child: TextField(
               enabled: false,
               controller: TextEditingController(text: displayAnswer),
@@ -362,7 +362,7 @@ class _MyFillInTheBlank2State extends State<MyFillInTheBlank2> {
         // Input Field
         Center(
           child: SizedBox(
-            width: 400,
+            width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 400),
             child: TextField(
               controller: _userInputController,
               autofocus: true,
@@ -493,7 +493,7 @@ class _MyFillInTheBlank2SettingsState
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -538,7 +538,7 @@ class _MyFillInTheBlank2SettingsState
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,
