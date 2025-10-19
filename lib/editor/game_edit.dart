@@ -183,9 +183,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   // Responsive design state
   bool _isSmallScreen = false;
   bool _showSidebar = false;
+  bool _isMediumScreen = false; // New state for Column 3 visibility
+  bool _showColumn3Sidebar = false; // New state for Column 3 sidebar
 
   // Scroll controller for sidebar
   final ScrollController _sidebarScrollController = ScrollController();
+  final ScrollController _column3ScrollController = ScrollController();
+  final ScrollController _column2ScrollController = ScrollController();
 
   String? gameId;
   Timer? _debounceTimer;
@@ -244,8 +248,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       final screenWidth = MediaQuery.of(context).size.width;
       setState(() {
         _isSmallScreen = screenWidth <= 1366;
+        _isMediumScreen = screenWidth <= 1024;
         if (!_isSmallScreen) {
           _showSidebar = false; // Hide sidebar on large screens
+        }
+        if (!_isMediumScreen) {
+          _showColumn3Sidebar = false; // Hide Column 3 sidebar on large screens
         }
       });
     }
@@ -320,7 +328,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Container(
-            width: 400,
+            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -797,7 +805,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Container(
-            width: 400,
+            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2218,7 +2226,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Container(
-            width: 400,
+            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2319,7 +2327,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Container(
-            width: 400,
+            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3098,11 +3106,420 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     timerMinutesController.dispose();
     timerSecondsController.dispose();
     _sidebarScrollController.dispose();
+    _column3ScrollController.dispose();
+    _column2ScrollController.dispose();
     
     // Clear image cache to free memory
     clearImageCache();
     
     super.dispose();
+  }
+
+  /// Build Column 3 content (used in sidebar for medium screens)
+  Widget _buildColumn3Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              "Game Type:",
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 210,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: DropdownButton<String>(
+                value: selectedGameType,
+                dropdownColor: Colors.white,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w500,
+                ),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Fill in the blank',
+                    child: Text('Fill in the blank'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Fill in the blank 2',
+                    child: Text('Fill in the blank 2'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Guess the answer',
+                    child: Text('Guess the answer'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Guess the answer 2',
+                    child: Text('Guess the answer 2'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Read the sentence',
+                    child: Text('Read the sentence'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'What is it called',
+                    child: Text('What is it called'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Listen and Repeat',
+                    child: Text('Listen and Repeat'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Image Match',
+                    child: Text('Image Match'),
+                  ),
+                  DropdownMenuItem(value: 'Math', child: Text('Math')),
+                ],
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedGameType = newValue;
+                    });
+                    // Reset test status when game type is changed
+                    _resetGameTestStatus();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+
+        Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 10),
+          child: Divider(color: Colors.white),
+        ),
+
+        // Validation Warning Banner
+        if (_validatePages().containsKey(currentPageIndex))
+          Container(
+            margin: const EdgeInsets.only(bottom: 15),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.red, width: 2),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.red,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _validatePages()[currentPageIndex] ?? 'Error',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Game-specific settings
+        if (selectedGameType == 'Fill in the blank')
+          MyFillTheBlankSettings(
+            answerController: answerController,
+            hintController: hintController,
+            visibleLetters: visibleLetters,
+            onToggle: _toggleLetter,
+          )
+        else if (selectedGameType == 'Fill in the blank 2')
+          MyFillInTheBlank2Settings(
+            answerController: answerController,
+            hintController: hintController,
+            visibleLetters: visibleLetters,
+            onToggle: _toggleLetter,
+            onImagePicked: (Uint8List imageBytes) {
+              setState(() {
+                selectedImageBytes = imageBytes;
+              });
+              _triggerAutoSave();
+            },
+          )
+        else if (selectedGameType == 'Guess the answer')
+          MyFillInTheBlank3Settings(
+            hintController: hintController,
+            questionController: descriptionFieldController,
+            visibleLetters: visibleLetters,
+            onToggle: _toggleLetter,
+            onImagePicked: (Uint8List imageBytes) {
+              setState(() {
+                selectedImageBytes = imageBytes;
+              });
+            },
+            onChoicesChanged: (List<String> choices) {
+              setState(() {
+                multipleChoices = choices;
+                pages[currentPageIndex].multipleChoices = List.from(choices);
+              });
+              _resetGameTestStatus();
+            },
+            onCorrectAnswerSelected: (int index) {
+              setState(() {
+                correctAnswerIndex = index;
+                pages[currentPageIndex].correctAnswerIndex = index;
+              });
+              _resetGameTestStatus();
+            },
+            initialChoices: multipleChoices,
+            initialCorrectIndex: correctAnswerIndex,
+          )
+        else if (selectedGameType == 'Guess the answer 2')
+          MyGuessTheAnswerSettings(
+            hintController: hintController,
+            questionController: descriptionFieldController,
+            visibleLetters: visibleLetters,
+            onToggle: _toggleLetter,
+            onImagePicked: (int index, Uint8List imageBytes) {
+              setState(() {
+                guessAnswerImages[index] = imageBytes;
+              });
+            },
+            onChoicesChanged: (List<String> choices) {
+              setState(() {
+                multipleChoices = choices;
+                pages[currentPageIndex].multipleChoices = List.from(choices);
+              });
+              _resetGameTestStatus();
+            },
+            onCorrectAnswerSelected: (int index) {
+              setState(() {
+                correctAnswerIndex = index;
+                pages[currentPageIndex].correctAnswerIndex = index;
+              });
+              _resetGameTestStatus();
+            },
+            initialChoices: multipleChoices,
+            initialCorrectIndex: correctAnswerIndex,
+          )
+        else if (selectedGameType == 'Read the sentence')
+          MyReadTheSentenceSettings(sentenceController: readSentenceController)
+        else if (selectedGameType == 'What is it called')
+          MyWhatItIsCalledSettings(
+            sentenceController: readSentenceController,
+            hintController: hintController,
+            onImagePicked: (Uint8List imageBytes) {
+              setState(() {
+                whatCalledImageBytes = imageBytes;
+              });
+            },
+          )
+        else if (selectedGameType == 'Listen and Repeat')
+          MyListenAndRepeatSettings(
+            sentenceController: listenAndRepeatController,
+            onAudioChanged:
+                (String? audioPath, String audioSource, Uint8List? audioBytes) {
+                  print(
+                    "Audio changed callback received: path=$audioPath, source=$audioSource, bytes=${audioBytes?.length}",
+                  );
+                  setState(() {
+                    listenAndRepeatAudioPath = audioPath;
+                    listenAndRepeatAudioSource = audioSource;
+                    listenAndRepeatAudioBytes = audioBytes;
+                  });
+                  _saveCurrentPageData();
+                },
+          )
+        else if (selectedGameType == 'Image Match')
+          MyImageMatchSettings(
+            onImagePicked: (int index, Uint8List imageBytes) {
+              setState(() {
+                imageMatchImages[index] = imageBytes;
+              });
+              debugPrint(
+                'Image Match image $index picked, size: ${imageBytes.length} bytes',
+              );
+              _triggerAutoSave();
+            },
+            onCountChanged: (int newCount) {
+              setState(() {
+                imageMatchCount = newCount;
+              });
+              debugPrint('Image Match count changed to: $newCount');
+              _triggerAutoSave();
+            },
+            onMatchChanged: (Map<int, int> matches) {
+              setState(() {
+                imageMatchMappings = matches;
+              });
+              debugPrint('Image Match mappings changed: $matches');
+              _triggerAutoSave();
+            },
+            initialImages: imageMatchImages,
+            initialCount: imageMatchCount,
+            initialMatches: imageMatchMappings,
+          )
+        else if (selectedGameType == 'Math')
+          MyMathSettings(mathState: mathState),
+
+        Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 10),
+          child: Divider(color: Colors.white),
+        ),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            AnimatedButton(
+              width: 50,
+              height: 50,
+              color: currentPageIndex > 0
+                  ? Colors.blue
+                  : Colors.grey.withOpacity(0.5),
+              onPressed: _goToPreviousPage,
+              child: Icon(
+                Icons.arrow_upward_rounded,
+                color: currentPageIndex > 0
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.5),
+              ),
+            ),
+
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedButton(
+                  width: 80,
+                  height: 50,
+                  color: Colors.green,
+                  onPressed: _showPageSelector,
+                  child: Text(
+                    "${currentPageIndex + 1} of ${pages.length}",
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                // Red error badge
+                if (_validatePages().containsKey(currentPageIndex))
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF1E201E),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.error,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            AnimatedButton(
+              width: 50,
+              height: 50,
+              color: Colors.blue,
+              onPressed: _goToNextPage,
+              child: Icon(
+                currentPageIndex < pages.length - 1
+                    ? Icons.arrow_downward_rounded
+                    : Icons.add,
+                color: Colors.white,
+              ),
+            ),
+
+            AnimatedButton(
+              width: 50,
+              height: 50,
+              color: pages.length > 1
+                  ? Colors.red
+                  : Colors.red.withOpacity(0.5),
+              onPressed: _deletePage,
+              child: Icon(
+                Icons.delete_forever_rounded,
+                color: pages.length > 1
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.5),
+              ),
+            ),
+
+            SizedBox(
+              height: 50,
+              child: IntrinsicHeight(
+                child: const VerticalDivider(thickness: 2, color: Colors.white),
+              ),
+            ),
+
+            AnimatedButton(
+              width: 100,
+              height: 50,
+              color: _gameTest
+                  ? (_isPublished ? Colors.grey : Colors.orange)
+                  : Colors.green,
+              onPressed: _gameTest
+                  ? (_isPublished || _isLaunching
+                        ? () {}
+                        : () async {
+                            _saveCurrentPageData();
+                            await _publishGame();
+                          })
+                  : () async {
+                      if (gameId != null) {
+                        await Get.toNamed(
+                          '/testing',
+                          arguments: {'gameId': gameId},
+                        );
+                        await _loadFromFirestore(gameId!);
+                      } else {
+                        debugPrint('No gameId available for testing');
+                      }
+                    },
+              child: _gameTest && _isLaunching
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Text(
+                      _gameTest
+                          ? (_isPublished ? "Launched" : "Launch")
+                          : "Test",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   /// Build Column 1 content (used in sidebar for small screens)
@@ -3151,7 +3568,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 8),
         Container(
-          width: 400,
+          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 400),
           height: 120,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -3183,7 +3600,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 8),
         Container(
-          width: 400,
+          width: 300,
           height: 50,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -3236,7 +3653,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 8),
         Container(
-          width: 400,
+          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 400),
           height: 50,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -3302,7 +3719,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         Row(
           children: [
             Container(
-              width: 400,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -3460,7 +3877,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 400,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
               height: 50,
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -3675,19 +4092,25 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     // Check screen size immediately for responsiveness
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth <= 1366;
+    final isMediumScreen = screenWidth <= 1024;
 
     debugPrint(
-      'Screen width: $screenWidth, isSmallScreen: $isSmallScreen, _isSmallScreen: $_isSmallScreen',
+      'Screen width: $screenWidth, isSmallScreen: $isSmallScreen, _isSmallScreen: $_isSmallScreen, isMediumScreen: $isMediumScreen, _isMediumScreen: $_isMediumScreen',
     );
 
     // Update state if screen size changed
-    if (isSmallScreen != _isSmallScreen) {
+    if (isSmallScreen != _isSmallScreen || isMediumScreen != _isMediumScreen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
             _isSmallScreen = isSmallScreen;
+            _isMediumScreen = isMediumScreen;
             if (!_isSmallScreen) {
-              _showSidebar = false; // Hide sidebar on large screens
+              _showSidebar = false; // Hide Column 1 sidebar on large screens
+            }
+            if (!_isMediumScreen) {
+              _showColumn3Sidebar =
+                  false; // Hide Column 3 sidebar on large screens
             }
           });
         }
@@ -3720,13 +4143,26 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       backgroundColor: const Color(0xFF1E201E),
       body: Stack(
         children: [
-          // Dark overlay background when sidebar is open
+          // Dark overlay background when Column 1 sidebar is open
           if (_isSmallScreen && _showSidebar)
             Positioned.fill(
               child: GestureDetector(
                 onTap: () {
                   setState(() {
                     _showSidebar = false;
+                  });
+                },
+                child: Container(color: Colors.black.withOpacity(0.5)),
+              ),
+            ),
+
+          // Dark overlay background when Column 3 sidebar is open
+          if (_isMediumScreen && _showColumn3Sidebar)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _showColumn3Sidebar = false;
                   });
                 },
                 child: Container(color: Colors.black.withOpacity(0.5)),
@@ -3826,7 +4262,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                         context,
                                                       ).size.width *
                                                       0.6)
-                                                  .clamp(0, 300),
+                                                  .clamp(0, 400),
                                         height: 120,
                                         decoration: BoxDecoration(
                                           color: Colors.white,
@@ -3877,7 +4313,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           ),
                                         ),
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
+                                            horizontal: 6,
                                         ),
                                         child: DropdownButton<String>(
                                           value: selectedDifficulty,
@@ -4579,32 +5015,58 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
             // -------- Column 2 --------
             Expanded(
-              child: Center(
-                child: SizedBox(
-                  width: 428,
-                              height: double.infinity,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(10.0),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: progressValue,
-                              minHeight: 20,
-                              backgroundColor: Colors.grey[300],
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Colors.green,
-                              ),
-                            ),
-                          ),
-                        ),
+                          child: Center(
+                            child: Container(
+                              width: 428,
+                              height: MediaQuery.of(
+                                context,
+                              ).size.height.clamp(1200.0, 2400.0),
+                              decoration: BoxDecoration(color: Colors.white,
+                  ),
+                              child: GestureDetector(
+                                onPanUpdate: (details) {
+                                  // Handle mouse drag scrolling
+                                  if (details.delta.dy != 0) {
+                                    final newOffset =
+                                        _column2ScrollController.offset -
+                                        (details.delta.dy * 2);
+                                    final maxScroll = _column2ScrollController
+                                        .position
+                                        .maxScrollExtent;
+                                    final clampedOffset = newOffset.clamp(
+                                      0.0,
+                                      maxScroll,
+                                    );
+
+                                    _column2ScrollController.jumpTo(
+                                      clampedOffset,
+                                    );
+                                  }
+                                },
+                                child: SingleChildScrollView(
+                                  controller: _column2ScrollController,
+                                  physics: const BouncingScrollPhysics(),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(10.0),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          child: LinearProgressIndicator(
+                                            value: progressValue,
+                                            minHeight: 20,
+                                            backgroundColor: Colors.grey[300],
+                                            valueColor:
+                                                const AlwaysStoppedAnimation<
+                                                  Color
+                                                >(Colors.green),
+                                          ),
+                                        ),
+                                      ),
 
                             // Hearts display (when heart rule is selected) - moved to left side below progress bar
                             if (heartEnabled)
@@ -4675,12 +5137,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                 ),
                               ),
 
-                        Expanded(
-                          child: Padding(
+                                      Padding(
                             padding: const EdgeInsets.all(16.0),
                             child: Column(
                               children: [
-                                Expanded(
+                                            SizedBox(
+                                              height: 800,
                                   child: selectedGameType == 'Fill in the blank'
                                       ? MyFillTheBlank(
                                           answerController: answerController,
@@ -4784,21 +5246,22 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                                    ],
+                                  ),
                     ),
                   ),
                 ),
               ),
             ),
 
-            // -------- Column 3 --------
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                        // -------- Column 3 -------- (Hidden on medium screens <= 1024px)
+                        if (!_isMediumScreen)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                     Row(
                       children: [
                         Text(
@@ -5463,7 +5926,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                               ),
                               const SizedBox(height: 10),
                               SizedBox(
-                                width: 400,
+                                width: 500,
                                 child: Text(
                                   _validationErrorMessage,
                                   textAlign: TextAlign.center,
@@ -5576,7 +6039,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               bottom: 0,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                width: 450,
+                width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
                 decoration: BoxDecoration(
                   color: const Color(
                     0xFF1E201E,
@@ -5613,11 +6076,54 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               ),
             ),
 
-          // Hamburger menu button for small screens (highest z-index)
+          // Column 3 sidebar for medium screens (appears on right side)
+          if (_isMediumScreen && _showColumn3Sidebar)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E201E),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    // Handle mouse drag scrolling
+                    if (details.delta.dy != 0) {
+                      final newOffset =
+                          _column3ScrollController.offset -
+                          (details.delta.dy * 2);
+                      final maxScroll =
+                          _column3ScrollController.position.maxScrollExtent;
+                      final clampedOffset = newOffset.clamp(0.0, maxScroll);
+
+                      _column3ScrollController.jumpTo(clampedOffset);
+                    }
+                  },
+                  child: SingleChildScrollView(
+                    controller: _column3ScrollController,
+                    padding: const EdgeInsets.all(20.0),
+                    physics: const BouncingScrollPhysics(),
+                    child: _buildColumn3Content(),
+                  ),
+                ),
+              ),
+            ),
+
+          // Hamburger menu button for small screens (Column 1 sidebar toggle)
           if (_isSmallScreen)
             Positioned(
-              top: 20,
-              left: 20,
+              bottom: 20,
+              right: 20,
               child: AnimatedButton(
                 onPressed: () {
                   debugPrint(
@@ -5625,6 +6131,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   );
                   setState(() {
                     _showSidebar = !_showSidebar;
+                    // Close Column 3 sidebar if it's open
+                    if (_showSidebar && _showColumn3Sidebar) {
+                      _showColumn3Sidebar = false;
+                    }
                   });
                   debugPrint('New _showSidebar: $_showSidebar');
                 },
@@ -5633,6 +6143,38 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 color: Colors.orange,
                 child: Icon(
                   _showSidebar ? Icons.close : Icons.menu,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+
+          // Tool button for medium screens (Column 3 sidebar toggle) - above hamburger button
+          if (_isMediumScreen)
+            Positioned(
+              bottom: _isSmallScreen
+                  ? 80
+                  : 20, // Above hamburger button if both visible
+              right: 20,
+              child: AnimatedButton(
+                onPressed: () {
+                  debugPrint(
+                    'Tool button pressed! Current _showColumn3Sidebar: $_showColumn3Sidebar',
+                  );
+                  setState(() {
+                    _showColumn3Sidebar = !_showColumn3Sidebar;
+                    // Close Column 1 sidebar if it's open
+                    if (_showColumn3Sidebar && _showSidebar) {
+                      _showSidebar = false;
+                    }
+                  });
+                  debugPrint('New _showColumn3Sidebar: $_showColumn3Sidebar');
+                },
+                width: 50,
+                height: 50,
+                color: Colors.blue,
+                child: Icon(
+                  _showColumn3Sidebar ? Icons.close : Icons.build,
                   color: Colors.white,
                   size: 24,
                 ),

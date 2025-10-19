@@ -335,7 +335,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
         Row(
           children: [
             Text(
-              "Upload Image:",
+              "Images:",
               style: GoogleFonts.poppins(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -348,9 +348,9 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
             Row(
               children: List.generate(3, (index) {
                 return Padding(
-                  padding: const EdgeInsets.only(left: 10, right: 10),
+                  padding: const EdgeInsets.only(left: 5, right: 5),
                   child: AnimatedButton(
-                    width: 90,
+                    width: 80,
                     height: 45,
                     color: Colors.white,
                     onPressed: () => _pickImage(index),
@@ -372,77 +372,69 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
         const SizedBox(height: 20),
 
         // Question input
-        Row(
-          children: [
-            Text(
-              "Question:",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+        Text(
+          "Question:",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
+          height: 50,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.black, width: 1),
+            color: Colors.white,
+          ),
+          child: TextField(
+            controller: widget.questionController,
+            maxLength: 80,
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              counterText: "",
+              hintText: "Enter your question...",
+              hintStyle: GoogleFonts.poppins(color: Colors.black54),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            const SizedBox(width: 10),
-            Container(
-              width: 300,
-              height: 45,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black, width: 1),
-                color: Colors.white,
-              ),
-              child: TextField(
-                controller: widget.questionController,
-                maxLength: 80,
-                style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-                decoration: InputDecoration(
-                  counterText: "",
-                  hintText: "Enter your question...",
-                  hintStyle: GoogleFonts.poppins(color: Colors.black54),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
 
         const SizedBox(height: 20),
 
         // Game Hint input
-        Row(
-          children: [
-            Text(
-              "Game Hint:",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+        Text(
+          "Game Hint:",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
+          height: 50,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.black, width: 1),
+            color: Colors.white,
+          ),
+          child: TextField(
+            controller: widget.hintController,
+            maxLength: 100,
+            style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+            decoration: InputDecoration(
+              counterText: "",
+              hintText: "Enter game hint...",
+              hintStyle: GoogleFonts.poppins(color: Colors.black54),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            const SizedBox(width: 10),
-            Container(
-              width: 300,
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black, width: 1),
-                color: Colors.white,
-              ),
-              child: TextField(
-                controller: widget.hintController,
-                maxLength: 100,
-                style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
-                decoration: InputDecoration(
-                  counterText: "",
-                  hintText: "Enter game hint...",
-                  hintStyle: GoogleFonts.poppins(color: Colors.black54),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
 
         const SizedBox(height: 30),
@@ -467,7 +459,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                 child: Row(
                   children: [
                     SizedBox(
-                      width: 350,
+                      width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 350),
                       child: TextField(
                         controller: choiceControllers[i],
                         maxLength: 50,

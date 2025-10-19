@@ -365,8 +365,8 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
-              height: 45,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
+              height: 50,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.black, width: 1),
@@ -403,7 +403,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
             ),
             const SizedBox(width: 10),
             Container(
-              width: 300,
+              width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 200),
               height: 50,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
@@ -448,7 +448,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                 child: Row(
                   children: [
                     SizedBox(
-                      width: 350,
+                      width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
                       child: TextField(
                         controller: choiceControllers[i],
                         maxLength: 50,
