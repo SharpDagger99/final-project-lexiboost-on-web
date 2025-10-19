@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "lexiboost-36801"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

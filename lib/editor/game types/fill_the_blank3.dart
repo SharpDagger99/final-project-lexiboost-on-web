@@ -258,12 +258,23 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
 
     // Update choices when widget properties change (e.g., when switching pages)
     if (widget.initialChoices != oldWidget.initialChoices) {
+      // Temporarily remove listeners to prevent infinite rebuild loop
+      for (var controller in choiceControllers) {
+        controller.removeListener(_onChoicesChanged);
+      }
+
+      // Update controller texts
       for (int i = 0; i < choiceControllers.length; i++) {
         if (i < widget.initialChoices.length) {
           choiceControllers[i].text = widget.initialChoices[i];
         } else {
           choiceControllers[i].text = '';
         }
+      }
+      
+      // Re-add listeners after updating
+      for (var controller in choiceControllers) {
+        controller.addListener(_onChoicesChanged);
       }
     }
 
@@ -438,48 +449,177 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
 
         Column(
           children: [
-            for (int i = 0; i < 4; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 300),
-                        child: TextField(
-                          controller: choiceControllers[i],
-                          maxLength: 50,
-                          maxLines: 3,
-                          minLines: 1,
-                          decoration: InputDecoration(
-                            hintText: "Choice ${i + 1}...",
-                            filled: true,
-                            fillColor: Colors.white,
-                            counterText: "",
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
-                            ),
+            // Choice 1
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: TextField(
+                        controller: choiceControllers[0],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
+                        decoration: InputDecoration(
+                          hintText: "Choice 1...",
+                          filled: true,
+                          fillColor: Colors.white,
+                          counterText: "",
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Checkbox(
-                      value: selectedChoiceIndex == i,
-                      onChanged: (bool? value) {
-                        _onChoiceSelected(i);
-                      },
-                      activeColor: Colors.white,
-                      checkColor: Colors.blue,
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Checkbox(
+                    value: selectedChoiceIndex == 0,
+                    onChanged: (bool? value) {
+                      _onChoiceSelected(0);
+                    },
+                    activeColor: Colors.white,
+                    checkColor: Colors.blue,
+                  ),
+                ],
               ),
+            ),
+
+            // Choice 2
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: TextField(
+                        controller: choiceControllers[1],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
+                        decoration: InputDecoration(
+                          hintText: "Choice 2...",
+                          filled: true,
+                          fillColor: Colors.white,
+                          counterText: "",
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Checkbox(
+                    value: selectedChoiceIndex == 1,
+                    onChanged: (bool? value) {
+                      _onChoiceSelected(1);
+                    },
+                    activeColor: Colors.white,
+                    checkColor: Colors.blue,
+                  ),
+                ],
+              ),
+            ),
+
+            // Choice 3
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: TextField(
+                        controller: choiceControllers[2],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
+                        decoration: InputDecoration(
+                          hintText: "Choice 3...",
+                          filled: true,
+                          fillColor: Colors.white,
+                          counterText: "",
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Checkbox(
+                    value: selectedChoiceIndex == 2,
+                    onChanged: (bool? value) {
+                      _onChoiceSelected(2);
+                    },
+                    activeColor: Colors.white,
+                    checkColor: Colors.blue,
+                  ),
+                ],
+              ),
+            ),
+
+            // Choice 4
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: TextField(
+                        controller: choiceControllers[3],
+                        maxLength: 50,
+                        maxLines: 3,
+                        minLines: 1,
+                        decoration: InputDecoration(
+                          hintText: "Choice 4...",
+                          filled: true,
+                          fillColor: Colors.white,
+                          counterText: "",
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Checkbox(
+                    value: selectedChoiceIndex == 3,
+                    onChanged: (bool? value) {
+                      _onChoiceSelected(3);
+                    },
+                    activeColor: Colors.white,
+                    checkColor: Colors.blue,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ],
