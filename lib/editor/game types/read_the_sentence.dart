@@ -69,15 +69,18 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
 
         await _speech.listen(
           onResult: (result) {
-            print('Recognized words: ${result.recognizedWords}');
-            print('Final result: ${result.finalResult}');
+            print('🎤 Recognized words: "${result.recognizedWords}"');
+            print('🎤 Final result: ${result.finalResult}');
+            print('🎤 Confidence: ${result.confidence}');
+            
             if (mounted) {
-              setState(() {
-                // Use finalResult for more accurate text
-                _answerController.text = result.finalResult
-                    ? result.recognizedWords
-                    : result.recognizedWords;
-              });
+              // Only update if we have recognized words
+              // This prevents clearing the field with empty results
+              if (result.recognizedWords.isNotEmpty) {
+                setState(() {
+                  _answerController.text = result.recognizedWords;
+                });
+              }
             }
           },
           listenFor: const Duration(
@@ -85,10 +88,14 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
           ), // ✅ longer time, won't auto stop quickly
           pauseFor: const Duration(seconds: 5),
           partialResults: true,
-          onSoundLevelChange: (level) => print('Sound level: $level'),
+          onSoundLevelChange: (level) {
+            if (level > 0) {
+              print('🔊 Sound level: $level');
+            }
+          },
           cancelOnError: true,
-          listenMode: stt.ListenMode.confirmation,
-          localeId: 'en_US', // Add explicit locale
+          // Remove listenMode for better web compatibility
+          // localeId: 'en_US', // Let browser use default locale for better compatibility
         );
       } else {
         if (mounted) {

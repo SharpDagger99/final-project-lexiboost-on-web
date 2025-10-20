@@ -17,6 +17,7 @@ class MyListenAndRepeat extends StatefulWidget {
   final String? audioPath; // Audio path from settings
   final String audioSource; // "uploaded" or "recorded"
   final String? audioUrl; // Firebase Storage URL for audio
+  final TextEditingController? userAnswerController; // For user's speech answer
 
   const MyListenAndRepeat({
     super.key,
@@ -24,6 +25,7 @@ class MyListenAndRepeat extends StatefulWidget {
     this.audioPath,
     this.audioSource = "",
     this.audioUrl,
+    this.userAnswerController, // Optional user answer controller
   });
 
   @override
@@ -34,7 +36,7 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _speechEnabled = false;
-  final TextEditingController _answerController = TextEditingController();
+  late TextEditingController _answerController;
   
   // Audio playback only (recording is handled in settings)
   late AudioPlayer _audioPlayer;
@@ -45,6 +47,7 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
     super.initState();
     _speech = stt.SpeechToText();
     _audioPlayer = AudioPlayer();
+    _answerController = widget.userAnswerController ?? TextEditingController();
     _initSpeech();
     _initAudioPlayer();
   }
@@ -82,7 +85,10 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
 
   @override
   void dispose() {
-    _answerController.dispose();
+    // Only dispose if it's our internal controller
+    if (widget.userAnswerController == null) {
+      _answerController.dispose();
+    }
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -104,12 +110,11 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
           onResult: (result) {
             print('Recognized words: ${result.recognizedWords}');
             print('Final result: ${result.finalResult}');
-            if (mounted) {
+            // Only update if we have recognized words to prevent clearing
+            if (mounted && result.recognizedWords.isNotEmpty) {
               setState(() {
-                // Use finalResult for more accurate text
-                _answerController.text = result.finalResult
-                    ? result.recognizedWords
-                    : result.recognizedWords;
+                // Update text with recognized words
+                _answerController.text = result.recognizedWords;
               });
             }
           },
@@ -179,7 +184,7 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
           duration: Duration(seconds: 2),
         ),
       );
-      return;
+      return; 
     }
 
     if (_isPlaying) {

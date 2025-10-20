@@ -99,6 +99,10 @@ class _MyTestingState extends State<MyTesting> {
   final TextEditingController hintController = TextEditingController();
   final TextEditingController userAnswerController =
       TextEditingController(); // For Read the sentence user answer
+  final TextEditingController whatCalledUserAnswerController =
+      TextEditingController(); // For What is it called user answer
+  final TextEditingController listenRepeatUserAnswerController =
+      TextEditingController(); // For Listen and Repeat user answer
 
   // State variables
   double progressValue = 0.0;
@@ -624,6 +628,8 @@ class _MyTestingState extends State<MyTesting> {
 
       // Clear user answer for Read the sentence
       userAnswerController.clear();
+      whatCalledUserAnswerController.clear();
+      listenRepeatUserAnswerController.clear();
 
       // Clear user answer for Math game
       mathState.previewResultController.clear();
@@ -668,6 +674,8 @@ class _MyTestingState extends State<MyTesting> {
     listenAndRepeatController.dispose();
     hintController.dispose();
     userAnswerController.dispose();
+    whatCalledUserAnswerController.dispose();
+    listenRepeatUserAnswerController.dispose();
     super.dispose();
   }
 
@@ -695,6 +703,12 @@ class _MyTestingState extends State<MyTesting> {
     } else if (currentPage.gameType == 'Read the sentence') {
       // Check if user has provided an answer (speech recognition result)
       return userAnswerController.text.trim().isNotEmpty;
+    } else if (currentPage.gameType == 'Listen and Repeat') {
+      // Check if user has provided an answer (speech recognition result)
+      return listenRepeatUserAnswerController.text.trim().isNotEmpty;
+    } else if (currentPage.gameType == 'What is it called') {
+      // Check if user has provided an answer (speech recognition result)
+      return whatCalledUserAnswerController.text.trim().isNotEmpty;
     } else if (currentPage.gameType == 'Math') {
       // Check if user has entered an answer
       return mathState.previewResultController.text.trim().isNotEmpty;
@@ -721,6 +735,16 @@ class _MyTestingState extends State<MyTesting> {
       // For Read the sentence, compare normalized text (ignoring punctuation)
       final targetText = _normalizeText(currentPage.readSentence);
       final userAnswer = _normalizeText(userAnswerController.text);
+      return targetText == userAnswer;
+    } else if (currentPage.gameType == 'Listen and Repeat') {
+      // For Listen and Repeat, compare normalized text
+      final targetText = _normalizeText(currentPage.listenAndRepeat);
+      final userAnswer = _normalizeText(listenRepeatUserAnswerController.text);
+      return targetText == userAnswer;
+    } else if (currentPage.gameType == 'What is it called') {
+      // For What is it called, compare normalized text
+      final targetText = _normalizeText(currentPage.readSentence);
+      final userAnswer = _normalizeText(whatCalledUserAnswerController.text);
       return targetText == userAnswer;
     } else if (currentPage.gameType == 'Math') {
       // For Math game, compare user's answer with the correct answer from Firebase
@@ -1131,6 +1155,8 @@ class _MyTestingState extends State<MyTesting> {
                                             readSentenceController,
                                         pickedImage: whatCalledImageBytes,
                                         imageUrl: whatCalledImageUrl,
+                                        userAnswerController:
+                                            whatCalledUserAnswerController,
                                       )
                                     : selectedGameType == 'Listen and Repeat'
                                     ? MyListenAndRepeat(
@@ -1139,6 +1165,8 @@ class _MyTestingState extends State<MyTesting> {
                                         audioPath: listenAndRepeatAudioPath,
                                         audioSource: listenAndRepeatAudioSource,
                                         audioUrl: listenAndRepeatAudioUrl,
+                                        userAnswerController:
+                                            listenRepeatUserAnswerController,
                                       )
                                     : selectedGameType == 'Image Match'
                                     ? MyImageMatchTesting(
