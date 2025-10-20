@@ -70,18 +70,25 @@ class _MyReadTheSentenceState extends State<MyReadTheSentence> {
         await _speech.listen(
           onResult: (result) {
             print('Recognized words: ${result.recognizedWords}');
+            print('Final result: ${result.finalResult}');
             if (mounted) {
               setState(() {
-                _answerController.text = result.recognizedWords;
+                // Use finalResult for more accurate text
+                _answerController.text = result.finalResult
+                    ? result.recognizedWords
+                    : result.recognizedWords;
               });
             }
           },
-          listenFor: const Duration(minutes: 5), // ✅ longer time, won’t auto stop quickly
+          listenFor: const Duration(
+            minutes: 5,
+          ), // ✅ longer time, won't auto stop quickly
           pauseFor: const Duration(seconds: 5),
           partialResults: true,
           onSoundLevelChange: (level) => print('Sound level: $level'),
           cancelOnError: true,
           listenMode: stt.ListenMode.confirmation,
+          localeId: 'en_US', // Add explicit locale
         );
       } else {
         if (mounted) {

@@ -290,9 +290,13 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
         await _speech.listen(
           onResult: (result) {
             print('Recognized words: ${result.recognizedWords}');
+            print('Final result: ${result.finalResult}');
             if (mounted) {
               setState(() {
-                _speechController.text = result.recognizedWords;
+                // Use finalResult for more accurate text
+                _speechController.text = result.finalResult
+                    ? result.recognizedWords
+                    : result.recognizedWords;
               });
             }
           },
@@ -302,6 +306,7 @@ class _MyWhatItIsCalledState extends State<MyWhatItIsCalled> {
           onSoundLevelChange: (level) => print('Sound level: $level'),
           cancelOnError: true,
           listenMode: stt.ListenMode.confirmation,
+          localeId: 'en_US', // Add explicit locale
         );
       } else {
         if (mounted) {

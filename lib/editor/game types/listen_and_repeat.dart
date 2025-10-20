@@ -103,9 +103,13 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
         await _speech.listen(
           onResult: (result) {
             print('Recognized words: ${result.recognizedWords}');
+            print('Final result: ${result.finalResult}');
             if (mounted) {
               setState(() {
-                _answerController.text = result.recognizedWords;
+                // Use finalResult for more accurate text
+                _answerController.text = result.finalResult
+                    ? result.recognizedWords
+                    : result.recognizedWords;
               });
             }
           },
@@ -115,6 +119,7 @@ class _MyListenAndRepeatState extends State<MyListenAndRepeat> {
           onSoundLevelChange: (level) => print('Sound level: $level'),
           cancelOnError: true,
           listenMode: stt.ListenMode.confirmation,
+          localeId: 'en_US', // Add explicit locale
         );
       } else {
         if (mounted) {

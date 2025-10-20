@@ -2932,82 +2932,81 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              "Game Type:",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 5),
+          child: Text(
+            "Game Type:",
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
-            const SizedBox(width: 12),
-            Container(
-              width: 210,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: DropdownButton<String>(
-                value: selectedGameType,
-                dropdownColor: Colors.white,
-                underline: const SizedBox(),
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  color: Colors.black,
-                  fontWeight: FontWeight.w500,
-                ),
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'Fill in the blank',
-                    child: Text('Fill in the blank'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Fill in the blank 2',
-                    child: Text('Fill in the blank 2'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Guess the answer',
-                    child: Text('Guess the answer'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Guess the answer 2',
-                    child: Text('Guess the answer 2'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Read the sentence',
-                    child: Text('Read the sentence'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'What is it called',
-                    child: Text('What is it called'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Listen and Repeat',
-                    child: Text('Listen and Repeat'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Image Match',
-                    child: Text('Image Match'),
-                  ),
-                  DropdownMenuItem(value: 'Math', child: Text('Math')),
-                ],
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      selectedGameType = newValue;
-                    });
-                    // Reset test status when game type is changed
-                    _resetGameTestStatus();
-                  }
-                },
-              ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 210,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: DropdownButton<String>(
+            value: selectedGameType,
+            dropdownColor: Colors.white,
+            underline: const SizedBox(),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              color: Colors.black,
+              fontWeight: FontWeight.w500,
             ),
-          ],
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(
+                value: 'Fill in the blank',
+                child: Text('Fill in the blank'),
+              ),
+              DropdownMenuItem(
+                value: 'Fill in the blank 2',
+                child: Text('Fill in the blank 2'),
+              ),
+              DropdownMenuItem(
+                value: 'Guess the answer',
+                child: Text('Guess the answer'),
+              ),
+              DropdownMenuItem(
+                value: 'Guess the answer 2',
+                child: Text('Guess the answer 2'),
+              ),
+              DropdownMenuItem(
+                value: 'Read the sentence',
+                child: Text('Read the sentence'),
+              ),
+              DropdownMenuItem(
+                value: 'What is it called',
+                child: Text('What is it called'),
+              ),
+              DropdownMenuItem(
+                value: 'Listen and Repeat',
+                child: Text('Listen and Repeat'),
+              ),
+              DropdownMenuItem(
+                value: 'Image Match',
+                child: Text('Image Match'),
+              ),
+              DropdownMenuItem(value: 'Math', child: Text('Math')),
+            ],
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  selectedGameType = newValue;
+                });
+                // Reset test status when game type is changed
+                _resetGameTestStatus();
+              }
+            },
+          ),
         ),
 
         Padding(
@@ -3782,7 +3781,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         ],
         const SizedBox(height: 40),
         Padding(
-          padding: const EdgeInsets.only(top: 10, bottom: 10),
+          padding: const EdgeInsets.only(top: 10),
           child: Divider(color: Colors.white),
         ),
         if (_autoSaveStatus.isNotEmpty)
@@ -4361,10 +4360,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               },
                                             ),
                                           ),
+                                          ],
+                                        ),
 
-                                          // Timer configuration (minutes and seconds)
-                                          if (selectedGameRule == 'timer') ...[
-                                            const SizedBox(width: 15),
+                                        // Timer configuration (minutes and seconds) - placed below the Game Rules dropdown
+                                        if (selectedGameRule == 'timer') ...[
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            children: [
                                             // Minutes field
                                             Container(
                                                 width:
@@ -4372,7 +4375,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                               context,
                                                             ).size.width *
                                                             0.6)
-                                                        .clamp(0, 300),
+                                                        .clamp(0, 80),
                                               height: 50,
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
@@ -4517,8 +4520,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               ),
                                             ),
                                           ],
+                                          ),
                                         ],
-                                      ),
 
                                       const SizedBox(height: 20),
 
@@ -4583,92 +4586,90 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               },
                                             ),
                                           ),
+                                          ],
+                                        ),
 
-                                          if (selectedGameSet == 'private') ...[
-                                            const SizedBox(width: 20),
-
-                                            Container(
-                                                width:
-                                                    (MediaQuery.of(
-                                                              context,
-                                                            ).size.width *
-                                                            0.6)
-                                                        .clamp(0, 120),
-                                              height: 50,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
+                                        // Game Code field (when Game Set is private) - placed below the dropdown
+                                        if (selectedGameSet == 'private') ...[
+                                          const SizedBox(height: 12),
+                                          Container(
+                                            width:
+                                                (MediaQuery.of(
+                                                          context,
+                                                        ).size.width *
+                                                        0.6)
+                                                    .clamp(0, 120),
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            child: TextField(
+                                              controller: gameCodeController,
+                                              keyboardType:
+                                                  TextInputType.numberWithOptions(
+                                                    signed: false,
+                                                    decimal: false,
+                                                  ),
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter
+                                                    .digitsOnly,
+                                                LengthLimitingTextInputFormatter(
+                                                  8,
+                                                ),
+                                              ],
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 16,
+                                                color: Colors.black,
+                                                fontWeight: FontWeight.w500,
                                               ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                  ),
-                                              child: TextField(
-                                                controller: gameCodeController,
-                                                keyboardType:
-                                                    TextInputType.numberWithOptions(
-                                                      signed: false,
-                                                      decimal: false,
-                                                    ),
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .digitsOnly,
-                                                  LengthLimitingTextInputFormatter(
-                                                    8,
-                                                  ),
-                                                ],
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 16,
-                                                  color: Colors.black,
-                                                  fontWeight: FontWeight.w500,
+                                              decoration: InputDecoration(
+                                                hintText: "Game Code...",
+                                                hintStyle: GoogleFonts.poppins(
+                                                  color: Colors.black54,
+                                                  fontSize: 14,
                                                 ),
-                                                decoration: InputDecoration(
-                                                  hintText: "Game Code...",
-                                                  hintStyle:
-                                                      GoogleFonts.poppins(
-                                                        color: Colors.black54,
-                                                        fontSize: 14,
-                                                      ),
-                                                  border: InputBorder.none,
-                                                ),
-                                                onChanged: (value) {
-                                                  String cleanValue = value
-                                                      .replaceAll('-', '');
-                                                  if (cleanValue.length >= 5) {
-                                                    String formatted = '';
-                                                    for (
-                                                      int i = 0;
-                                                      i < cleanValue.length;
-                                                      i++
-                                                    ) {
-                                                      if (i == 4) {
-                                                        formatted +=
-                                                            '-${cleanValue[i]}';
-                                                      } else {
-                                                        formatted +=
-                                                            cleanValue[i];
-                                                      }
-                                                    }
-                                                    if (formatted != value) {
-                                                      gameCodeController.text =
-                                                          formatted;
-                                                      gameCodeController
-                                                              .selection =
-                                                          TextSelection.fromPosition(
-                                                            TextPosition(
-                                                              offset: formatted
-                                                                  .length,
-                                                            ),
-                                                          );
+                                                border: InputBorder.none,
+                                              ),
+                                              onChanged: (value) {
+                                                String cleanValue = value
+                                                    .replaceAll('-', '');
+                                                if (cleanValue.length >= 5) {
+                                                  String formatted = '';
+                                                  for (
+                                                    int i = 0;
+                                                    i < cleanValue.length;
+                                                    i++
+                                                  ) {
+                                                    if (i == 4) {
+                                                      formatted +=
+                                                          '-${cleanValue[i]}';
+                                                    } else {
+                                                      formatted +=
+                                                          cleanValue[i];
                                                     }
                                                   }
-                                                },
-                                              ),
+                                                  if (formatted != value) {
+                                                    gameCodeController.text =
+                                                        formatted;
+                                                    gameCodeController
+                                                            .selection =
+                                                        TextSelection.fromPosition(
+                                                          TextPosition(
+                                                            offset: formatted
+                                                                .length,
+                                                          ),
+                                                        );
+                                                  }
+                                                }
+                                              },
                                             ),
-                                          ],
+                                          ),
                                         ],
-                                      ),
 
                                       const SizedBox(height: 40),
 
@@ -5931,64 +5932,79 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               ),
             ),
 
-          // Hamburger menu button for small screens (Column 1 sidebar toggle)
-          if (_isSmallScreen)
+          // Top-right tool and hamburger buttons wrapped in a Row
+          if (_isSmallScreen || _isMediumScreen)
             Positioned(
-              bottom: 20,
+              top: 20,
               right: 20,
-              child: AnimatedButton(
-                onPressed: () {
-                  debugPrint(
-                    'Hamburger button pressed! Current _showSidebar: $_showSidebar',
-                  );
-                  setState(() {
-                    _showSidebar = !_showSidebar;
-                    // Close Column 3 sidebar if it's open
-                    if (_showSidebar && _showColumn3Sidebar) {
-                      _showColumn3Sidebar = false;
-                    }
-                  });
-                  debugPrint('New _showSidebar: $_showSidebar');
-                },
-                width: 50,
-                height: 50,
-                color: Colors.orange,
-                child: Icon(
-                  _showSidebar ? Icons.close : Icons.menu,
-                  color: Colors.white,
-                  size: 24,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  border: Border.all(color: Colors.white),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ),
-            ),
-
-          // Tool button for medium screens (Column 3 sidebar toggle) - above hamburger button
-          if (_isMediumScreen)
-            Positioned(
-              bottom: _isSmallScreen
-                  ? 80
-                  : 20, // Above hamburger button if both visible
-              right: 20,
-              child: AnimatedButton(
-                onPressed: () {
-                  debugPrint(
-                    'Tool button pressed! Current _showColumn3Sidebar: $_showColumn3Sidebar',
-                  );
-                  setState(() {
-                    _showColumn3Sidebar = !_showColumn3Sidebar;
-                    // Close Column 1 sidebar if it's open
-                    if (_showColumn3Sidebar && _showSidebar) {
-                      _showSidebar = false;
-                    }
-                  });
-                  debugPrint('New _showColumn3Sidebar: $_showColumn3Sidebar');
-                },
-                width: 50,
-                height: 50,
-                color: Colors.blue,
-                child: Icon(
-                  _showColumn3Sidebar ? Icons.close : Icons.build,
-                  color: Colors.white,
-                  size: 24,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    if (_isMediumScreen)
+                      Padding(
+                        padding: const EdgeInsets.all(5.0),
+                        child: AnimatedButton(
+                          onPressed: () {
+                            debugPrint(
+                              'Tool button pressed! Current _showColumn3Sidebar: $_showColumn3Sidebar',
+                            );
+                            setState(() {
+                              _showColumn3Sidebar = !_showColumn3Sidebar;
+                              // Close Column 1 sidebar if it's open
+                              if (_showColumn3Sidebar && _showSidebar) {
+                                _showSidebar = false;
+                              }
+                            });
+                            debugPrint(
+                              'New _showColumn3Sidebar: $_showColumn3Sidebar',
+                            );
+                          },
+                          width: 50,
+                          height: 50,
+                          color: Colors.blue,
+                          child: Icon(
+                            _showColumn3Sidebar ? Icons.close : Icons.build,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    if (_isSmallScreen)
+                      Padding(
+                        padding: const EdgeInsets.all(5.0),
+                        child: AnimatedButton(
+                          onPressed: () {
+                            debugPrint(
+                              'Hamburger button pressed! Current _showSidebar: $_showSidebar',
+                            );
+                            setState(() {
+                              _showSidebar = !_showSidebar;
+                              // Close Column 3 sidebar if it's open
+                              if (_showSidebar && _showColumn3Sidebar) {
+                                _showColumn3Sidebar = false;
+                              }
+                            });
+                            debugPrint('New _showSidebar: $_showSidebar');
+                          },
+                          width: 50,
+                          height: 50,
+                          color: Colors.orange,
+                          child: Icon(
+                            _showSidebar ? Icons.close : Icons.menu,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
