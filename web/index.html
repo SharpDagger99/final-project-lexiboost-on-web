@@ -31,8 +31,34 @@
 
   <title>lexi_on_web</title>
   <link rel="manifest" href="manifest.json">
+  
+  <style>
+    /* Prevent text selection on right-click areas */
+    .no-context-menu {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
+  <!-- Prevent default context menu on Flutter canvas -->
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      // Prevent context menu on the entire Flutter app
+      document.addEventListener('contextmenu', function(e) {
+        // Check if the target is part of the Flutter app
+        const flutterView = document.querySelector('flutter-view, flt-glass-pane');
+        if (flutterView && (flutterView.contains(e.target) || e.target === flutterView)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }, true);
+    });
+  </script>
+  
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

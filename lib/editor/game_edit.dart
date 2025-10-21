@@ -795,7 +795,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                     flex: 1,
                                     child: Container(
                                       height:
-                                          48, // Match page button height (12*2 + 24 for text)
+                                          50, // Match page button height (12*2 + 24 for text)
                                       decoration: BoxDecoration(
                                         color: const Color(0xFF3A3C3A),
                                         borderRadius: BorderRadius.circular(8),

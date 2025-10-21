@@ -1,9 +1,11 @@
 // ===== game_published.dart =====
 
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators
 
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,8 +20,44 @@ class MyGamePublished extends StatefulWidget {
 class _MyGamePublishedState extends State<MyGamePublished> {
   final User? user = FirebaseAuth.instance.currentUser;
 
-  /// Store the ID of the game being "marked for unpublish"
-  String? unpublishingGameId;
+  /// Fetch users who completed a specific game
+  Future<List<Map<String, dynamic>>> _fetchCompletedUsers(String gameId) async {
+    try {
+      List<Map<String, dynamic>> completedUsers = [];
+
+      // Get all users
+      QuerySnapshot usersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get();
+
+      for (var userDoc in usersSnapshot.docs) {
+        // Check if this user has completed the game
+        DocumentSnapshot completedGame = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userDoc.id)
+            .collection('completed_games')
+            .doc(gameId)
+            .get();
+
+        if (completedGame.exists) {
+          Map<String, dynamic> userData =
+              userDoc.data() as Map<String, dynamic>;
+          Map<String, dynamic>? completedData =
+              completedGame.data() as Map<String, dynamic>?;
+          completedUsers.add({
+            'username': userData['username'] ?? 'Unknown User',
+            'profileImage': userData['profileImage'] ?? '',
+            'completedAt': completedData?['completedAt'] ?? null,
+          });
+        }
+      }
+
+      return completedUsers;
+    } catch (e) {
+      print('Error fetching completed users: $e');
+      return [];
+    }
+  }
 
   Future<void> _unpublishGame(String userId, String gameId) async {
     // Update the game document to set publish = false
@@ -39,6 +77,493 @@ class _MyGamePublishedState extends State<MyGamePublished> {
     } catch (e) {
       // Ignore error if document doesn't exist in published_games
       print('Note: Could not delete from published_games collection: $e');
+    }
+  }
+
+  /// Show dialog to change game code
+  Future<void> _showChangeGameCodeDialog(
+    String userId,
+    String gameId,
+    String? currentGameSet,
+    String? currentGameCode,
+  ) async {
+    final TextEditingController gameCodeController = TextEditingController(
+      text: currentGameCode ?? '',
+    );
+
+    return showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2F33),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          "Change Game Code",
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Enter the game code for this game:",
+              style: GoogleFonts.poppins(color: Colors.white70),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Leave empty to make it public",
+              style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: gameCodeController,
+              style: GoogleFonts.poppins(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Game Code (e.g., 1234-5678)",
+                hintStyle: GoogleFonts.poppins(color: Colors.white38),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              String newGameCode = gameCodeController.text.trim();
+              String newGameSet = newGameCode.isEmpty ? "public" : "private";
+
+              await FirebaseFirestore.instance
+                  .collection("users")
+                  .doc(userId)
+                  .collection("created_games")
+                  .doc(gameId)
+                  .update({
+                    'gameSet': newGameSet,
+                    'gameCode': newGameCode.isEmpty ? null : newGameCode,
+                  });
+              Navigator.pop(ctx);
+              Get.snackbar(
+                'Success',
+                'Game code updated successfully',
+                backgroundColor: Colors.green,
+                colorText: Colors.white,
+              );
+            },
+            child: Text(
+              "Save",
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show game control and status dialog
+  Future<void> _showGameControlDialog(
+    String userId,
+    String gameId,
+    String title,
+    String? gameSet,
+    String? gameCode,
+  ) async {
+    // Fetch completed users
+    List<Map<String, dynamic>> completedUsers = await _fetchCompletedUsers(
+      gameId,
+    );
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF2C2F33),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.5,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.purple[700]!, Colors.purple[500]!],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.settings, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Control Section
+                      Text(
+                        "CONTROL",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Control Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.unpublished, size: 20),
+                              label: Text(
+                                "Unpublish",
+                                style: GoogleFonts.poppins(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _showUnpublishDialog(userId, gameId, title);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.lock, size: 20),
+                              label: Text(
+                                "Game Code",
+                                style: GoogleFonts.poppins(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _showChangeGameCodeDialog(
+                                  userId,
+                                  gameId,
+                                  gameSet,
+                                  gameCode,
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.edit, size: 20),
+                              label: Text(
+                                "Game Set",
+                                style: GoogleFonts.poppins(fontSize: 13),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                Get.toNamed(
+                                  "/game_edit",
+                                  arguments: {"gameId": gameId},
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+                      const Divider(color: Colors.white24),
+                      const SizedBox(height: 24),
+
+                      // Status Section
+                      Text(
+                        "STATUS",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Status Cards
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStatusCard(
+                              "Total Players",
+                              "${completedUsers.length}",
+                              Icons.people,
+                              Colors.purple,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildStatusCard(
+                              "Game Set",
+                              gameSet ?? "None",
+                              Icons.category,
+                              Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildStatusCard(
+                              "Game Code",
+                              gameCode ?? "None",
+                              Icons.lock,
+                              Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Players List
+                      Text(
+                        "PLAYERS WHO COMPLETED",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (completedUsers.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.inbox,
+                                  size: 48,
+                                  color: Colors.white30,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "No players have completed this game yet",
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white54,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: completedUsers.length,
+                            separatorBuilder: (context, index) => Divider(
+                              color: Colors.white.withOpacity(0.1),
+                              height: 1,
+                            ),
+                            itemBuilder: (context, index) {
+                              final player = completedUsers[index];
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.purple,
+                                  backgroundImage:
+                                      player['profileImage'] != null &&
+                                          player['profileImage']
+                                              .toString()
+                                              .isNotEmpty
+                                      ? MemoryImage(
+                                          base64Decode(player['profileImage']),
+                                        )
+                                      : null,
+                                  child:
+                                      player['profileImage'] == null ||
+                                          player['profileImage']
+                                              .toString()
+                                              .isEmpty
+                                      ? Text(
+                                          player['username'][0].toUpperCase(),
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(
+                                  player['username'],
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: player['completedAt'] != null
+                                    ? Text(
+                                        "Completed: ${_formatDate(player['completedAt'])}",
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      )
+                                    : null,
+                                trailing: const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build status card widget
+  Widget _buildStatusCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5), width: 1),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 32),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Format date helper
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'Unknown';
+    try {
+      DateTime date;
+      if (timestamp is Timestamp) {
+        date = timestamp.toDate();
+      } else if (timestamp is String) {
+        date = DateTime.parse(timestamp);
+      } else {
+        return 'Unknown';
+      }
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return 'Unknown';
     }
   }
 
@@ -122,9 +647,6 @@ class _MyGamePublishedState extends State<MyGamePublished> {
             onPressed: () async {
               Navigator.pop(ctx);
               await _unpublishGame(userId, gameId);
-              setState(() {
-                unpublishingGameId = null;
-              });
             },
             child: Text(
               "Unpublish",
@@ -138,17 +660,7 @@ class _MyGamePublishedState extends State<MyGamePublished> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      // Detect taps outside to reset unpublish mode
-      onTap: () {
-        if (unpublishingGameId != null) {
-          setState(() {
-            unpublishingGameId = null;
-          });
-        }
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: const Color(0xFF1E201E),
         appBar: AppBar(
           backgroundColor: Colors.white.withOpacity(0.05),
@@ -271,8 +783,10 @@ class _MyGamePublishedState extends State<MyGamePublished> {
 
                   // Sort games by published_at in descending order (client-side sorting)
                   games.sort((a, b) {
-                    final aTime = a["published_at"] as Timestamp?;
-                    final bTime = b["published_at"] as Timestamp?;
+                  final aData = a.data() as Map<String, dynamic>?;
+                  final bData = b.data() as Map<String, dynamic>?;
+                  final aTime = aData?["published_at"] as Timestamp?;
+                  final bTime = bData?["published_at"] as Timestamp?;
                     if (aTime == null && bTime == null) return 0;
                     if (aTime == null) return 1;
                     if (bTime == null) return -1;
@@ -282,7 +796,10 @@ class _MyGamePublishedState extends State<MyGamePublished> {
             // Debug: Print number of games found
             print('Published games found: ${games.length}');
             for (var game in games) {
-                    print('Game: ${game["title"]} - gameId: ${game.id}');
+                  final gameData = game.data() as Map<String, dynamic>?;
+                  print(
+                    'Game: ${gameData?["title"] ?? "Untitled"} - gameId: ${game.id}',
+                  );
             }
 
             return LayoutBuilder(
@@ -324,55 +841,71 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                   itemCount: games.length,
                   itemBuilder: (context, index) {
                     final game = games[index];
-                    final title = game["title"] ?? "Untitled";
+                        final gameData = game.data() as Map<String, dynamic>?;
+                        final title = gameData?["title"] ?? "Untitled";
                           final gameId = game.id; // Document ID is the gameId
                           final userId = user!.uid; // Current user is the owner
-                    final description = game["description"] ?? "";
-                    final difficulty = game["difficulty"] ?? "easy";
-                    final prizeCoins = game["prizeCoins"] ?? "0";
+                        final description = gameData?["description"] ?? "";
+                        final difficulty = gameData?["difficulty"] ?? "easy";
+                        final prizeCoins = gameData?["prizeCoins"] ?? "0";
+                        final gameSet = gameData?["gameSet"] as String?;
+                        final gameCode = gameData?["gameCode"] as String?;
 
-                    final isUnpublishing = unpublishingGameId == gameId;
-
-                    return GestureDetector(
-                      onTap: () {
-                        if (isUnpublishing) {
-                          setState(() {
-                            unpublishingGameId = null;
-                          });
-                        } else {
+                        return Listener(
+                          onPointerDown: (event) {
+                            // Prevent browser context menu on right-click (button 2)
+                            if (event.kind == PointerDeviceKind.mouse &&
+                                event.buttons == 2) {
+                              // Consume the event to prevent default browser menu
+                              return;
+                            }
+                          },
+                          child: GestureDetector(
+                            // This behavior ensures all gestures are captured
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
                           Get.toNamed(
                             "/game_edit",
                             arguments: {"gameId": gameId},
-                          );
-                        }
-                      },
+                              );
+                            },
                             onLongPress: () {
-                              setState(() {
-                                unpublishingGameId = gameId;
-                              });
-                            },
-                            onSecondaryTap: () {
-                              setState(() {
-                                unpublishingGameId = gameId;
-                              });
-                            },
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: isUnpublishing
-                            ? _buildUnpublishCard(
+                              _showGameControlDialog(
                                 userId,
                                 gameId,
                                 title,
-                                cardWidth,
-                              )
-                            : _buildPublishedGameCard(
+                                gameSet,
+                                gameCode,
+                              );
+                            },
+                            onSecondaryTapDown: (details) {
+                              // Explicitly handle secondary tap to prevent default menu
+                              _showGameControlDialog(
+                                userId,
                                 gameId,
                                 title,
-                                description,
-                                difficulty,
-                                prizeCoins,
-                                cardWidth,
-                              ),
+                                gameSet,
+                                gameCode,
+                              );
+                            },
+                            onSecondaryTap: () {
+                              // Additional handler for secondary tap
+                              _showGameControlDialog(
+                                userId,
+                                gameId,
+                                title,
+                                gameSet,
+                                gameCode,
+                              );
+                            },
+                            child: _buildPublishedGameCard(
+                              gameId,
+                              title,
+                              description,
+                              difficulty,
+                              prizeCoins,
+                              cardWidth,
+                            ),
                       ),
                     );
                   },
@@ -380,77 +913,7 @@ class _MyGamePublishedState extends State<MyGamePublished> {
               },
             );
           },
-        ),
-      ),
-    );
-  }
-
-  /// Build unpublish confirmation card
-  Widget _buildUnpublishCard(
-    String userId,
-    String gameId,
-    String title,
-    double cardWidth,
-  ) {
-    return Container(
-      key: ValueKey("unpublish_$gameId"),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.orangeAccent.withOpacity(0.9),
-            Colors.orange.shade700.withOpacity(0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showUnpublishDialog(userId, gameId, title),
-          borderRadius: BorderRadius.circular(16),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.unpublished, color: Colors.white, size: 60),
-                const SizedBox(height: 16),
-                Text(
-                  "UNPUBLISH",
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ),
-              ],
             ),
-          ),
-        ),
-      ),
     );
   }
 
