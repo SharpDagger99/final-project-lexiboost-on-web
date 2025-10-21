@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -118,16 +119,40 @@ class _MyGamePublishedState extends State<MyGamePublished> {
             const SizedBox(height: 16),
             TextField(
               controller: gameCodeController,
-              style: GoogleFonts.poppins(color: Colors.white),
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(8),
+                GameCodeFormatter(),
+              ],
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 4,
+              ),
               decoration: InputDecoration(
-                hintText: "Game Code (e.g., 1234-5678)",
-                hintStyle: GoogleFonts.poppins(color: Colors.white38),
+                hintText: "1234-5678",
+                hintStyle: GoogleFonts.poppins(
+                  color: Colors.white38,
+                  letterSpacing: 2,
+                ),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.1),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.blue, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                prefixIcon: Icon(Icons.vpn_key, color: Colors.blue),
               ),
             ),
           ],
@@ -148,7 +173,10 @@ class _MyGamePublishedState extends State<MyGamePublished> {
               ),
             ),
             onPressed: () async {
-              String newGameCode = gameCodeController.text.trim();
+              String newGameCode = gameCodeController.text.trim().replaceAll(
+                '-',
+                '',
+              );
               String newGameSet = newGameCode.isEmpty ? "public" : "private";
 
               await FirebaseFirestore.instance
@@ -1141,6 +1169,36 @@ class _MyGamePublishedState extends State<MyGamePublished> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// Custom formatter for game code: 1234-5678
+class GameCodeFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+
+    // Remove any existing dashes
+    final digitsOnly = text.replaceAll('-', '');
+
+    // If more than 8 digits, truncate
+    if (digitsOnly.length > 8) {
+      return oldValue;
+    }
+
+    // Format with dash after 4th digit
+    String formatted = digitsOnly;
+    if (digitsOnly.length > 4) {
+      formatted = '${digitsOnly.substring(0, 4)}-${digitsOnly.substring(4)}';
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
