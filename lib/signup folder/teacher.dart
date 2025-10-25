@@ -1,7 +1,8 @@
-// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: use_build_context_synchronously, unused_catch_clause
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lexi_on_web/firebase/firebase_auth.dart';
 
 
@@ -25,10 +26,162 @@ class _MyTeacherState extends State<MyTeacher> {
 
   bool _obscurePassword = true;
   final AuthService _authService = AuthService();
+  
+  // OTP State
+  final TextEditingController otpController = TextEditingController();
+  bool _isOtpSent = false;
+  bool _isVerifying = false;
+  String? _verificationId;
 
-  // Register Teacher
-  Future<void> _registerTeacher() async {
+  // Show dialog helper
+  void _showDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+          content: Text(
+            message,
+            style: GoogleFonts.poppins(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                "OK",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blueAccent,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Validate all required fields
+  bool _validateFields() {
+    if (emailController.text.trim().isEmpty ||
+        passwordController.text.trim().isEmpty ||
+        confirmPasswordController.text.trim().isEmpty ||
+        mobileController.text.trim().isEmpty ||
+        fullNameController.text.trim().isEmpty ||
+        addressController.text.trim().isEmpty) {
+      _showDialog(
+        "Required Fields Missing",
+        "Please fill in all required fields to continue with your registration.",
+      );
+      return false;
+    }
+    
+    if (passwordController.text != confirmPasswordController.text) {
+      _showDialog(
+        "Password Mismatch",
+        "The passwords you entered do not match. Please make sure both password fields are identical.",
+      );
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Send OTP to mobile number
+  Future<void> _sendOtp() async {
+    if (!_validateFields()) return;
+    
+    setState(() {
+      _isVerifying = true;
+    });
+    
     try {
+      // Note: For Firebase Phone Auth, prepend country code to mobile number
+      // Example: +639123456789 for Philippines
+      final phoneNumber = '+63${mobileController.text.trim()}'; // Adjust country code as needed
+      
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // Auto-verification (Android only)
+          setState(() {
+            _isOtpSent = true;
+            _isVerifying = false;
+          });
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          setState(() {
+            _isVerifying = false;
+          });
+          _showDialog(
+            "Verification Failed",
+            "Unable to verify your mobile number. Please check the number and try again.",
+          );
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          setState(() {
+            _verificationId = verificationId;
+            _isOtpSent = true;
+            _isVerifying = false;
+          });
+          _showDialog(
+            "Verification Code Sent",
+            "A verification code has been sent to your mobile number. Please enter it below to continue.",
+          );
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          setState(() {
+            _verificationId = verificationId;
+          });
+        },
+        timeout: const Duration(seconds: 60),
+      );
+    } catch (e) {
+      setState(() {
+        _isVerifying = false;
+      });
+      _showDialog(
+        "Error",
+        "An error occurred while sending the verification code. Please try again.",
+      );
+    }
+  }
+  
+  // Verify OTP and register teacher
+  Future<void> _verifyOtpAndRegister() async {
+    if (otpController.text.trim().isEmpty) {
+      _showDialog(
+        "Verification Code Required",
+        "Please enter the verification code sent to your mobile number.",
+      );
+      return;
+    }
+    
+    setState(() {
+      _isVerifying = true;
+    });
+    
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId!,
+        smsCode: otpController.text.trim(),
+      );
+      
+      // Verify the OTP is valid
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      
+      // OTP verified, now sign out and proceed with teacher registration
+      await FirebaseAuth.instance.signOut();
+      
+      // Register teacher
       await _authService.signUpTeacher(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
@@ -41,9 +194,21 @@ class _MyTeacherState extends State<MyTeacher> {
       if (mounted) {
         Navigator.of(context).push(_createRoute());
       }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _isVerifying = false;
+      });
+      _showDialog(
+        "Invalid Code",
+        "The verification code you entered is incorrect. Please check and try again.",
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
+      setState(() {
+        _isVerifying = false;
+      });
+      _showDialog(
+        "Registration Error",
+        "An error occurred during registration. Please try again or contact support if the problem persists.",
       );
     }
   }
@@ -74,36 +239,55 @@ class _MyTeacherState extends State<MyTeacher> {
               buildPasswordField("Confirm Password", confirmPasswordController),
               buildTextField("Mobile Number", mobileController, false),
               buildTextField("Full Name", fullNameController, false),
-              buildMultilineTextField("Address (Optional)", addressController),
+              buildMultilineTextField("Address", addressController),
 
               const SizedBox(height: 25),
 
-              // Send button
+              // OTP Field (shown after OTP is sent)
+              if (_isOtpSent) ...[
+                buildTextField("Enter OTP", otpController, false),
+                const SizedBox(height: 10),
+                // Resend OTP Button
+                TextButton(
+                  onPressed: _sendOtp,
+                  child: Text(
+                    "Resend OTP",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+              ],
+
+              // Send/Verify button
               SizedBox(
                 width: 300,
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
+                    backgroundColor: _isVerifying ? Colors.grey : Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  onPressed: () async {
-                    if (passwordController.text !=
-                        confirmPasswordController.text) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Passwords do not match."),
-                        ),
-                      );
-                      return;
-                    }
-
-                    await _registerTeacher();
-                  },
+                  onPressed: _isVerifying
+                      ? null
+                      : () async {
+                          if (!_isOtpSent) {
+                            // Send OTP
+                            await _sendOtp();
+                          } else {
+                            // Verify OTP and register
+                            await _verifyOtpAndRegister();
+                          }
+                        },
                   child: Text(
-                    "Send",
+                    _isVerifying
+                        ? "Processing..."
+                        : (_isOtpSent ? "Verify & Register" : "Send OTP"),
                     style: GoogleFonts.poppins(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
