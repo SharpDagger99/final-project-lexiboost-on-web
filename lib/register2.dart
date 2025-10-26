@@ -104,7 +104,7 @@ class _MyRegister2State extends State<MyRegister2> {
             ),
             const Spacer(),
             Padding(
-              padding: const EdgeInsets.only(bottom: 50),
+              padding: const EdgeInsets.only(bottom: 10),
               child: AnimatedButton(
                 width: 300,
                 height: 50,
@@ -132,6 +132,34 @@ class _MyRegister2State extends State<MyRegister2> {
                     color: hasSelection ? Colors.black : Colors.white70,
                   ),
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 50),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Already have an account? ",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Get.toNamed("/register");
+                    },
+                    child: Text(
+                      "log in",
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

@@ -21,6 +21,7 @@ class MyTeacherHome extends StatefulWidget {
 
 class _MyTeacherHomeState extends State<MyTeacherHome> {
   int selectedIndex = 0;
+  bool isSidebarOpen = false;
 
   void _showLogoutDialog() {
     showDialog(
@@ -146,70 +147,153 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           double sidebarWidth = constraints.maxWidth < 400 ? 180 : 200;
+          bool isLargeScreen = constraints.maxWidth > 1200;
 
-          return Column(
+          return Stack(
             children: [
-              // AppBar always full width
-              Container(
-                height: 60,
-                width: double.infinity,
-                color: Colors.white.withOpacity(0.05),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Image.asset("assets/logo/LEXIBOOST.png", scale: 5),
-                    const Spacer(),
-                  ],
-                ),
-              ),
-
-              // Main content row (Sidebar + Content)
-              Expanded(
-                child: Row(
-                  children: [
-                    // Sidebar
-                    Container(
-                      width: sidebarWidth,
-                      color: const Color(0xFF2C2F2C),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildSidebarItem(
-                              icon: Icons.dashboard, title: "Dashboard", index: 0),
-                          _buildSidebarItem(
-                              icon: Icons.people, title: "Students", index: 1),
-                          _buildSidebarItem(
-                              icon: Icons.message_rounded, title: "Class", index: 2),
-                          _buildSidebarItem(
-                              icon: Icons.request_page, title: "Request", index: 3),
-                          _buildSidebarItem(
-                              icon: Icons.videogame_asset, title: "Game Create", index: 4),
-                          _buildSidebarItem(
-                              icon: Icons.receipt_long, title: "Report", index: 5),
-
-                          const Spacer(),
-
-                          _buildSidebarItem(
-                              icon: Icons.settings, title: "Settings", index: 6),
-                          _buildSidebarItem(
-                              icon: Icons.logout, title: "Log Out", index: 7),
-                        ],
-                      ),
+              Column(
+                children: [
+                  // AppBar always full width
+                  Container(
+                    height: 60,
+                    width: double.infinity,
+                    color: Colors.white.withOpacity(0.05),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        // Hamburger button for small screens
+                        if (!isLargeScreen)
+                          IconButton(
+                            icon: const Icon(Icons.menu, color: Colors.white),
+                            onPressed: () {
+                              setState(() {
+                                isSidebarOpen = !isSidebarOpen;
+                              });
+                            },
+                          ),
+                        const Spacer(),
+                      ],
                     ),
+                  ),
 
-                    // Main content area: IndexedStack
-                    Expanded(
-                      child: Container(
-                        color: const Color(0xFF1E201E),
-                        child: IndexedStack(
-                          index: selectedIndex,
-                          children: pages,
+                  // Main content row (Sidebar + Content)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        // Sidebar - always visible on large screens
+                        if (isLargeScreen)
+                          Container(
+                            width: sidebarWidth,
+                            color: const Color(0xFF2C2F2C),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // LexiBoost logo at top
+                                Padding(
+                                  padding: const EdgeInsets.all(20.0),
+                                  child: Image.asset(
+                                    "assets/logo/LEXIBOOST.png",
+                                    scale: 5,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                _buildSidebarItem(
+                                    icon: Icons.dashboard, title: "Dashboard", index: 0),
+                                _buildSidebarItem(
+                                    icon: Icons.people, title: "Students", index: 1),
+                                _buildSidebarItem(
+                                    icon: Icons.message_rounded, title: "Class", index: 2),
+                                _buildSidebarItem(
+                                    icon: Icons.request_page, title: "Request", index: 3),
+                                _buildSidebarItem(
+                                    icon: Icons.videogame_asset, title: "Game Create", index: 4),
+                                _buildSidebarItem(
+                                    icon: Icons.receipt_long, title: "Report", index: 5),
+
+                                const Spacer(),
+
+                                _buildSidebarItem(
+                                    icon: Icons.settings, title: "Settings", index: 6),
+                                _buildSidebarItem(
+                                    icon: Icons.logout, title: "Log Out", index: 7),
+                              ],
+                            ),
+                          ),
+
+                        // Main content area: IndexedStack
+                        Expanded(
+                          child: Container(
+                            color: const Color(0xFF1E201E),
+                            child: IndexedStack(
+                              index: selectedIndex,
+                              children: pages,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+
+              // Overlay sidebar for small screens
+              if (!isLargeScreen && isSidebarOpen)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      isSidebarOpen = false;
+                    });
+                  },
+                  child: Container(
+                    color: Colors.black54,
+                  ),
+                ),
+
+              // Sliding sidebar for small screens
+              if (!isLargeScreen)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 250),
+                  left: isSidebarOpen ? 0 : -sidebarWidth,
+                  top: 60,
+                  bottom: 0,
+                  width: sidebarWidth,
+                  child: Container(
+                    color: const Color(0xFF2C2F2C),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // LexiBoost logo at top
+                        Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Image.asset(
+                            "assets/logo/LEXIBOOST.png",
+                            scale: 5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildSidebarItem(
+                            icon: Icons.dashboard, title: "Dashboard", index: 0),
+                        _buildSidebarItem(
+                            icon: Icons.people, title: "Students", index: 1),
+                        _buildSidebarItem(
+                            icon: Icons.message_rounded, title: "Class", index: 2),
+                        _buildSidebarItem(
+                            icon: Icons.request_page, title: "Request", index: 3),
+                        _buildSidebarItem(
+                            icon: Icons.videogame_asset, title: "Game Create", index: 4),
+                        _buildSidebarItem(
+                            icon: Icons.receipt_long, title: "Report", index: 5),
+
+                        const Spacer(),
+
+                        _buildSidebarItem(
+                            icon: Icons.settings, title: "Settings", index: 6),
+                        _buildSidebarItem(
+                            icon: Icons.logout, title: "Log Out", index: 7),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -244,6 +328,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
         } else {
           setState(() {
             selectedIndex = index;
+            isSidebarOpen = false; // Close sidebar on selection
           });
         }
       },
