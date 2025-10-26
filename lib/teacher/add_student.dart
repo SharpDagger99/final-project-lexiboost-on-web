@@ -1,5 +1,6 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -64,6 +65,7 @@ class _MyAddStudentState extends State<MyAddStudent> {
             final userData = userDoc.data();
             final username = userData['username'] ?? 'Unknown';
             final email = userData['email'] ?? '';
+            final profileImage = userData['profileImage'];
 
             // Apply search filter
             if (_searchQuery.isEmpty ||
@@ -73,6 +75,7 @@ class _MyAddStudentState extends State<MyAddStudent> {
                 'studentId': userDoc.id,
                 'username': username,
                 'email': email,
+                'profileImage': profileImage,
                 'acceptedAt': teacherData?['acceptedAt'],
               });
             }
@@ -207,15 +210,52 @@ class _MyAddStudentState extends State<MyAddStudent> {
                       height: 45,
                       color: const Color(0xFF1E201E),
                       shadowDegree: ShadowDegree.light,
-                      onPressed: () {
+                      onPressed: () async {
                         if (messageController.text.trim().isNotEmpty) {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Message sent to $studentName'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
+                          final currentUser = _auth.currentUser;
+                          if (currentUser != null) {
+                            try {
+                              // Get teacher's name
+                              final teacherDoc = await _firestore
+                                  .collection('users')
+                                  .doc(currentUser.uid)
+                                  .get();
+                              final teacherName =
+                                  teacherDoc.data()?['fullname'] ??
+                                  teacherDoc.data()?['username'] ??
+                                  'Teacher';
+
+                              // Send notification to student
+                              await _firestore
+                                  .collection('users')
+                                  .doc(studentId)
+                                  .collection('notifications')
+                                  .add({
+                                    'title': 'Message from $teacherName',
+                                    'message': messageController.text.trim(),
+                                    'from': currentUser.uid,
+                                    'fromName': teacherName,
+                                    'timestamp': FieldValue.serverTimestamp(),
+                                    'read': false,
+                                    'type': 'message',
+                                  });
+
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Message sent to $studentName'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to send message: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
                         }
                       },
                       child: Text(
@@ -237,7 +277,7 @@ class _MyAddStudentState extends State<MyAddStudent> {
     );
   }
 
-  // View student information dialog
+  // View student information dialog with complete data
   void _viewStudentInfo(String studentId, String studentName, String studentEmail) {
     showDialog(
       context: context,
@@ -249,103 +289,295 @@ class _MyAddStudentState extends State<MyAddStudent> {
           child: Container(
             padding: const EdgeInsets.all(24),
             width: 500,
+            constraints: const BoxConstraints(maxHeight: 600),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Avatar
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.amber[700]!,
-                        Colors.amber[900]!,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
-                      style: GoogleFonts.poppins(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: _firestore.collection('users').doc(studentId).snapshots(),
+              builder: (context, studentSnapshot) {
+                if (studentSnapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1E201E),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                  );
+                }
 
-                // Student name
-                Text(
-                  studentName,
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                if (!studentSnapshot.hasData || !studentSnapshot.data!.exists) {
+                  return SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: Text(
+                        'Student data not found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  );
+                }
 
-                // Student email
-                Text(
-                  studentEmail,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 24),
+                final studentData =
+                    studentSnapshot.data!.data() as Map<String, dynamic>;
+                final username = studentData['username'] ?? studentName;
+                final email = studentData['email'] ?? studentEmail;
+                final coins = studentData['coins'] ?? 0;
+                final trophies = studentData['trophy'] ?? 0;
+                final profileImageBase64 = studentData['profileImage'];
 
-                // Information section
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildInfoRow('Role', 'Student'),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Status', 'Active', isActive: true),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Student ID', studentId.substring(0, 8)),
+                      // Avatar
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.amber[700],
+                        backgroundImage: profileImageBase64 != null
+                            ? MemoryImage(base64Decode(profileImageBase64))
+                            : null,
+                        child: profileImageBase64 == null
+                            ? Text(
+                                username.isNotEmpty
+                                    ? username[0].toUpperCase()
+                                    : 'S',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Student name
+                      Text(
+                        username,
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Student email
+                      Text(
+                        email,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Rank Badge
+                      StreamBuilder<QuerySnapshot>(
+                        stream: _firestore
+                            .collection('users')
+                            .orderBy('trophy', descending: true)
+                            .snapshots(),
+                        builder: (context, rankSnapshot) {
+                          int userRank = 0;
+                          if (rankSnapshot.hasData) {
+                            userRank =
+                                rankSnapshot.data!.docs.indexWhere(
+                                  (d) => d.id == studentId,
+                                ) +
+                                1;
+                          }
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.amber,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.military_tech,
+                                  color: Colors.amber,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  userRank > 0 ? 'Rank #$userRank' : 'Unranked',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.amber[900],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Stats Cards
+                      Row(
+                        children: [
+                          // Coins Card
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.amber[100]!,
+                                    Colors.amber[50]!,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.amber[200]!),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.monetization_on,
+                                    color: Colors.amber[700],
+                                    size: 32,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Coins',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$coins',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber[900],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Trophies Card
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.orange[100]!,
+                                    Colors.orange[50]!,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.orange[200]!),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.emoji_events,
+                                    color: Colors.orange[700],
+                                    size: 32,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Trophies',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$trophies',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange[900],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Information section
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildInfoRow('Role', 'Student'),
+                            const SizedBox(height: 12),
+                            _buildInfoRow('Status', 'Active', isActive: true),
+                            const SizedBox(height: 12),
+                            _buildInfoRow(
+                              'Student ID',
+                              studentId.substring(0, 8),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Close button
+                      AnimatedButton(
+                        width: 120,
+                        height: 45,
+                        color: const Color(0xFF1E201E),
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text(
+                          'Close',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 24),
-
-                // Close button
-                AnimatedButton(
-                  width: 120,
-                  height: 45,
-                  color: const Color(0xFF1E201E),
-                  shadowDegree: ShadowDegree.light,
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: Text(
-                    'Close',
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         );
@@ -532,6 +764,7 @@ class _MyAddStudentState extends State<MyAddStudent> {
                     final studentId = student['studentId'];
                     final username = student['username'];
                     final email = student['email'];
+                    final profileImageBase64 = student['profileImage'];
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -553,14 +786,6 @@ class _MyAddStudentState extends State<MyAddStudent> {
                               width: 70,
                               height: 70,
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.amber[700]!,
-                                    Colors.amber[900]!,
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
@@ -570,15 +795,26 @@ class _MyAddStudentState extends State<MyAddStudent> {
                                   ),
                                 ],
                               ),
-                              child: Center(
-                                child: Text(
-                                  username.isNotEmpty ? username[0].toUpperCase() : 'S',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                              child: CircleAvatar(
+                                radius: 35,
+                                backgroundColor: Colors.amber[700],
+                                backgroundImage: profileImageBase64 != null
+                                    ? MemoryImage(
+                                        base64Decode(profileImageBase64),
+                                      )
+                                    : null,
+                                child: profileImageBase64 == null
+                                    ? Text(
+                                        username.isNotEmpty
+                                            ? username[0].toUpperCase()
+                                            : 'S',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
                               ),
                             ),
                             const SizedBox(width: 16),

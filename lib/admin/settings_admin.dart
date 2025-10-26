@@ -193,10 +193,7 @@ class _MySettingsAdminState extends State<MySettingsAdmin>
           ),
         ),
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+
       ),
       body: SafeArea(
         child: Padding(

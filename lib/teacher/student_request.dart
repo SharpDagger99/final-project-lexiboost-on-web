@@ -1,5 +1,6 @@
-// ignore_for_file: deprecated_member_use, prefer_final_fields, avoid_print
+// ignore_for_file: deprecated_member_use, prefer_final_fields, avoid_print, use_build_context_synchronously
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,6 +38,25 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
         'status': true,
         'acceptedAt': FieldValue.serverTimestamp(),
       });
+
+      // Send notification to student about acceptance
+      final currentUser = _auth.currentUser;
+      if (currentUser != null) {
+        await _firestore
+            .collection('users')
+            .doc(studentId)
+            .collection('notifications')
+            .add({
+              'title': 'Teacher Accepted!',
+              'message':
+                  '$teacherName has accepted your request and is now your teacher.',
+              'from': currentUser.uid,
+              'fromName': teacherName,
+              'timestamp': FieldValue.serverTimestamp(),
+              'read': false,
+              'type': 'teacher_accepted',
+            });
+      }
 
       setState(() {
         _processingRequests.remove(studentId);
@@ -260,17 +280,52 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
                       height: 45,
                       color: const Color(0xFF1E201E),
                       shadowDegree: ShadowDegree.light,
-                      onPressed: () {
+                      onPressed: () async {
                         if (messageController.text.trim().isNotEmpty) {
-                          // Here you can implement actual message sending
-                          // For now, just show a success message
-                          Navigator.of(context).pop();
-                          Get.snackbar(
-                            'Success',
-                            'Message sent to $studentName',
-                            backgroundColor: Colors.green,
-                            colorText: Colors.white,
-                          );
+                          final currentUser = _auth.currentUser;
+                          if (currentUser != null) {
+                            try {
+                              // Get teacher's name
+                              final teacherDoc = await _firestore
+                                  .collection('users')
+                                  .doc(currentUser.uid)
+                                  .get();
+                              final teacherName =
+                                  teacherDoc.data()?['fullname'] ??
+                                  teacherDoc.data()?['username'] ??
+                                  'Teacher';
+
+                              // Send notification to student
+                              await _firestore
+                                  .collection('users')
+                                  .doc(studentId)
+                                  .collection('notifications')
+                                  .add({
+                                    'title': 'Message from $teacherName',
+                                    'message': messageController.text.trim(),
+                                    'from': currentUser.uid,
+                                    'fromName': teacherName,
+                                    'timestamp': FieldValue.serverTimestamp(),
+                                    'read': false,
+                                    'type': 'message',
+                                  });
+
+                              Navigator.of(context).pop();
+                              Get.snackbar(
+                                'Success',
+                                'Message sent to $studentName',
+                                backgroundColor: Colors.green,
+                                colorText: Colors.white,
+                              );
+                            } catch (e) {
+                              Get.snackbar(
+                                'Error',
+                                'Failed to send message: $e',
+                                backgroundColor: Colors.red,
+                                colorText: Colors.white,
+                              );
+                            }
+                          }
                         }
                       },
                       child: Text(
@@ -366,6 +421,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
               'username':
                   userData['username'] ?? userData['fullname'] ?? 'Unknown',
               'email': userData['email'] ?? '',
+              'profileImage': userData['profileImage'],
               'addedAt': teacherRequestData?['addedAt'],
             });
           }
@@ -391,10 +447,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Get.back(),
-        ),
+        
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: _getStudentRequests(),
@@ -466,6 +519,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
                   final studentId = request['studentId'];
                   final username = request['username'];
                   final email = request['email'];
+                  final profileImageBase64 = request['profileImage'];
                   final isProcessing = _processingRequests.contains(studentId);
 
                   return Container(
@@ -488,14 +542,23 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
                               CircleAvatar(
                                 radius: 30,
                                 backgroundColor: Colors.amber[700],
-                                child: Text(
-                                  username.isNotEmpty ? username[0].toUpperCase() : 'S',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                                backgroundImage: profileImageBase64 != null
+                                    ? MemoryImage(
+                                        base64Decode(profileImageBase64),
+                                      )
+                                    : null,
+                                child: profileImageBase64 == null
+                                    ? Text(
+                                        username.isNotEmpty
+                                            ? username[0].toUpperCase()
+                                            : 'S',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
                               ),
                               const SizedBox(width: 16),
 

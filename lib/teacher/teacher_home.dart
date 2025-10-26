@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:lexi_on_web/admin/game_create.dart';
 import 'package:lexi_on_web/admin/report.dart';
@@ -10,7 +12,6 @@ import 'package:lexi_on_web/teacher/student_request.dart';
 import 'package:lexi_on_web/teacher/add_student.dart';
 import 'package:lexi_on_web/admin/settings_admin.dart';
 import 'package:lexi_on_web/start.dart';
-import 'package:lexi_on_web/teacher/teacher_dashboard.dart';
 
 class MyTeacherHome extends StatefulWidget {
   const MyTeacherHome({super.key});
@@ -22,6 +23,55 @@ class MyTeacherHome extends StatefulWidget {
 class _MyTeacherHomeState extends State<MyTeacherHome> {
   int selectedIndex = 0;
   bool isSidebarOpen = false;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Get pending student requests count
+  Stream<int> _getPendingRequestsCount() async* {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      yield 0;
+      return;
+    }
+
+    final teacherDoc = await _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+    if (!teacherDoc.exists) {
+      yield 0;
+      return;
+    }
+
+    final teacherData = teacherDoc.data();
+    final teacherName = teacherData?['fullname'] ?? '';
+
+    if (teacherName.isEmpty) {
+      yield 0;
+      return;
+    }
+
+    await for (var usersSnapshot
+        in _firestore.collection('users').snapshots()) {
+      int count = 0;
+      for (var userDoc in usersSnapshot.docs) {
+        if (userDoc.id == currentUser.uid) continue;
+
+        final teacherSubDoc = await _firestore
+            .collection('users')
+            .doc(userDoc.id)
+            .collection('teachers')
+            .doc(teacherName)
+            .get();
+
+        if (teacherSubDoc.exists) {
+          final status = teacherSubDoc.data()?['status'] ?? false;
+          if (!status) count++;
+        }
+      }
+      yield count;
+    }
+  }
 
   void _showLogoutDialog() {
     showDialog(
@@ -118,9 +168,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
   }
 
   final List<Map<String, dynamic>> menuItems = [
-    {"icon": Icons.dashboard, "title": "Dashboard"},
-    {"icon": Icons.people, "title": "Students"},
     {"icon": Icons.message_rounded, "title": "Class"},
+    {"icon": Icons.people, "title": "Students"},
     {"icon": Icons.request_page, "title": "Request"},
     {"icon": Icons.videogame_asset, "title": "Game Create"},
     {"icon": Icons.receipt_long, "title": "Report"},
@@ -130,9 +179,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
 
   // Pages for each sidebar option
   final List<Widget> pages = const [
-    MyTeacherDashboard(),
-    MyAddStudent(),
     MyClass1(),
+    MyAddStudent(),
     MyStudentRequest(),
     MyGameCreate(),
     MyReport(),
@@ -198,24 +246,57 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                 ),
                                 const SizedBox(height: 10),
                                 _buildSidebarItem(
-                                    icon: Icons.dashboard, title: "Dashboard", index: 0),
+                                  icon: Icons.message_rounded,
+                                  title: "Class",
+                                  index: 0,
+                                ),
+                                StreamBuilder<int>(
+                                  stream: _getPendingRequestsCount(),
+                                  builder: (context, snapshot) {
+                                    final badgeCount = snapshot.data ?? 0;
+                                    return _buildSidebarItem(
+                                      icon: Icons.people,
+                                      title: "Students",
+                                      index: 1,
+                                      badgeCount: badgeCount,
+                                    );
+                                  },
+                                ),
+                                StreamBuilder<int>(
+                                  stream: _getPendingRequestsCount(),
+                                  builder: (context, snapshot) {
+                                    final badgeCount = snapshot.data ?? 0;
+                                    return _buildSidebarItem(
+                                      icon: Icons.request_page,
+                                      title: "Request",
+                                      index: 2,
+                                      badgeCount: badgeCount,
+                                    );
+                                  },
+                                ),
                                 _buildSidebarItem(
-                                    icon: Icons.people, title: "Students", index: 1),
+                                  icon: Icons.videogame_asset,
+                                  title: "Game Create",
+                                  index: 3,
+                                ),
                                 _buildSidebarItem(
-                                    icon: Icons.message_rounded, title: "Class", index: 2),
-                                _buildSidebarItem(
-                                    icon: Icons.request_page, title: "Request", index: 3),
-                                _buildSidebarItem(
-                                    icon: Icons.videogame_asset, title: "Game Create", index: 4),
-                                _buildSidebarItem(
-                                    icon: Icons.receipt_long, title: "Report", index: 5),
+                                  icon: Icons.receipt_long,
+                                  title: "Report",
+                                  index: 4,
+                                ),
 
                                 const Spacer(),
 
                                 _buildSidebarItem(
-                                    icon: Icons.settings, title: "Settings", index: 6),
+                                  icon: Icons.settings,
+                                  title: "Settings",
+                                  index: 5,
+                                ),
                                 _buildSidebarItem(
-                                    icon: Icons.logout, title: "Log Out", index: 7),
+                                  icon: Icons.logout,
+                                  title: "Log Out",
+                                  index: 6,
+                                ),
                               ],
                             ),
                           ),
@@ -272,24 +353,57 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                         ),
                         const SizedBox(height: 10),
                         _buildSidebarItem(
-                            icon: Icons.dashboard, title: "Dashboard", index: 0),
+                          icon: Icons.message_rounded,
+                          title: "Class",
+                          index: 0,
+                        ),
+                        StreamBuilder<int>(
+                          stream: _getPendingRequestsCount(),
+                          builder: (context, snapshot) {
+                            final badgeCount = snapshot.data ?? 0;
+                            return _buildSidebarItem(
+                              icon: Icons.people,
+                              title: "Students",
+                              index: 1,
+                              badgeCount: badgeCount,
+                            );
+                          },
+                        ),
+                        StreamBuilder<int>(
+                          stream: _getPendingRequestsCount(),
+                          builder: (context, snapshot) {
+                            final badgeCount = snapshot.data ?? 0;
+                            return _buildSidebarItem(
+                              icon: Icons.request_page,
+                              title: "Request",
+                              index: 2,
+                              badgeCount: badgeCount,
+                            );
+                          },
+                        ),
                         _buildSidebarItem(
-                            icon: Icons.people, title: "Students", index: 1),
+                          icon: Icons.videogame_asset,
+                          title: "Game Create",
+                          index: 3,
+                        ),
                         _buildSidebarItem(
-                            icon: Icons.message_rounded, title: "Class", index: 2),
-                        _buildSidebarItem(
-                            icon: Icons.request_page, title: "Request", index: 3),
-                        _buildSidebarItem(
-                            icon: Icons.videogame_asset, title: "Game Create", index: 4),
-                        _buildSidebarItem(
-                            icon: Icons.receipt_long, title: "Report", index: 5),
+                          icon: Icons.receipt_long,
+                          title: "Report",
+                          index: 4,
+                        ),
 
                         const Spacer(),
 
                         _buildSidebarItem(
-                            icon: Icons.settings, title: "Settings", index: 6),
+                          icon: Icons.settings,
+                          title: "Settings",
+                          index: 5,
+                        ),
                         _buildSidebarItem(
-                            icon: Icons.logout, title: "Log Out", index: 7),
+                          icon: Icons.logout,
+                          title: "Log Out",
+                          index: 6,
+                        ),
                       ],
                     ),
                   ),
@@ -305,13 +419,44 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
     required IconData icon,
     required String title,
     required int index,
+    int badgeCount = 0,
   }) {
     bool isSelected = selectedIndex == index;
 
     return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? Colors.blue : Colors.white70,
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon, color: isSelected ? Colors.blue : Colors.white70),
+          if (badgeCount > 0)
+            Positioned(
+              right: -8,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFF2C2F2C),
+                    width: 1.5,
+                  ),
+                ),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                child: Center(
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       title: Text(
         title,
@@ -323,7 +468,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
       selected: isSelected,
       selectedTileColor: Colors.white12,
       onTap: () {
-        if (index == 7) { // Log Out button index
+        if (index == 6) {
+          // Log Out button index
           _showLogoutDialog();
         } else {
           setState(() {
