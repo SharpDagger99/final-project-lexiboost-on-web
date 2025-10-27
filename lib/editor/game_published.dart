@@ -5,11 +5,12 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:animated_button/animated_button.dart';
+import 'package:lexi_on_web/teacher/game_rate.dart';
 
 class MyGamePublished extends StatefulWidget {
   const MyGamePublished({super.key});
@@ -20,6 +21,9 @@ class MyGamePublished extends StatefulWidget {
 
 class _MyGamePublishedState extends State<MyGamePublished> {
   final User? user = FirebaseAuth.instance.currentUser;
+
+  // Track which game dialog is currently open to prevent duplicates
+  String? _openDialogGameId;
 
   /// Fetch users who completed a specific game
   Future<List<Map<String, dynamic>>> _fetchCompletedUsers(String gameId) async {
@@ -214,330 +218,39 @@ class _MyGamePublishedState extends State<MyGamePublished> {
     String? gameSet,
     String? gameCode,
   ) async {
-    // Fetch completed users
-    List<Map<String, dynamic>> completedUsers = await _fetchCompletedUsers(
-      gameId,
-    );
+    // Prevent duplicate dialogs
+    if (_openDialogGameId == gameId) return;
+
+    setState(() {
+      _openDialogGameId = gameId;
+    });
 
     if (!mounted) return;
 
+    // Show dialog immediately with loading state
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF2C2F33),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.5,
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.purple[700]!, Colors.purple[500]!],
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.settings, color: Colors.white, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: GoogleFonts.poppins(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Control Section
-                      Text(
-                        "CONTROL",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Control Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.unpublished, size: 20),
-                              label: Text(
-                                "Unpublish",
-                                style: GoogleFonts.poppins(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _showUnpublishDialog(userId, gameId, title);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.lock, size: 20),
-                              label: Text(
-                                "Game Code",
-                                style: GoogleFonts.poppins(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _showChangeGameCodeDialog(
-                                  userId,
-                                  gameId,
-                                  gameSet,
-                                  gameCode,
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.edit, size: 20),
-                              label: Text(
-                                "Game Set",
-                                style: GoogleFonts.poppins(fontSize: 13),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                Get.toNamed(
-                                  "/game_edit",
-                                  arguments: {"gameId": gameId},
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-                      const Divider(color: Colors.white24),
-                      const SizedBox(height: 24),
-
-                      // Status Section
-                      Text(
-                        "STATUS",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Status Cards
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatusCard(
-                              "Total Players",
-                              "${completedUsers.length}",
-                              Icons.people,
-                              Colors.purple,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatusCard(
-                              "Game Set",
-                              gameSet ?? "None",
-                              Icons.category,
-                              Colors.blue,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatusCard(
-                              "Game Code",
-                              gameCode ?? "None",
-                              Icons.lock,
-                              Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Players List
-                      Text(
-                        "PLAYERS WHO COMPLETED",
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      if (completedUsers.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.inbox,
-                                  size: 48,
-                                  color: Colors.white30,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  "No players have completed this game yet",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white54,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: completedUsers.length,
-                            separatorBuilder: (context, index) => Divider(
-                              color: Colors.white.withOpacity(0.1),
-                              height: 1,
-                            ),
-                            itemBuilder: (context, index) {
-                              final player = completedUsers[index];
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.purple,
-                                  backgroundImage:
-                                      player['profileImage'] != null &&
-                                          player['profileImage']
-                                              .toString()
-                                              .isNotEmpty
-                                      ? MemoryImage(
-                                          base64Decode(player['profileImage']),
-                                        )
-                                      : null,
-                                  child:
-                                      player['profileImage'] == null ||
-                                          player['profileImage']
-                                              .toString()
-                                              .isEmpty
-                                      ? Text(
-                                          player['username'][0].toUpperCase(),
-                                          style: GoogleFonts.poppins(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        )
-                                      : null,
-                                ),
-                                title: Text(
-                                  player['username'],
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: player['completedAt'] != null
-                                    ? Text(
-                                        "Completed: ${_formatDate(player['completedAt'])}",
-                                        style: GoogleFonts.poppins(
-                                          color: Colors.white54,
-                                          fontSize: 12,
-                                        ),
-                                      )
-                                    : null,
-                                trailing: const Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      barrierDismissible: true,
+      builder: (ctx) => _GameControlDialog(
+        userId: userId,
+        gameId: gameId,
+        title: title,
+        gameSet: gameSet,
+        gameCode: gameCode,
+        onUnpublish: _showUnpublishDialog,
+        onChangeGameCode: _showChangeGameCodeDialog,
+        fetchCompletedUsers: _fetchCompletedUsers,
+        formatDate: _formatDate,
+        buildStatusCard: _buildStatusCard,
       ),
-    );
+    ).then((_) {
+      // Reset when dialog closes
+      if (mounted) {
+        setState(() {
+          _openDialogGameId = null;
+        });
+      }
+    });
   }
 
   /// Build status card widget
@@ -595,40 +308,12 @@ class _MyGamePublishedState extends State<MyGamePublished> {
     }
   }
 
-  /// Get current user's role from Firestore
-  Future<String> _getUserRole() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return 'student';
-
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection("users")
-          .doc(user.uid)
-          .get();
-
-      if (userDoc.exists) {
-        return userDoc.data()?['role'] ?? 'student';
-      }
-      return 'student';
-    } catch (e) {
-      return 'student';
-    }
+  /// Navigate back with animation
+  void _navigateBack() {
+    Navigator.of(context).pop();
   }
 
-  /// Navigate back based on user role
-  Future<void> _navigateBack() async {
-    final role = await _getUserRole();
-
-    if (role == 'admin') {
-      Get.toNamed('/admin');
-    } else if (role == 'teacher') {
-      Get.toNamed('/teacher_home');
-    } else {
-      Navigator.of(context).pop();
-    }
-  }
-
-  /// Show confirmation dialog
+  /// Show confirmation dialog for unpublishing
   Future<void> _showUnpublishDialog(
     String userId,
     String gameId,
@@ -689,258 +374,178 @@ class _MyGamePublishedState extends State<MyGamePublished> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        backgroundColor: const Color(0xFF1E201E),
-        appBar: AppBar(
-          backgroundColor: Colors.white.withOpacity(0.05),
-          automaticallyImplyLeading: false,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: _navigateBack,
-          ),
-          title: Center(
-            child: Text(
-              "Published Games",
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+      backgroundColor: const Color(0xFF1E201E),
+      appBar: AppBar(
+        backgroundColor: Colors.white.withOpacity(0.05),
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: _navigateBack,
+        ),
+        title: Center(
+          child: Text(
+            "Published Games",
+            style: GoogleFonts.poppins(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
-          actions: [
-            // Empty SizedBox to balance the leading icon
-            const SizedBox(width: 48),
-          ],
         ),
-        body: user == null
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.person_off_outlined,
-                      size: 80,
-                      color: Colors.white30,
+        actions: [
+          // Empty SizedBox to balance the leading icon
+          const SizedBox(width: 48),
+        ],
+      ),
+      body: user == null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.person_off_outlined,
+                    size: 80,
+                    color: Colors.white30,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    "Please log in to view your published games.",
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      color: Colors.white70,
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      "Please log in to view your published games.",
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            : StreamBuilder<QuerySnapshot>(
-                // Query only current user's published games from their created_games subcollection
-                stream: FirebaseFirestore.instance
-                    .collection("users")
-                    .doc(user!.uid)
-                    .collection("created_games")
-                    .where("publish", isEqualTo: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              );
-            }
+                  ),
+                ],
+              ),
+            )
+          : StreamBuilder<QuerySnapshot>(
+              // Query only current user's published games from their created_games subcollection
+              stream: FirebaseFirestore.instance
+                  .collection("users")
+                  .doc(user!.uid)
+                  .collection("created_games")
+                  .where("publish", isEqualTo: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
+                }
 
-            if (snapshot.hasError) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 80, color: Colors.red),
-                    const SizedBox(height: 20),
-                    Text(
-                      "Error loading games",
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        color: Colors.white70,
-                      ),
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 80, color: Colors.red),
+                        const SizedBox(height: 20),
+                        Text(
+                          "Error loading games",
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          "${snapshot.error}",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "${snapshot.error}",
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.white54,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
+                  );
+                }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.publish_outlined,
-                      size: 80,
-                      color: Colors.white30,
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.publish_outlined,
+                          size: 80,
+                          color: Colors.white30,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          "No published games yet.",
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          "Launch a game to publish it!",
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      "No published games yet.",
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Launch a game to publish it!",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.white54,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
+                  );
+                }
 
-            final games = snapshot.data!.docs;
+                final games = snapshot.data!.docs;
 
-                  // Sort games by published_at in descending order (client-side sorting)
-                  games.sort((a, b) {
+                // Sort games by published_at in descending order (client-side sorting)
+                games.sort((a, b) {
                   final aData = a.data() as Map<String, dynamic>?;
                   final bData = b.data() as Map<String, dynamic>?;
                   final aTime = aData?["published_at"] as Timestamp?;
                   final bTime = bData?["published_at"] as Timestamp?;
-                    if (aTime == null && bTime == null) return 0;
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-                    return bTime.compareTo(aTime); // Descending order
-                  });
+                  if (aTime == null && bTime == null) return 0;
+                  if (aTime == null) return 1;
+                  if (bTime == null) return -1;
+                  return bTime.compareTo(aTime); // Descending order
+                });
 
-            // Debug: Print number of games found
-            print('Published games found: ${games.length}');
-            for (var game in games) {
+                // Debug: Print number of games found
+                print('Published games found: ${games.length}');
+                for (var game in games) {
                   final gameData = game.data() as Map<String, dynamic>?;
                   print(
                     'Game: ${gameData?["title"] ?? "Untitled"} - gameId: ${game.id}',
                   );
-            }
-
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                // Calculate responsive card size and columns
-                double width = constraints.maxWidth;
-                int crossAxisCount;
-                double cardWidth;
-
-                if (width > 1400) {
-                  crossAxisCount = 5;
-                  cardWidth = (width - 80) / 5;
-                } else if (width > 1100) {
-                  crossAxisCount = 4;
-                  cardWidth = (width - 70) / 4;
-                } else if (width > 800) {
-                  crossAxisCount = 3;
-                  cardWidth = (width - 60) / 3;
-                } else if (width > 500) {
-                  crossAxisCount = 2;
-                  cardWidth = (width - 50) / 2;
-                } else {
-                  crossAxisCount = 1;
-                  cardWidth = width - 40;
                 }
 
-                // Ensure minimum card size
-                cardWidth = cardWidth.clamp(200.0, 300.0);
-                double cardHeight = cardWidth * 1.3; // Maintain aspect ratio
-
-                return GridView.builder(
+                return ListView.builder(
                   padding: const EdgeInsets.all(20),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: cardWidth / cardHeight,
-                  ),
                   itemCount: games.length,
                   itemBuilder: (context, index) {
                     final game = games[index];
-                        final gameData = game.data() as Map<String, dynamic>?;
-                        final title = gameData?["title"] ?? "Untitled";
-                          final gameId = game.id; // Document ID is the gameId
-                          final userId = user!.uid; // Current user is the owner
-                        final description = gameData?["description"] ?? "";
-                        final difficulty = gameData?["difficulty"] ?? "easy";
-                        final prizeCoins = gameData?["prizeCoins"] ?? "0";
-                        final gameSet = gameData?["gameSet"] as String?;
-                        final gameCode = gameData?["gameCode"] as String?;
+                    final gameData = game.data() as Map<String, dynamic>?;
+                    final title = gameData?["title"] ?? "Untitled";
+                    final gameId = game.id; // Document ID is the gameId
+                    final userId = user!.uid; // Current user is the owner
+                    final description = gameData?["description"] ?? "";
+                    final difficulty = gameData?["difficulty"] ?? "easy";
+                    final prizeCoins = gameData?["prizeCoins"] ?? "0";
+                    final gameSet = gameData?["gameSet"] as String?;
+                    final gameCode = gameData?["gameCode"] as String?;
 
-                        return Listener(
-                          onPointerDown: (event) {
-                            // Prevent browser context menu on right-click (button 2)
-                            if (event.kind == PointerDeviceKind.mouse &&
-                                event.buttons == 2) {
-                              // Consume the event to prevent default browser menu
-                              return;
-                            }
-                          },
-                          child: GestureDetector(
-                            // This behavior ensures all gestures are captured
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                          Get.toNamed(
-                            "/game_edit",
-                            arguments: {"gameId": gameId},
-                              );
-                            },
-                            onLongPress: () {
-                              _showGameControlDialog(
-                                userId,
-                                gameId,
-                                title,
-                                gameSet,
-                                gameCode,
-                              );
-                            },
-                            onSecondaryTapDown: (details) {
-                              // Explicitly handle secondary tap to prevent default menu
-                              _showGameControlDialog(
-                                userId,
-                                gameId,
-                                title,
-                                gameSet,
-                                gameCode,
-                              );
-                            },
-                            onSecondaryTap: () {
-                              // Additional handler for secondary tap
-                              _showGameControlDialog(
-                                userId,
-                                gameId,
-                                title,
-                                gameSet,
-                                gameCode,
-                              );
-                            },
-                            child: _buildPublishedGameCard(
-                              gameId,
-                              title,
-                              description,
-                              difficulty,
-                              prizeCoins,
-                              cardWidth,
-                            ),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: _buildPublishedGameCard(
+                        gameId,
+                        title,
+                        description,
+                        difficulty,
+                        prizeCoins,
+                        userId,
+                        gameSet,
+                        gameCode,
                       ),
                     );
                   },
                 );
               },
-            );
-          },
             ),
     );
   }
@@ -952,7 +557,9 @@ class _MyGamePublishedState extends State<MyGamePublished> {
     String description,
     String difficulty,
     String prizeCoins,
-    double cardWidth,
+    String userId,
+    String? gameSet,
+    String? gameCode,
   ) {
     // Get difficulty color
     Color getDifficultyColor() {
@@ -976,197 +583,961 @@ class _MyGamePublishedState extends State<MyGamePublished> {
       }
     }
 
-    return Container(
-      key: ValueKey("normal_$gameId"),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isSmallScreen = constraints.maxWidth < 600;
+
+        return Container(
+          key: ValueKey("normal_$gameId"),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => Get.toNamed("/game_edit", arguments: {"gameId": gameId}),
-          borderRadius: BorderRadius.circular(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image section with published badge
-              Expanded(
-                flex: 3,
-                child: Stack(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: isSmallScreen
+                ? _buildMobileLayout(
+                    gameId,
+                    title,
+                    description,
+                    difficulty,
+                    prizeCoins,
+                    userId,
+                    gameSet,
+                    gameCode,
+                    getDifficultyColor,
+                  )
+                : _buildDesktopLayout(
+                    gameId,
+                    title,
+                    description,
+                    difficulty,
+                    prizeCoins,
+                    userId,
+                    gameSet,
+                    gameCode,
+                    getDifficultyColor,
+                  ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Build desktop/tablet layout (horizontal)
+  Widget _buildDesktopLayout(
+    String gameId,
+    String title,
+    String description,
+    String difficulty,
+    String prizeCoins,
+    String userId,
+    String? gameSet,
+    String? gameCode,
+    Color Function() getDifficultyColor,
+  ) {
+    return Row(
+      children: [
+        // Icon/Image Container with Published Badge
+        Stack(
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade100, Colors.teal.shade100],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Image.asset(
+                  "assets/others/publishGame.png",
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            // Published badge
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade600,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.green.shade100, Colors.teal.shade100],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(16),
-                        ),
-                      ),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Image.asset(
-                            "assets/others/publishGame.png",
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Published badge
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.green.shade600,
-                              Colors.green.shade700,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.4),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.public,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              "PUBLISHED",
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
+                    const Icon(Icons.public, color: Colors.white, size: 10),
+                    const SizedBox(width: 2),
+                    Text(
+                      "PUB",
+                      style: GoogleFonts.poppins(
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 16),
 
-              // Content section
-              Expanded(
-                flex: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        // Content
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Title
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+
+              // Description
+              if (description.isNotEmpty)
+                Text(
+                  description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.black54,
+                  ),
+                ),
+
+              const SizedBox(height: 8),
+
+              // Bottom info
+              Row(
+                children: [
+                  // Difficulty badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: getDifficultyColor().withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: getDifficultyColor(),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      difficulty.toUpperCase(),
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: getDifficultyColor(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Coins
+                  Icon(
+                    Icons.monetization_on,
+                    color: Colors.amber.shade700,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    prizeCoins,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Animated Buttons
+        Row(
+          children: [
+            AnimatedButton(
+              height: 50,
+              width: 90,
+              color: Colors.green,
+              shadowDegree: ShadowDegree.light,
+              onPressed: () =>
+                  Get.toNamed("/game_edit", arguments: {"gameId": gameId}),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Edit",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.edit, color: Colors.white, size: 16),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            AnimatedButton(
+              height: 50,
+              width: 100,
+              color: Colors.orange,
+              shadowDegree: ShadowDegree.light,
+              onPressed: () {
+                print(
+                  'Navigating to game_rate with gameId: $gameId, title: $title',
+                );
+                try {
+                  Get.toNamed(
+                    "/game_rate",
+                    arguments: {"gameId": gameId, "title": title},
+                  );
+                } catch (e) {
+                  print('Navigation error: $e');
+                  // Fallback to direct navigation
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const MyGameRate(),
+                      settings: RouteSettings(
+                        arguments: {"gameId": gameId, "title": title},
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Review",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.star, color: Colors.white, size: 16),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            AnimatedButton(
+              height: 50,
+              width: 100,
+              color: Colors.blueAccent,
+              shadowDegree: ShadowDegree.light,
+              onPressed: () => _showGameControlDialog(
+                userId,
+                gameId,
+                title,
+                gameSet,
+                gameCode,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Manage",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.settings, color: Colors.white, size: 16),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Build mobile layout (vertical stacking)
+  Widget _buildMobileLayout(
+    String gameId,
+    String title,
+    String description,
+    String difficulty,
+    String prizeCoins,
+    String userId,
+    String? gameSet,
+    String? gameCode,
+    Color Function() getDifficultyColor,
+  ) {
+    return Column(
+      children: [
+        // Top section: Icon and Content
+        Row(
+          children: [
+            // Icon/Image Container with Published Badge
+            Stack(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.green.shade100, Colors.teal.shade100],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Image.asset(
+                      "assets/others/publishGame.png",
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                // Published badge
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade600,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.public, color: Colors.white, size: 8),
+                        const SizedBox(width: 1),
+                        Text(
+                          "PUB",
+                          style: GoogleFonts.poppins(
+                            fontSize: 7,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Bottom info
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      // Title
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                      // Difficulty badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: getDifficultyColor().withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: getDifficultyColor(),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          difficulty.toUpperCase(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: getDifficultyColor(),
+                          ),
                         ),
                       ),
 
-                      const SizedBox(height: 6),
-
-                      // Description
-                      if (description.isNotEmpty)
-                        Expanded(
-                          child: Text(
-                            description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.black54,
-                            ),
-                          ),
-                        ),
-
-                      const Spacer(),
-
-                      // Bottom info row
+                      // Coins
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Difficulty badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: getDifficultyColor().withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: getDifficultyColor(),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Text(
-                              difficulty.toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: getDifficultyColor(),
-                              ),
-                            ),
+                          Icon(
+                            Icons.monetization_on,
+                            color: Colors.amber.shade700,
+                            size: 14,
                           ),
-
-                          // Coins
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.monetization_on,
-                                color: Colors.amber.shade700,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                prizeCoins,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber.shade700,
-                                ),
-                              ),
-                            ],
+                          const SizedBox(width: 2),
+                          Text(
+                            prizeCoins,
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade700,
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // Action Buttons (horizontal on mobile)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            Expanded(
+              child: AnimatedButton(
+                height: 40,
+                color: Colors.green,
+                shadowDegree: ShadowDegree.light,
+                onPressed: () =>
+                    Get.toNamed("/game_edit", arguments: {"gameId": gameId}),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.edit, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      "Edit",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: AnimatedButton(
+                height: 40,
+                color: Colors.orange,
+                shadowDegree: ShadowDegree.light,
+                onPressed: () {
+                  print(
+                    'Navigating to game_rate with gameId: $gameId, title: $title',
+                  );
+                  try {
+                    Get.toNamed(
+                      "/game_rate",
+                      arguments: {"gameId": gameId, "title": title},
+                    );
+                  } catch (e) {
+                    print('Navigation error: $e');
+                    // Fallback to direct navigation
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const MyGameRate(),
+                        settings: RouteSettings(
+                          arguments: {"gameId": gameId, "title": title},
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      "Review",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: AnimatedButton(
+                height: 40,
+                color: Colors.blueAccent,
+                shadowDegree: ShadowDegree.light,
+                onPressed: () => _showGameControlDialog(
+                  userId,
+                  gameId,
+                  title,
+                  gameSet,
+                  gameCode,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.settings, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      "Manage",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// Separate stateful widget for the dialog
+class _GameControlDialog extends StatefulWidget {
+  final String userId;
+  final String gameId;
+  final String title;
+  final String? gameSet;
+  final String? gameCode;
+  final Function(String, String, String) onUnpublish;
+  final Function(String, String, String?, String?) onChangeGameCode;
+  final Future<List<Map<String, dynamic>>> Function(String) fetchCompletedUsers;
+  final String Function(dynamic) formatDate;
+  final Widget Function(String, String, IconData, Color) buildStatusCard;
+
+  const _GameControlDialog({
+    required this.userId,
+    required this.gameId,
+    required this.title,
+    required this.gameSet,
+    required this.gameCode,
+    required this.onUnpublish,
+    required this.onChangeGameCode,
+    required this.fetchCompletedUsers,
+    required this.formatDate,
+    required this.buildStatusCard,
+  });
+
+  @override
+  State<_GameControlDialog> createState() => _GameControlDialogState();
+}
+
+class _GameControlDialogState extends State<_GameControlDialog> {
+  List<Map<String, dynamic>>? completedUsers;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final users = await widget.fetchCompletedUsers(widget.gameId);
+    if (mounted) {
+      setState(() {
+        completedUsers = users;
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF2C2F33),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.5,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.purple[700]!, Colors.purple[500]!],
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.settings, color: Colors.white, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Control Section
+                    Text(
+                      "CONTROL",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Control Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.unpublished, size: 20),
+                            label: Text(
+                              "Unpublish",
+                              style: GoogleFonts.poppins(fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onUnpublish(
+                                widget.userId,
+                                widget.gameId,
+                                widget.title,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.lock, size: 20),
+                            label: Text(
+                              "Game Code",
+                              style: GoogleFonts.poppins(fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              widget.onChangeGameCode(
+                                widget.userId,
+                                widget.gameId,
+                                widget.gameSet,
+                                widget.gameCode,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.edit, size: 20),
+                            label: Text(
+                              "Game Set",
+                              style: GoogleFonts.poppins(fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              Get.toNamed(
+                                "/game_edit",
+                                arguments: {"gameId": widget.gameId},
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    const Divider(color: Colors.white24),
+                    const SizedBox(height: 24),
+
+                    // Status Section
+                    Text(
+                      "STATUS",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Status Cards
+                    Row(
+                      children: [
+                        Expanded(
+                          child: widget.buildStatusCard(
+                            "Total Players",
+                            isLoading
+                                ? "..."
+                                : "${completedUsers?.length ?? 0}",
+                            Icons.people,
+                            Colors.purple,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: widget.buildStatusCard(
+                            "Game Set",
+                            widget.gameSet ?? "None",
+                            Icons.category,
+                            Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: widget.buildStatusCard(
+                            "Game Code",
+                            widget.gameCode ?? "None",
+                            Icons.lock,
+                            Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Players List
+                    Text(
+                      "PLAYERS WHO COMPLETED",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (isLoading)
+                      Container(
+                        padding: const EdgeInsets.all(40),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              const CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                "Loading players...",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (completedUsers == null || completedUsers!.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.inbox,
+                                size: 48,
+                                color: Colors.white30,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "No players have completed this game yet",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: completedUsers!.length,
+                          separatorBuilder: (context, index) => Divider(
+                            color: Colors.white.withOpacity(0.1),
+                            height: 1,
+                          ),
+                          itemBuilder: (context, index) {
+                            final player = completedUsers![index];
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.purple,
+                                backgroundImage:
+                                    player['profileImage'] != null &&
+                                        player['profileImage']
+                                            .toString()
+                                            .isNotEmpty
+                                    ? MemoryImage(
+                                        base64Decode(player['profileImage']),
+                                      )
+                                    : null,
+                                child:
+                                    player['profileImage'] == null ||
+                                        player['profileImage']
+                                            .toString()
+                                            .isEmpty
+                                    ? Text(
+                                        player['username'][0].toUpperCase(),
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              title: Text(
+                                player['username'],
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: player['completedAt'] != null
+                                  ? Text(
+                                      "Completed: ${widget.formatDate(player['completedAt'])}",
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white54,
+                                        fontSize: 12,
+                                      ),
+                                    )
+                                  : null,
+                              trailing: const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

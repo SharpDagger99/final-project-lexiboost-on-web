@@ -625,6 +625,356 @@ class _MyAddStudentState extends State<MyAddStudent> {
     );
   }
 
+  // Show dialog to add a student by email
+  void _showAddStudentDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final TextEditingController emailController = TextEditingController();
+        final TextEditingController messageController = TextEditingController();
+        bool isSearching = false;
+        String? errorMessage;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                width: 500,
+                constraints: const BoxConstraints(maxHeight: 600),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person_add,
+                              color: Colors.green,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Add Student',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  'Send a request to a student',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Email input
+                      Text(
+                        'Student Email',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: emailController,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Enter student email address',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.green),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                          errorText: errorMessage,
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Message input
+                      Text(
+                        'Message (Optional)',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: messageController,
+                        maxLines: 3,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Add a message to your request...',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.green),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          AnimatedButton(
+                            width: 100,
+                            height: 45,
+                            color: Colors.grey[300]!,
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            child: Text(
+                              'Cancel',
+                              style: GoogleFonts.poppins(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          AnimatedButton(
+                            width: 120,
+                            height: 45,
+                            color: Colors.green,
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: isSearching
+                                ? () {}
+                                : () {
+                                    final email = emailController.text.trim();
+
+                                    if (email.isEmpty) {
+                                      setDialogState(() {
+                                        errorMessage = 'Please enter an email';
+                                      });
+                                      return;
+                                    }
+
+                                    if (!email.contains('@')) {
+                                      setDialogState(() {
+                                        errorMessage =
+                                            'Please enter a valid email';
+                                      });
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isSearching = true;
+                                      errorMessage = null;
+                                    });
+
+                                    // Execute async operation
+                                    Future.microtask(() async {
+                                      try {
+                                        final currentUser = _auth.currentUser;
+                                        if (currentUser == null) {
+                                          throw Exception('Not logged in');
+                                        }
+
+                                        // Get current teacher's data
+                                        final teacherDoc = await _firestore
+                                            .collection('users')
+                                            .doc(currentUser.uid)
+                                            .get();
+                                        final teacherName =
+                                            teacherDoc.data()?['fullname'] ??
+                                            teacherDoc.data()?['username'] ??
+                                            'Teacher';
+
+                                        // Find student by email
+                                        final studentQuery = await _firestore
+                                            .collection('users')
+                                            .where('email', isEqualTo: email)
+                                            .where('role', isEqualTo: 'student')
+                                            .limit(1)
+                                            .get();
+
+                                        if (studentQuery.docs.isEmpty) {
+                                          setDialogState(() {
+                                            isSearching = false;
+                                            errorMessage = 'Student not found';
+                                          });
+                                          return;
+                                        }
+
+                                        final studentDoc =
+                                            studentQuery.docs.first;
+                                        final studentId = studentDoc.id;
+
+                                        // Check if teacher already exists in student's teachers subcollection
+                                        final existingTeacher = await _firestore
+                                            .collection('users')
+                                            .doc(studentId)
+                                            .collection('teachers')
+                                            .doc(teacherName)
+                                            .get();
+
+                                        if (existingTeacher.exists) {
+                                          final status =
+                                              existingTeacher
+                                                  .data()?['status'] ??
+                                              false;
+                                          setDialogState(() {
+                                            isSearching = false;
+                                            errorMessage = status
+                                                ? 'This student is already added'
+                                                : 'Request already sent';
+                                          });
+                                          return;
+                                        }
+
+                                        // Add teacher to student's teachers subcollection with status false
+                                        await _firestore
+                                            .collection('users')
+                                            .doc(studentId)
+                                            .collection('teachers')
+                                            .doc(teacherName)
+                                            .set({
+                                              'teacherId': currentUser.uid,
+                                              'teacherName': teacherName,
+                                              'status': false,
+                                              'requestedAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+
+                                        // Send notification to student
+                                        final customMessage = messageController
+                                            .text
+                                            .trim();
+                                        await _firestore
+                                            .collection('users')
+                                            .doc(studentId)
+                                            .collection('notifications')
+                                            .add({
+                                              'title': 'Teacher Request',
+                                              'message': customMessage.isEmpty
+                                                  ? '$teacherName wants to add you as a student'
+                                                  : customMessage,
+                                              'from': currentUser.uid,
+                                              'fromName': teacherName,
+                                              'teacherEmail':
+                                                  teacherDoc.data()?['email'] ??
+                                                  '',
+                                              'teacherName': teacherName,
+                                              'teacherId': currentUser.uid,
+                                              'timestamp':
+                                                  FieldValue.serverTimestamp(),
+                                              'read': false,
+                                              'hidden': false,
+                                              'type': 'teacher_request',
+                                            });
+
+                                        Navigator.of(context).pop();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Request sent to ${studentDoc.data()['username']}',
+                                            ),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        setDialogState(() {
+                                          isSearching = false;
+                                          errorMessage =
+                                              'Failed to send request: ${e.toString()}';
+                                        });
+                                      }
+                                    });
+                                  },
+                            child: isSearching
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.send,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Send',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -655,41 +1005,80 @@ class _MyAddStudentState extends State<MyAddStudent> {
                 ),
                 const SizedBox(height: 20),
 
-                // Search bar
-                TextField(
-                  controller: _searchController,
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Search students...',
-                    hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _searchQuery = '';
-                              });
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.1),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
+                // Search bar with Add button
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                        style: GoogleFonts.poppins(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Search students...',
+                          hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.white54,
+                          ),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    color: Colors.white54,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.1),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 15,
+                          ),
+                        ),
+                      ),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 15,
+                    const SizedBox(width: 12),
+                    AnimatedButton(
+                      width: 120,
+                      height: 50,
+                      color: Colors.green,
+                      shadowDegree: ShadowDegree.light,
+                      onPressed: _showAddStudentDialog,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.person_add,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Add',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),

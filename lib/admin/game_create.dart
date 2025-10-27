@@ -1,6 +1,6 @@
 // ===== game_create.dart =====
 
-// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously
+// ignore_for_file: library_private_types_in_public_api, use_build_context_synchronously, deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +8,44 @@ import 'package:animated_button/animated_button.dart';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:lexi_on_web/editor/game_save.dart';
+import 'package:lexi_on_web/editor/game_published.dart';
+
+// Custom page route with fade and slide animation
+class FadeSlidePageRoute extends PageRouteBuilder {
+  final Widget page;
+
+  FadeSlidePageRoute({required this.page})
+    : super(
+        pageBuilder: (context, animation, secondaryAnimation) => page,
+        transitionDuration: const Duration(milliseconds: 400),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Slide from right to left
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOutCubic;
+
+          var slideTween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
+          var slideAnimation = animation.drive(slideTween);
+
+          // Fade animation
+          var fadeTween = Tween(
+            begin: 0.0,
+            end: 1.0,
+          ).chain(CurveTween(curve: curve));
+          var fadeAnimation = animation.drive(fadeTween);
+
+          return SlideTransition(
+            position: slideAnimation,
+            child: FadeTransition(opacity: fadeAnimation, child: child),
+          );
+        },
+      );
+}
 
 class MyGameCreate extends StatefulWidget {
   const MyGameCreate({super.key});
@@ -175,115 +213,151 @@ class _MyGameCreateState extends State<MyGameCreate> {
             ),
             const SizedBox(height: 16),
 
-            // ✅ Wrap for responsive buttons
+            // Column layout for better organization
             Expanded(
               child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  alignment: WrapAlignment.start,
+                child: Column(
                   children: [
-                    // ---------------- Create Button ---------------- //
-                    AnimatedButton(
-                      height: 250,
-                      width: 250,
-                      color: Colors.white,
-                      shadowDegree: ShadowDegree.light,
+                    // ---------------- Create Container ---------------- //
+                    _buildOptionCard(
+                      title: "Create",
+                      description: "Create a new game level",
+                      icon: "assets/others/idea.png",
+                      color: Colors.blue,
                       onPressed: _showCreateDialog,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Spacer(),
-                          Image.asset(
-                            "assets/others/idea.png",
-                            fit: BoxFit.contain,
-                            scale: 5,
-                          ),
-                          const Spacer(),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(
-                              "Create",
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
+                    const SizedBox(height: 16),
 
-                    // ---------------- Created Levels Button ---------------- //
-                    AnimatedButton(
-                      height: 250,
-                      width: 250,
-                      color: Colors.white,
-                      shadowDegree: ShadowDegree.light,
+                    // ---------------- Created Levels Container ---------------- //
+                    _buildOptionCard(
+                      title: "Created Levels",
+                      description: "View and manage your created game levels",
+                      icon: "assets/others/collection.png",
+                      color: Colors.purple,
                       onPressed: () {
-                        Get.toNamed("/game_save");
+                        Navigator.of(
+                          context,
+                        ).push(FadeSlidePageRoute(page: const MyGameSave()));
                       },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Spacer(),
-                          Image.asset(
-                            "assets/others/collection.png",
-                            fit: BoxFit.contain,
-                            scale: 5,
-                          ),
-                          const Spacer(),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(
-                              "Created Levels",
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
+                    const SizedBox(height: 16),
 
-                    // ---------------- Published Levels Button ---------------- //
-                    AnimatedButton(
-                      height: 250,
-                      width: 250,
-                      color: Colors.white,
-                      shadowDegree: ShadowDegree.light,
+                    // ---------------- Published Levels Container ---------------- //
+                    _buildOptionCard(
+                      title: "Published Levels",
+                      description: "Manage your published game levels",
+                      icon: "assets/others/game.png",
+                      color: Colors.green,
                       onPressed: () {
-                        Get.toNamed("/game_published");
+                        Navigator.of(context).push(
+                          FadeSlidePageRoute(page: const MyGamePublished()),
+                        );
                       },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Spacer(),
-                          Image.asset(
-                            "assets/others/game.png",
-                            fit: BoxFit.contain,
-                            scale: 5,
-                          ),
-                          const Spacer(),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(
-                              "Published Levels",
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionCard({
+    required String title,
+    required String description,
+    required String icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            // Icon Container
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Image.asset(
+                  icon,
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // Text Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Animated Button
+            AnimatedButton(
+              height: 50,
+              width: 120,
+              color: color,
+              shadowDegree: ShadowDegree.light,
+              onPressed: onPressed,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Open",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.arrow_forward,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ],
               ),
             ),
           ],

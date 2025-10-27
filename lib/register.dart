@@ -14,12 +14,62 @@ class MyRegister extends StatefulWidget {
   State<MyRegister> createState() => _MyRegisterState();
 }
 
-class _MyRegisterState extends State<MyRegister> {
+class _MyRegisterState extends State<MyRegister>
+    with SingleTickerProviderStateMixin {
   bool _obscurePassword = true;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoggingIn = false;
   bool _isSendingPasswordReset = false;
+  
+  // Error states
+  String? _emailError;
+  String? _passwordError;
+
+  // Animation controller for shake effect
+  late AnimationController _shakeController;
+  late Animation<double> _shakeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _shakeController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    // Create a shake animation that returns to 0
+    _shakeAnimation =
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.0, end: 10.0), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: 10.0, end: -10.0), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: -10.0, end: 10.0), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: 10.0, end: -10.0), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: -10.0, end: 0.0), weight: 1),
+        ]).animate(
+          CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut),
+        );
+
+    // Reset animation when complete
+    _shakeController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _shakeController.reset();
+      }
+    });
+  }
+
+  // Shake animation trigger
+  void _triggerShake() {
+    _shakeController.forward(from: 0.0);
+  }
+
+  // Clear errors
+  void _clearErrors() {
+    setState(() {
+      _emailError = null;
+      _passwordError = null;
+    });
+  }
 
   // Show dialog helper
   void _showDialog(String title, String message) {
@@ -57,6 +107,9 @@ class _MyRegisterState extends State<MyRegister> {
   Future<void> login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
+
+    // Clear previous errors
+    _clearErrors();
 
     // Validate email and password
     if (email.isEmpty || password.isEmpty) {
@@ -148,29 +201,39 @@ class _MyRegisterState extends State<MyRegister> {
         }
       }
     } on FirebaseAuthException catch (e) {
-      String errorMessage =
-          "Unable to log in. Please check your credentials and try again.";
-      if (e.code == 'user-not-found') {
-        errorMessage = "No account found with this email address.";
-      } else if (e.code == 'wrong-password') {
-        errorMessage = "Incorrect password. Please try again.";
-      } else if (e.code == 'invalid-email') {
-        errorMessage = "Invalid email address format.";
-      } else if (e.code == 'invalid-credential') {
-        errorMessage =
-            "Invalid credentials. Please check your email and password.";
-      }
       print('Firebase Auth Error: ${e.code} - ${e.message}');
+      
       setState(() {
         _isLoggingIn = false;
+        
+        // Set error states based on error code
+        if (e.code == 'user-not-found' || e.code == 'invalid-email') {
+          _emailError = "Invalid email";
+        } else if (e.code == 'wrong-password') {
+          _passwordError = "Incorrect password";
+        } else if (e.code == 'invalid-credential') {
+          // Invalid credential could be either email or password
+          _emailError = "Invalid email";
+          _passwordError = "Incorrect password";
+        } else {
+          // For other errors, show both
+          _emailError = "Invalid email";
+          _passwordError = "Incorrect password";
+        }
       });
-      _showDialog("Login Failed", errorMessage);
+      
+      // Trigger shake animation
+      _triggerShake();
     } catch (e) {
       print('Unexpected Error: $e');
       setState(() {
         _isLoggingIn = false;
+        _emailError = "Invalid email";
+        _passwordError = "Incorrect password";
       });
-      _showDialog("Error", "An unexpected error occurred. Please try again.");
+      
+      // Trigger shake animation
+      _triggerShake();
     }
   }
 
@@ -235,6 +298,7 @@ class _MyRegisterState extends State<MyRegister> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _shakeController.dispose();
     super.dispose();
   }
 
@@ -260,37 +324,76 @@ class _MyRegisterState extends State<MyRegister> {
               const SizedBox(height: 20),
 
               // --- EMAIL FIELD ---
-              SizedBox(
-                width: 300,
-                height: 50,
-                child: TextField(
-                  controller: _emailController,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: "Email",
-                    hintStyle: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 14,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.email,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 1,
+              AnimatedBuilder(
+                animation: _shakeAnimation,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: _emailError != null
+                        ? Offset(_shakeAnimation.value, 0)
+                        : Offset.zero,
+                    child: child,
+                  );
+                },
+                child: SizedBox(
+                  width: 300,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_emailError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 4),
+                          child: Text(
+                            _emailError!,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.red,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      SizedBox(
+                        height: 50,
+                        child: TextField(
+                          controller: _emailController,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: "Email",
+                            hintStyle: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.email,
+                              color: _emailError != null
+                                  ? Colors.red
+                                  : Colors.white,
+                              size: 18,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: _emailError != null
+                                    ? Colors.red
+                                    : Colors.white,
+                                width: _emailError != null ? 2 : 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: _emailError != null
+                                    ? Colors.red
+                                    : Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 2,
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),
@@ -298,52 +401,93 @@ class _MyRegisterState extends State<MyRegister> {
               const SizedBox(height: 20),
 
               // --- PASSWORD FIELD ---
-              SizedBox(
-                width: 300,
-                height: 50,
-                child: TextField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: "Password",
-                    hintStyle: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 14,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.password_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                        color: _obscurePassword ? Colors.white54 : Colors.blue,
-                        size: 18,
+              AnimatedBuilder(
+                animation: _shakeAnimation,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: _passwordError != null
+                        ? Offset(_shakeAnimation.value, 0)
+                        : Offset.zero,
+                    child: child,
+                  );
+                },
+                child: SizedBox(
+                  width: 300,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_passwordError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 4),
+                          child: Text(
+                            _passwordError!,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.red,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      SizedBox(
+                        height: 50,
+                        child: TextField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: "Password",
+                            hintStyle: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.password_rounded,
+                              color: _passwordError != null
+                                  ? Colors.red
+                                  : Colors.white,
+                              size: 18,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: _obscurePassword
+                                    ? Colors.white54
+                                    : Colors.blue,
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: _passwordError != null
+                                    ? Colors.red
+                                    : Colors.white,
+                                width: _passwordError != null ? 2 : 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: _passwordError != null
+                                    ? Colors.red
+                                    : Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 1,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Colors.white,
-                        width: 2,
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),

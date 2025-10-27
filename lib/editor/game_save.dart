@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:animated_button/animated_button.dart';
 
 class MyGameSave extends StatefulWidget {
   const MyGameSave({super.key});
@@ -19,9 +20,6 @@ class MyGameSave extends StatefulWidget {
 class _MyGameSaveState extends State<MyGameSave> {
   final User? user = FirebaseAuth.instance.currentUser;
 
-  /// Store the ID of the game being "marked for delete"
-  String? deletingGameId;
-
   Future<void> _deleteGame(String gameId) async {
     await FirebaseFirestore.instance
         .collection("users")
@@ -31,37 +29,9 @@ class _MyGameSaveState extends State<MyGameSave> {
         .delete();
   }
 
-  /// Get current user's role from Firestore
-  Future<String> _getUserRole() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return 'student';
-
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection("users")
-          .doc(user.uid)
-          .get();
-
-      if (userDoc.exists) {
-        return userDoc.data()?['role'] ?? 'student';
-      }
-      return 'student';
-    } catch (e) {
-      return 'student';
-    }
-  }
-
-  /// Navigate back based on user role
-  Future<void> _navigateBack() async {
-    final role = await _getUserRole();
-
-    if (role == 'admin') {
-      Get.toNamed('/admin');
-    } else if (role == 'teacher') {
-      Get.toNamed('/teacher_home');
-    } else {
-      Navigator.of(context).pop();
-    }
+  /// Navigate back with animation
+  void _navigateBack() {
+    Navigator.of(context).pop();
   }
 
   /// Show confirmation dialog
@@ -107,9 +77,6 @@ class _MyGameSaveState extends State<MyGameSave> {
             onPressed: () async {
               Navigator.pop(ctx);
               await _deleteGame(gameId);
-              setState(() {
-                deletingGameId = null;
-              });
             },
             child: Text(
               "Delete",
@@ -123,17 +90,7 @@ class _MyGameSaveState extends State<MyGameSave> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      // Detect taps outside to reset delete mode
-      onTap: () {
-        if (deletingGameId != null) {
-          setState(() {
-            deletingGameId = null;
-          });
-        }
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: const Color(0xFF1E201E),
         appBar: AppBar(
           backgroundColor: Colors.white.withOpacity(0.05),
@@ -193,164 +150,34 @@ class _MyGameSaveState extends State<MyGameSave> {
 
                   final games = snapshot.data!.docs;
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Calculate responsive card size and columns
-                      double width = constraints.maxWidth;
-                      int crossAxisCount;
-                      double cardWidth;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: games.length,
+                  itemBuilder: (context, index) {
+                    final game = games[index];
+                    final title = game["title"] ?? "Untitled";
+                    final gameId = game.id;
+                    final description = game["description"] ?? "";
+                    final difficulty = game["difficulty"] ?? "easy";
+                    final prizeCoins = game["prizeCoins"] ?? "0";
 
-                      if (width > 1400) {
-                        crossAxisCount = 5;
-                        cardWidth = (width - 80) / 5;
-                      } else if (width > 1100) {
-                        crossAxisCount = 4;
-                        cardWidth = (width - 70) / 4;
-                      } else if (width > 800) {
-                        crossAxisCount = 3;
-                        cardWidth = (width - 60) / 3;
-                      } else if (width > 500) {
-                        crossAxisCount = 2;
-                        cardWidth = (width - 50) / 2;
-                      } else {
-                        crossAxisCount = 1;
-                        cardWidth = width - 40;
-                      }
-
-                      // Ensure minimum card size
-                      cardWidth = cardWidth.clamp(200.0, 300.0);
-                      double cardHeight =
-                          cardWidth * 1.3; // Maintain aspect ratio
-
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(20),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: cardWidth / cardHeight,
-                        ),
-                        itemCount: games.length,
-                        itemBuilder: (context, index) {
-                          final game = games[index];
-                          final title = game["title"] ?? "Untitled";
-                          final gameId = game.id;
-                          final description = game["description"] ?? "";
-                          final difficulty = game["difficulty"] ?? "easy";
-                          final prizeCoins = game["prizeCoins"] ?? "0";
-
-                          final isDeleting = deletingGameId == gameId;
-
-                          return GestureDetector(
-                            onTap: () {
-                              if (isDeleting) {
-                                setState(() {
-                                  deletingGameId = null;
-                                });
-                              } else {
-                                Get.toNamed(
-                                  "/game_edit",
-                                  arguments: {"gameId": gameId},
-                                );
-                              }
-                            },
-                            onLongPress: () {
-                              setState(() {
-                                deletingGameId = gameId;
-                              });
-                            },
-                            onSecondaryTap: () {
-                              setState(() {
-                                deletingGameId = gameId;
-                              });
-                            },
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              child: isDeleting
-                                  ? _buildDeleteCard(gameId, title, cardWidth)
-                                  : _buildGameCard(
-                                      gameId,
-                                      title,
-                                      description,
-                                      difficulty,
-                                      prizeCoins,
-                                      cardWidth,
-                                    ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
-      ),
-    );
-  }
-
-  /// Build delete confirmation card
-  Widget _buildDeleteCard(String gameId, String title, double cardWidth) {
-    return Container(
-      key: ValueKey("delete_$gameId"),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.redAccent.withOpacity(0.9),
-            Colors.red.shade700.withOpacity(0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.red.withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showDeleteDialog(gameId, title),
-          borderRadius: BorderRadius.circular(16),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.delete_forever, color: Colors.white, size: 60),
-                const SizedBox(height: 16),
-                Text(
-                  "DELETE",
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ),
-              ],
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: _buildGameCard(
+                        gameId,
+                        title,
+                        description,
+                        difficulty,
+                        prizeCoins,
+                      ),
+                    );
+                  },
+                );
+              },
             ),
-          ),
-        ),
-      ),
     );
   }
+
 
   /// Build game card
   Widget _buildGameCard(
@@ -359,7 +186,6 @@ class _MyGameSaveState extends State<MyGameSave> {
     String description,
     String difficulty,
     String prizeCoins,
-    double cardWidth,
   ) {
     // Get difficulty color
     Color getDifficultyColor() {
@@ -385,6 +211,7 @@ class _MyGameSaveState extends State<MyGameSave> {
 
     return Container(
       key: ValueKey("normal_$gameId"),
+      height: 120,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -396,133 +223,167 @@ class _MyGameSaveState extends State<MyGameSave> {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => Get.toNamed("/game_edit", arguments: {"gameId": gameId}),
-          borderRadius: BorderRadius.circular(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image section
-              Expanded(
-                flex: 3,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.shade100, Colors.purple.shade100],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                  ),
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Image.asset(
-                        "assets/others/save.png",
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            // Icon/Image Container
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade100, Colors.purple.shade100],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Image.asset(
+                  "assets/others/save.png",
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.contain,
                 ),
               ),
+            ),
+            const SizedBox(width: 16),
 
-              // Content section
-              Expanded(
-                flex: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Title
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // Description
+                  if (description.isNotEmpty)
+                    Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  // Bottom info
+                  Row(
                     children: [
-                      // Title
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                      // Difficulty badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: getDifficultyColor().withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: getDifficultyColor(),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          difficulty.toUpperCase(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: getDifficultyColor(),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 12),
 
-                      const SizedBox(height: 6),
-
-                      // Description
-                      if (description.isNotEmpty)
-                        Expanded(
-                          child: Text(
-                            description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.black54,
-                            ),
-                          ),
+                      // Coins
+                      Icon(
+                        Icons.monetization_on,
+                        color: Colors.amber.shade700,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        prizeCoins,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade700,
                         ),
-                      
-                      const Spacer(),
-                      
-                      // Bottom info row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Difficulty badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: getDifficultyColor().withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: getDifficultyColor(),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Text(
-                              difficulty.toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: getDifficultyColor(),
-                              ),
-                            ),
-                          ),
-                          
-                          // Coins
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.monetization_on,
-                                color: Colors.amber.shade700,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                prizeCoins,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber.shade700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
                       ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+
+            // Action Buttons
+            Row(
+              children: [
+                AnimatedButton(
+                  height: 50,
+                  width: 100,
+                  color: Colors.blueAccent,
+                  shadowDegree: ShadowDegree.light,
+                  onPressed: () =>
+                      Get.toNamed("/game_edit", arguments: {"gameId": gameId}),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Edit",
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit, color: Colors.white, size: 18),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedButton(
+                  height: 50,
+                  width: 100,
+                  color: Colors.redAccent,
+                  shadowDegree: ShadowDegree.light,
+                  onPressed: () => _showDeleteDialog(gameId, title),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Delete",
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.delete, color: Colors.white, size: 18),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:lexi_on_web/admin/game_create.dart';
-import 'package:lexi_on_web/admin/report.dart';
+import 'package:lexi_on_web/teacher/notification2.dart';
 import 'package:lexi_on_web/teacher/class1.dart';
 import 'package:lexi_on_web/teacher/student_request.dart';
 import 'package:lexi_on_web/teacher/add_student.dart';
@@ -172,7 +172,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
     {"icon": Icons.people, "title": "Students"},
     {"icon": Icons.request_page, "title": "Request"},
     {"icon": Icons.videogame_asset, "title": "Game Create"},
-    {"icon": Icons.receipt_long, "title": "Report"},
+    {"icon": Icons.notifications, "title": "Notifications"},
     {"icon": Icons.settings, "title": "Settings"},
     {"icon": Icons.logout, "title": "Log Out"},
   ];
@@ -183,7 +183,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
     MyAddStudent(),
     MyStudentRequest(),
     MyGameCreate(),
-    MyReport(),
+    MyNotification2(),
     MySettingsAdmin(),
     Center(child: Text("Logging Out...", style: TextStyle(color: Colors.white))),
   ];
@@ -280,8 +280,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                   index: 3,
                                 ),
                                 _buildSidebarItem(
-                                  icon: Icons.receipt_long,
-                                  title: "Report",
+                                  icon: Icons.notifications,
+                                  title: "Notifications",
                                   index: 4,
                                 ),
 
@@ -387,8 +387,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                           index: 3,
                         ),
                         _buildSidebarItem(
-                          icon: Icons.receipt_long,
-                          title: "Report",
+                          icon: Icons.notifications,
+                          title: "Notifications",
                           index: 4,
                         ),
 
