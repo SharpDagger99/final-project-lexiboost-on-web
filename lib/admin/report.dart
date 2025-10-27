@@ -1,6 +1,11 @@
-// ignore_for_file: unused_field, prefer_final_fields, deprecated_member_use
+// ignore_for_file: deprecated_member_use
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:animated_button/animated_button.dart';
+import '../models/custom_scroll_behavior.dart';
 
 class MyReport extends StatefulWidget {
   const MyReport({super.key});
@@ -9,617 +14,429 @@ class MyReport extends StatefulWidget {
   State<MyReport> createState() => _MyReportState();
 }
 
-class _MyReportState extends State<MyReport> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final ScrollController _scrollController = ScrollController();
-  String _selectedFilter = 'All';
-  String _selectedPriority = 'All';
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
+class _MyReportState extends State<MyReport> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  // Search users by username, fullname, or email
+  Stream<QuerySnapshot> _getUsersStream() {
+    if (_searchQuery.isEmpty) {
+      return FirebaseFirestore.instance
+          .collection('users')
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .snapshots();
+    }
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  // Filter users based on search query
+  bool _matchesSearch(Map<String, dynamic> userData) {
+    if (_searchQuery.isEmpty) return true;
+
+    final query = _searchQuery.toLowerCase();
+    final username = (userData['username'] ?? '').toString().toLowerCase();
+    final fullname = (userData['fullname'] ?? '').toString().toLowerCase();
+    final email = (userData['email'] ?? '').toString().toLowerCase();
+
+    return username.contains(query) ||
+        fullname.contains(query) ||
+        email.contains(query);
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth > 900;
-    final isMediumScreen = screenWidth > 600 && screenWidth <= 900;
-
     return Scaffold(
-      backgroundColor: const Color(0xFF1E201E),
-      body: SafeArea(
-        child: Scrollbar(
-          controller: _scrollController,
-          thumbVisibility: true,
-          thickness: 8,
-          radius: const Radius.circular(20),
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: const Color(0xFF1E1E2E),
+      body: ScrollConfiguration(
+        behavior: CustomScrollBehavior(),
+        child: Column(
+          children: [
+            _buildSearchBar(),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _getUsersStream(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.black87),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.people_outline,
+                            size: 80,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No users found',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  final filteredDocs = snapshot.data!.docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return _matchesSearch(data);
+                  }).toList();
+
+                  if (filteredDocs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 80,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No users match your search',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(24),
+                    itemCount: filteredDocs.length,
+                    itemBuilder: (context, index) {
+                      final userDoc = filteredDocs[index];
+                      final userData = userDoc.data() as Map<String, dynamic>;
+                      final userId = userDoc.id;
+
+                      return _buildUserCard(userId, userData);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E201E),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User Reports',
+            style: GoogleFonts.poppins(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+            style: GoogleFonts.poppins(color: Colors.black87, fontSize: 16,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Search by username, fullname, or email...',
+              hintStyle: GoogleFonts.poppins(
+                color: Colors.grey.shade500,
+                fontSize: 16,
+              ),
+              prefixIcon: const Icon(
+                Icons.search,
+                color: Colors.cyan,
+                size: 24,
+              ),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear, color: Colors.grey.shade600,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300, width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.cyan, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserCard(String userId, Map<String, dynamic> userData) {
+    final role = userData['role'] ?? 'user';
+
+    // Students have username, Teachers have fullname
+    final displayName = role == 'student'
+        ? (userData['username'] ?? 'Unknown User')
+        : (userData['fullname'] ?? 'Unknown Teacher');
+
+    final username = userData['username'] ?? '';
+    final email = userData['email'] ?? 'No email';
+    final profileImage = userData['profileImage'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white24,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // User Info Container with Avatar
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
               children: [
-                // Header Section
-                _buildHeader(isWideScreen),
-                const SizedBox(height: 24),
+                // Profile Picture or Avatar
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: role == 'teacher'
+                      ? Colors.blue.shade700
+                      : Colors.purple.shade700,
+                  backgroundImage: profileImage != null
+                      ? MemoryImage(base64Decode(profileImage))
+                      : null,
+                  child: profileImage == null
+                      ? Text(
+                          displayName.substring(0, 1).toUpperCase(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 16),
 
-                // Stats Overview
-                _buildStatsOverview(isWideScreen, isMediumScreen),
-                const SizedBox(height: 24),
-
-                // Filter Section
-                _buildFilters(isWideScreen),
-                const SizedBox(height: 24),
-
-                // Tabs Section
-                _buildTabBar(),
-                const SizedBox(height: 20),
-
-                // Tab Content
-                SizedBox(
-                  height: 600,
-                  child: TabBarView(
-                    controller: _tabController,
+                // User Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildReportsTab(isWideScreen, isMediumScreen),
-                      _buildNotificationsTab(isWideScreen, isMediumScreen),
-                      _buildConfigurationTab(isWideScreen, isMediumScreen),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: role == 'teacher'
+                                  ? Colors.blue.withOpacity(0.3)
+                                  : Colors.purple.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: role == 'teacher'
+                                    ? Colors.blue
+                                    : Colors.purple,
+                              ),
+                            ),
+                            child: Text(
+                              role.toUpperCase(),
+                              style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: role == 'teacher'
+                                    ? Colors.blue.shade300
+                                    : Colors.purple.shade300,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (username.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '@$username',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.cyan.shade300,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text(
+                        email,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.grey.shade300,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          _showCreateReportDialog(context);
-        },
-        backgroundColor: Colors.blue,
-        icon: const Icon(Icons.add),
-        label: const Text('New Report'),
-      ),
-    );
-  }
 
-  Widget _buildHeader(bool isWideScreen) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Report Management',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Monitor and manage system reports',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-        if (isWideScreen)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.red.withOpacity(0.5)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.notifications_active, color: Colors.red, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  '5 Urgent',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
+          const SizedBox(height: 16),
+          Divider(color: Colors.grey.shade300),
+          const SizedBox(height: 12),
 
-  Widget _buildStatsOverview(bool isWideScreen, bool isMediumScreen) {
-    int crossAxisCount = isWideScreen ? 4 : (isMediumScreen ? 2 : 2);
-
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: crossAxisCount,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: isWideScreen ? 1.5 : 1.3,
-      children: [
-        _buildStatCard(
-          icon: Icons.report_problem,
-          title: 'Total Reports',
-          value: '248',
-          change: '+12%',
-          color: Colors.orange,
-        ),
-        _buildStatCard(
-          icon: Icons.pending_actions,
-          title: 'Pending',
-          value: '42',
-          change: '+5%',
-          color: Colors.yellow,
-        ),
-        _buildStatCard(
-          icon: Icons.check_circle,
-          title: 'Resolved',
-          value: '189',
-          change: '+18%',
-          color: Colors.green,
-        ),
-        _buildStatCard(
-          icon: Icons.notifications,
-          title: 'Notifications',
-          value: '67',
-          change: '+8%',
-          color: Colors.blue,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    required String change,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
+          // Action Buttons
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Icon(icon, color: color, size: 24),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
+              // Reward button only for students
+              if (role == 'student') ...[
+                _buildAnimatedActionButton(
+                  icon: Icons.card_giftcard,
+                  label: 'Reward',
+                  color: Colors.white,
+                  onTap: () => _showRewardDialog(userId, displayName),
                 ),
-                child: Text(
-                  change,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const SizedBox(width: 8),
+              ],
+              _buildAnimatedActionButton(
+                icon: Icons.warning,
+                label: 'Warning',
+                color: Colors.white,
+                onTap: () => _showWarningDialog(userId, displayName),
+              ),
+              const SizedBox(width: 8),
+              _buildAnimatedActionButton(
+                icon: Icons.message,
+                label: 'Message',
+                color: Colors.white,
+                onTap: () => _showMessageDialog(userId, displayName),
+              ),
+              const SizedBox(width: 8),
+              _buildAnimatedActionButton(
+                icon: Icons.check_circle,
+                label: 'Check',
+                color: Colors.white,
+                onTap: () => _showUserDetailsDialog(userId, userData),
               ),
             ],
           ),
-          const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return AnimatedButton(
+      onPressed: onTap,
+      color: const Color(0xFF1E201E),
+      height: 80,
+      width: 80,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 24),
           const SizedBox(height: 4),
           Text(
-            title,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilters(bool isWideScreen) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          _buildFilterChip('All', _selectedFilter),
-          _buildFilterChip('Students', _selectedFilter),
-          _buildFilterChip('Teachers', _selectedFilter),
-          const SizedBox(width: 20),
-          _buildPriorityChip('Low', Colors.green),
-          _buildPriorityChip('Medium', Colors.orange),
-          _buildPriorityChip('High', Colors.red),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, String selected) {
-    final isSelected = selected == label;
-    return InkWell(
-      onTap: () => setState(() => _selectedFilter = label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.withOpacity(0.3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? Colors.blue : Colors.white.withOpacity(0.3),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.blue : Colors.white.withOpacity(0.7),
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPriorityChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.circle, color: color, size: 8),
-          const SizedBox(width: 6),
-          Text(
             label,
-            style: TextStyle(color: color, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        indicatorColor: Colors.blue,
-        indicatorWeight: 3,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.white.withOpacity(0.5),
-        tabs: const [
-          Tab(text: 'Reports'),
-          Tab(text: 'Notifications'),
-          Tab(text: 'Configuration'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportsTab(bool isWideScreen, bool isMediumScreen) {
-    return ListView(
-      children: [
-        _buildReportItem(
-          'Inappropriate Behavior',
-          'Student John Doe reported for...',
-          'Student',
-          'High',
-          Colors.red,
-          '2 hours ago',
-        ),
-        _buildReportItem(
-          'Technical Issue',
-          'Game loading error reported by...',
-          'Teacher',
-          'Medium',
-          Colors.orange,
-          '5 hours ago',
-        ),
-        _buildReportItem(
-          'Content Concern',
-          'Review flagged for inappropriate...',
-          'Student',
-          'Low',
-          Colors.green,
-          '1 day ago',
-        ),
-        _buildReportItem(
-          'Account Access',
-          'Teacher unable to access dashboard...',
-          'Teacher',
-          'High',
-          Colors.red,
-          '3 hours ago',
-        ),
-        _buildReportItem(
-          'Spam Activity',
-          'Multiple spam messages detected...',
-          'Student',
-          'Medium',
-          Colors.orange,
-          '6 hours ago',
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReportItem(
-    String title,
-    String description,
-    String type,
-    String priority,
-    Color priorityColor,
-    String time,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: priorityColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: priorityColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      priority,
-                      style: TextStyle(
-                        color: priorityColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      type,
-                      style: const TextStyle(
-                        color: Colors.blue,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.7),
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                time,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
-                  fontSize: 12,
-                ),
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.visibility, color: Colors.blue, size: 20),
-                    onPressed: () {},
-                    tooltip: 'View Details',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                    onPressed: () {},
-                    tooltip: 'Resolve',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () {},
-                    tooltip: 'Delete',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationsTab(bool isWideScreen, bool isMediumScreen) {
-    return ListView(
-      children: [
-        _buildNotificationItem(
-          'New Report Submitted',
-          'A student has submitted a new report regarding...',
-          Icons.report,
-          Colors.orange,
-          '10 min ago',
-          true,
-        ),
-        _buildNotificationItem(
-          'Report Resolved',
-          'Report #1234 has been successfully resolved',
-          Icons.check_circle,
-          Colors.green,
-          '1 hour ago',
-          false,
-        ),
-        _buildNotificationItem(
-          'Urgent Action Required',
-          'High priority report needs immediate attention',
-          Icons.warning,
-          Colors.red,
-          '30 min ago',
-          true,
-        ),
-        _buildNotificationItem(
-          'System Update',
-          'Report system has been updated with new features',
-          Icons.system_update,
-          Colors.blue,
-          '2 hours ago',
-          false,
-        ),
-        _buildNotificationItem(
-          'Weekly Summary',
-          'You have resolved 15 reports this week',
-          Icons.analytics,
-          Colors.purple,
-          '1 day ago',
-          false,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNotificationItem(
-    String title,
-    String message,
-    IconData icon,
-    Color color,
-    String time,
-    bool isUnread,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isUnread ? color.withOpacity(0.1) : const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isUnread ? color.withOpacity(0.3) : Colors.white.withOpacity(0.1),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    if (isUnread)
-                      Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: isUnread ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  message,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  time,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
           ),
         ],
@@ -627,136 +444,256 @@ class _MyReportState extends State<MyReport> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildConfigurationTab(bool isWideScreen, bool isMediumScreen) {
-    return ListView(
-      children: [
-        _buildConfigSection(
-          'Report Categories',
-          'Manage available report categories',
-          Icons.category,
-          Colors.blue,
-        ),
-        _buildConfigSection(
-          'Priority Levels',
-          'Configure priority level thresholds',
-          Icons.flag,
-          Colors.orange,
-        ),
-        _buildConfigSection(
-          'Auto-Response',
-          'Set up automatic responses for reports',
-          Icons.auto_awesome,
-          Colors.purple,
-        ),
-        _buildConfigSection(
-          'Email Notifications',
-          'Configure email notification settings',
-          Icons.email,
-          Colors.green,
-        ),
-        _buildConfigSection(
-          'User Permissions',
-          'Manage admin and moderator permissions',
-          Icons.security,
-          Colors.red,
-        ),
-        _buildConfigSection(
-          'Report Templates',
-          'Create and edit report templates',
-          Icons.description,
-          Colors.teal,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildConfigSection(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2C2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.arrow_forward_ios, color: color, size: 16),
-            onPressed: () {},
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCreateReportDialog(BuildContext context) {
+  // Dialog functions
+  void _showRewardDialog(String userId, String displayName) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2C2A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text(
-          'Create New Report',
-          style: TextStyle(color: Colors.white),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Reward User',
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Send a reward to $displayName?',
+          style: GoogleFonts.poppins(color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey.shade600),
+            ),
+          ),
+          AnimatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showSuccessSnackbar('Reward sent to $displayName');
+            },
+            color: Colors.green,
+            height: 40,
+            width: 120,
+            child: Text(
+              'Send Reward',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWarningDialog(String userId, String displayName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Send Warning',
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Send a warning to $displayName?',
+          style: GoogleFonts.poppins(color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey.shade600),
+            ),
+          ),
+          AnimatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showSuccessSnackbar('Warning sent to $displayName');
+            },
+            color: Colors.orange,
+            height: 40,
+            width: 130,
+            child: Text(
+              'Send Warning',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMessageDialog(String userId, String displayName) {
+    final messageController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Message User',
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Report creation dialog will be implemented here',
-              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              'Send a message to $displayName',
+              style: GoogleFonts.poppins(color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: messageController,
+              maxLines: 4,
+              style: GoogleFonts.poppins(color: Colors.black87),
+              decoration: InputDecoration(
+                hintText: 'Type your message here...',
+                hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey.shade600),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: const Text('Create'),
+          AnimatedButton(
+            onPressed: () {
+              if (messageController.text.isNotEmpty) {
+                Navigator.pop(context);
+                _showSuccessSnackbar('Message sent to $displayName');
+              }
+            },
+            color: Colors.blue,
+            height: 40,
+            width: 140,
+            child: Text(
+              'Send Message',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showUserDetailsDialog(String userId, Map<String, dynamic> userData) {
+    final role = userData['role'] ?? 'user';
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          'User Details',
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (role == 'student')
+                _buildDetailRow('Username', userData['username'] ?? 'N/A'),
+              if (role == 'teacher')
+                _buildDetailRow('Full Name', userData['fullname'] ?? 'N/A'),
+              _buildDetailRow('Email', userData['email'] ?? 'N/A'),
+              _buildDetailRow('Role', userData['role'] ?? 'N/A'),
+              _buildDetailRow('User ID', userId),
+              if (userData['createdAt'] != null)
+                _buildDetailRow(
+                  'Created At',
+                  (userData['createdAt'] as Timestamp)
+                      .toDate()
+                      .toString()
+                      .substring(0, 16),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Close',
+              style: GoogleFonts.poppins(color: Colors.cyan.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: GoogleFonts.poppins(
+                color: Colors.grey.shade700,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(color: Colors.black87, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
