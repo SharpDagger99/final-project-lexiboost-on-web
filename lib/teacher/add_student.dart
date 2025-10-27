@@ -886,6 +886,15 @@ class _MyAddStudentState extends State<MyAddStudent> {
                                                   FieldValue.serverTimestamp(),
                                             });
 
+                                        // Update student's document to trigger stream listener
+                                        await _firestore
+                                            .collection('users')
+                                            .doc(studentId)
+                                            .update({
+                                              'teachersUpdatedAt':
+                                                  FieldValue.serverTimestamp(),
+                                            });
+
                                         // Send notification to student
                                         final customMessage = messageController
                                             .text

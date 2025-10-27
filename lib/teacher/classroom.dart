@@ -9,6 +9,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../services/agora_config.dart';
+import 'video_call_screen.dart';
 
 /// ✅ Reusable widget to fetch & display a user's profile image
 class UserAvatar extends StatelessWidget {
@@ -230,6 +232,84 @@ class _MyClassRoomState extends State<MyClassRoom> {
     }
   }
 
+  // ✅ Start video call and notify students
+  Future<void> _startVideoCall() async {
+    if (user == null) return;
+
+    try {
+      // Get teacher name
+      final senderName = await _getUsername(user!.uid);
+
+      // Send message in class chat about video call
+      await FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .add({
+            "senderId": user!.uid,
+            "senderName": senderName,
+            "text": "📞 Video call started! Tap to join.",
+            "type": "video_call",
+            "status": "active",
+            "timestamp": FieldValue.serverTimestamp(),
+            "channelName": AgoraConfig.getClassChannelName(widget.classId),
+            "className": widget.className,
+          });
+
+      // Get all students enrolled in this class
+      final classDoc = await FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .get();
+
+      if (classDoc.exists) {
+        final classData = classDoc.data();
+        final studentIds = List<String>.from(classData?['students'] ?? []);
+
+        // Send notification to each student
+        for (String studentId in studentIds) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(studentId)
+              .collection('notifications')
+              .add({
+                'title': 'Video Call Started',
+                'message':
+                    '${widget.className} is live! Join the video call now.',
+                'from': user!.uid,
+                'fromName': senderName,
+                'classId': widget.classId,
+                'className': widget.className,
+                'channelName': AgoraConfig.getClassChannelName(widget.classId),
+                'timestamp': FieldValue.serverTimestamp(),
+                'read': false,
+                'type': 'video_call',
+              });
+        }
+      }
+
+      // Navigate to video call screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VideoCallScreen(
+            channelName: AgoraConfig.getClassChannelName(widget.classId),
+            className: widget.className,
+            isTeacher: true,
+            classId: widget.classId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start video call: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -267,6 +347,11 @@ class _MyClassRoomState extends State<MyClassRoom> {
             IconButton(
               onPressed: () => _showClassInfo(context),
               icon: const Icon(Icons.info_outline, color: Colors.white),
+            ),
+            IconButton(
+              onPressed: () => _startVideoCall(),
+              icon: const Icon(Icons.video_camera_front, color: Colors.white),
+              tooltip: 'Start video call',
             ),
             IconButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -554,6 +639,55 @@ class _MyClassRoomState extends State<MyClassRoom> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+            ),
+          ],
+        ),
+      );
+    } else if (messageType == 'video_call') {
+      // Video call message
+      final callStatus = data["status"] ?? "active";
+      final isEnded = callStatus == "ended";
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isEnded
+                ? [Colors.grey.shade400, Colors.grey.shade600]
+                : [Colors.green.shade400, Colors.green.shade600],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: isEnded
+                  ? Colors.grey.withOpacity(0.3)
+                  : Colors.green.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isEnded ? Icons.call_end : Icons.video_camera_front,
+              color: Colors.white,
+              size: 32,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isEnded
+                  ? "Video call ended"
+                  : (data["text"] ?? "Video call started"),
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

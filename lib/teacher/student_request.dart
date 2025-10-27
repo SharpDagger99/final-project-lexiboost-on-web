@@ -39,6 +39,11 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
         'acceptedAt': FieldValue.serverTimestamp(),
       });
 
+      // Update student's document to trigger stream listener
+      await _firestore.collection('users').doc(studentId).update({
+        'teachersUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
       // Send notification to student about acceptance
       final currentUser = _auth.currentUser;
       if (currentUser != null) {
@@ -438,7 +443,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E201E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2D2F2D),
+        backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
           'Student Requests',
