@@ -1,11 +1,13 @@
 // ignore_for_file: unused_field, deprecated_member_use, use_build_context_synchronously
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/agora_config.dart';
 
 class VideoCallScreen extends StatefulWidget {
@@ -33,11 +35,33 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   bool _isMuted = false;
   bool _isCameraOff = false;
   final Set<int> _remoteUsers = {};
+  final Map<int, bool> _remoteUsersCameraStatus = {}; // Track camera status
+  String? _currentUserName;
+  String? _currentUserProfileImage;
+  int? _localUid;
 
   @override
   void initState() {
     super.initState();
     _initAgora();
+    _loadCurrentUserData();
+  }
+
+  // Load current user's profile data
+  Future<void> _loadCurrentUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(user.uid)
+          .get();
+      if (doc.exists) {
+        setState(() {
+          _currentUserName = doc.data()?["username"] ?? doc.data()?["fullname"] ?? "User";
+          _currentUserProfileImage = doc.data()?["profileImage"];
+        });
+      }
+    }
   }
 
   Future<void> _initAgora() async {
@@ -59,14 +83,18 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           setState(() {
             _localUserJoined = true;
+            _localUid = connection.localUid;
           });
           debugPrint('Local user ${connection.localUid} joined');
+          _updateParticipantCount(1); // Increment participant count
         },
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           setState(() {
             _remoteUsers.add(remoteUid);
+            _remoteUsersCameraStatus[remoteUid] = true; // Assume camera on initially
           });
           debugPrint('Remote user $remoteUid joined');
+          _updateParticipantCount(_remoteUsers.length + 1);
         },
         onUserOffline:
             (
@@ -76,9 +104,20 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ) {
               setState(() {
                 _remoteUsers.remove(remoteUid);
+                _remoteUsersCameraStatus.remove(remoteUid);
               });
               debugPrint('Remote user $remoteUid left channel');
+              _updateParticipantCount(_remoteUsers.length + 1);
             },
+        onRemoteVideoStateChanged: (RtcConnection connection, int remoteUid,
+            RemoteVideoState state, RemoteVideoStateReason reason, int elapsed) {
+          setState(() {
+            _remoteUsersCameraStatus[remoteUid] = 
+                state == RemoteVideoState.remoteVideoStateDecoding ||
+                state == RemoteVideoState.remoteVideoStateStarting;
+          });
+          debugPrint('Remote user $remoteUid camera: ${_remoteUsersCameraStatus[remoteUid]}');
+        },
         onTokenPrivilegeWillExpire: (RtcConnection connection, String token) {
           debugPrint(
             '[onTokenPrivilegeWillExpire] connection: ${connection.toJson()}, token: $token',
@@ -135,10 +174,40 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _engine.switchCamera();
   }
 
+  // Update participant count in Firestore
+  Future<void> _updateParticipantCount(int count) async {
+    if (widget.classId == null) return;
+    
+    try {
+      final messagesQuery = await FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .where("type", isEqualTo: "video_call")
+          .where("channelName", isEqualTo: widget.channelName)
+          .orderBy("timestamp", descending: true)
+          .limit(1)
+          .get();
+
+      if (messagesQuery.docs.isNotEmpty) {
+        await messagesQuery.docs.first.reference.update({
+          'participantCount': count,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      debugPrint('Error updating participant count: $e');
+    }
+  }
+
   // Leave call
   Future<void> _leaveCall() async {
-    // Update video call message to "ended" if this is the last person and classId is available
-    if (_remoteUsers.isEmpty && widget.isTeacher && widget.classId != null) {
+    // Update participant count
+    final newCount = _remoteUsers.length; // After I leave
+    await _updateParticipantCount(newCount);
+    
+    // Update video call message to "ended" if this is the last person leaving
+    if (_remoteUsers.isEmpty && widget.classId != null) {
       try {
         // Get the video call message and mark it as ended
         final messagesQuery = await FirebaseFirestore.instance
@@ -154,6 +223,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         if (messagesQuery.docs.isNotEmpty) {
           await messagesQuery.docs.first.reference.update({
             'status': 'ended',
+            'participantCount': 0,
             'endedAt': FieldValue.serverTimestamp(),
           });
         }
@@ -175,12 +245,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           Center(
             child: _remoteUsers.isEmpty
                 ? _localUserJoined
-                      ? AgoraVideoView(
-                          controller: VideoViewController(
-                            rtcEngine: _engine,
-                            canvas: const VideoCanvas(uid: 0),
-                          ),
-                        )
+                      ? _buildLocalVideoOrAvatar(isMainView: true)
                       : const CircularProgressIndicator()
                 : _buildRemoteVideos(),
           ),
@@ -199,12 +264,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: AgoraVideoView(
-                    controller: VideoViewController(
-                      rtcEngine: _engine,
-                      canvas: const VideoCanvas(uid: 0),
-                    ),
-                  ),
+                  child: _buildLocalVideoOrAvatar(isMainView: false),
                 ),
               ),
             ),
@@ -349,6 +409,84 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
+  // Build local video or avatar based on camera status
+  Widget _buildLocalVideoOrAvatar({required bool isMainView}) {
+    if (_isCameraOff) {
+      // Show profile avatar when camera is off
+      return Container(
+        color: Colors.blue.shade900,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _currentUserProfileImage != null
+                  ? CircleAvatar(
+                      radius: isMainView ? 60 : 30,
+                      backgroundImage: MemoryImage(
+                        base64Decode(_currentUserProfileImage!),
+                      ),
+                    )
+                  : CircleAvatar(
+                      radius: isMainView ? 60 : 30,
+                      backgroundColor: Colors.blue.shade300,
+                      child: Text(
+                        _currentUserName?.substring(0, 1).toUpperCase() ?? 'U',
+                        style: GoogleFonts.poppins(
+                          fontSize: isMainView ? 40 : 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+              if (isMainView) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _currentUserName ?? 'You',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.videocam_off, color: Colors.white, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Camera Off',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Show video when camera is on
+      return AgoraVideoView(
+        controller: VideoViewController(
+          rtcEngine: _engine,
+          canvas: const VideoCanvas(uid: 0),
+        ),
+      );
+    }
+  }
+
   // Build remote user videos in a grid
   Widget _buildRemoteVideos() {
     if (_remoteUsers.isEmpty) {
@@ -361,12 +499,72 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
 
     if (_remoteUsers.length == 1) {
-      return AgoraVideoView(
-        controller: VideoViewController.remote(
-          rtcEngine: _engine,
-          canvas: VideoCanvas(uid: _remoteUsers.first),
-          connection: RtcConnection(channelId: widget.channelName),
-        ),
+      final remoteUid = _remoteUsers.first;
+      final isCameraOn = _remoteUsersCameraStatus[remoteUid] ?? true;
+      
+      return Stack(
+        children: [
+          if (isCameraOn)
+            AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: _engine,
+                canvas: VideoCanvas(uid: remoteUid),
+                connection: RtcConnection(channelId: widget.channelName),
+              ),
+            )
+          else
+            Container(
+              color: Colors.blue.shade900,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 60,
+                      backgroundColor: Colors.blue.shade300,
+                      child: const Icon(
+                        Icons.person,
+                        size: 60,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'User $remoteUid',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.videocam_off, color: Colors.white, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Camera Off',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       );
     }
 
@@ -379,6 +577,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       itemCount: _remoteUsers.length,
       itemBuilder: (context, index) {
         final remoteUid = _remoteUsers.elementAt(index);
+        final isCameraOn = _remoteUsersCameraStatus[remoteUid] ?? true;
+        
         return Container(
           margin: const EdgeInsets.all(4),
           decoration: BoxDecoration(
@@ -387,12 +587,46 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AgoraVideoView(
-              controller: VideoViewController.remote(
-                rtcEngine: _engine,
-                canvas: VideoCanvas(uid: remoteUid),
-                connection: RtcConnection(channelId: widget.channelName),
-              ),
+            child: Stack(
+              children: [
+                if (isCameraOn)
+                  AgoraVideoView(
+                    controller: VideoViewController.remote(
+                      rtcEngine: _engine,
+                      canvas: VideoCanvas(uid: remoteUid),
+                      connection: RtcConnection(channelId: widget.channelName),
+                    ),
+                  )
+                else
+                  Container(
+                    color: Colors.blue.shade900,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 30,
+                            backgroundColor: Colors.blue.shade300,
+                            child: const Icon(
+                              Icons.person,
+                              size: 30,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'User',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         );

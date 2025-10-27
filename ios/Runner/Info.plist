@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- Agora Video Call Permissions -->
+	<key>NSCameraUsageDescription</key>
+	<string>Lexi On Web needs access to your camera for video calls with students and teachers.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lexi On Web needs access to your microphone for voice communication during video calls.</string>
 </dict>
 </plist>

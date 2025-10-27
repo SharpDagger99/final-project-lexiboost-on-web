@@ -251,6 +251,7 @@ class _MyClassRoomState extends State<MyClassRoom> {
             "text": "📞 Video call started! Tap to join.",
             "type": "video_call",
             "status": "active",
+            "participantCount": 0, // Initialize with 0 participants
             "timestamp": FieldValue.serverTimestamp(),
             "channelName": AgoraConfig.getClassChannelName(widget.classId),
             "className": widget.className,
@@ -304,6 +305,311 @@ class _MyClassRoomState extends State<MyClassRoom> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to start video call: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ Show message options popup
+  void _showMessageOptions(
+    BuildContext context,
+    String messageId,
+    bool isMyMessage,
+    List<String> likes,
+    List<String> dislikes,
+    bool isHidden,
+  ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final currentUserId = user?.uid ?? '';
+        final hasLiked = likes.contains(currentUserId);
+        final hasDisliked = dislikes.contains(currentUserId);
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.blue.shade50, Colors.white],
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Message Options',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade800,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Like button
+                _buildOptionButton(
+                  icon: Icons.thumb_up,
+                  label: hasLiked ? 'Unlike' : 'Like',
+                  color: Colors.blue,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _toggleLike(messageId, hasLiked);
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // Dislike button
+                _buildOptionButton(
+                  icon: Icons.thumb_down,
+                  label: hasDisliked ? 'Remove Dislike' : 'Dislike',
+                  color: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _toggleDislike(messageId, hasDisliked);
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // Hide/Unhide button
+                _buildOptionButton(
+                  icon: isHidden ? Icons.visibility : Icons.visibility_off,
+                  label: isHidden ? 'Unhide Message' : 'Hide Message',
+                  color: isHidden ? Colors.green : Colors.orange,
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (isHidden) {
+                      _unhideMessage(messageId);
+                    } else {
+                      _hideMessage(messageId);
+                    }
+                  },
+                ),
+
+                // Delete button (only for own messages)
+                if (isMyMessage) ...[
+                  const SizedBox(height: 12),
+                  _buildOptionButton(
+                    icon: Icons.delete,
+                    label: 'Delete Message',
+                    color: Colors.red.shade700,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _deleteMessage(messageId);
+                    },
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ✅ Build option button
+  Widget _buildOptionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ Toggle like
+  Future<void> _toggleLike(String messageId, bool hasLiked) async {
+    if (user == null) return;
+
+    try {
+      final messageRef = FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .doc(messageId);
+
+      if (hasLiked) {
+        await messageRef.update({
+          'likes': FieldValue.arrayRemove([user!.uid]),
+        });
+      } else {
+        await messageRef.update({
+          'likes': FieldValue.arrayUnion([user!.uid]),
+          'dislikes': FieldValue.arrayRemove([
+            user!.uid,
+          ]), // Remove dislike if exists
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update like: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ Toggle dislike
+  Future<void> _toggleDislike(String messageId, bool hasDisliked) async {
+    if (user == null) return;
+
+    try {
+      final messageRef = FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .doc(messageId);
+
+      if (hasDisliked) {
+        await messageRef.update({
+          'dislikes': FieldValue.arrayRemove([user!.uid]),
+        });
+      } else {
+        await messageRef.update({
+          'dislikes': FieldValue.arrayUnion([user!.uid]),
+          'likes': FieldValue.arrayRemove([user!.uid]), // Remove like if exists
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update dislike: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ Hide message
+  Future<void> _hideMessage(String messageId) async {
+    if (user == null) return;
+
+    try {
+      final messageRef = FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .doc(messageId);
+
+      await messageRef.update({
+        'hiddenBy': FieldValue.arrayUnion([user!.uid]),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Message hidden'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to hide message: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ Unhide message
+  Future<void> _unhideMessage(String messageId) async {
+    if (user == null) return;
+
+    try {
+      final messageRef = FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .doc(messageId);
+
+      await messageRef.update({
+        'hiddenBy': FieldValue.arrayRemove([user!.uid]),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Message unhidden'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to unhide message: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ Delete message
+  Future<void> _deleteMessage(String messageId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection("classes")
+          .doc(widget.classId)
+          .collection("messages")
+          .doc(messageId)
+          .delete();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Message deleted'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete message: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -422,6 +728,15 @@ class _MyClassRoomState extends State<MyClassRoom> {
                       final data = docs[index].data() as Map<String, dynamic>;
                       final isMe = data["senderId"] == user?.uid;
                       final messageType = data["type"] ?? "text";
+                      final messageId = docs[index].id;
+                      final likes = List<String>.from(data["likes"] ?? []);
+                      final dislikes = List<String>.from(
+                        data["dislikes"] ?? [],
+                      );
+                      final hiddenBy = List<String>.from(
+                        data["hiddenBy"] ?? [],
+                      );
+                      final isHidden = hiddenBy.contains(user?.uid);
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
@@ -441,24 +756,127 @@ class _MyClassRoomState extends State<MyClassRoom> {
 
                             // Message + Username
                             Flexible(
-                              child: Column(
-                                crossAxisAlignment: isMe
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 2),
-                                    child: Text(
-                                      data["senderName"] ?? "Guest",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: Colors.white.withOpacity(0.8),
+                              child: GestureDetector(
+                                onLongPress: () => _showMessageOptions(
+                                  context,
+                                  messageId,
+                                  isMe,
+                                  likes,
+                                  dislikes,
+                                  isHidden,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: isMe
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isHidden)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 2,
+                                        ),
+                                        child: Text(
+                                          data["senderName"] ?? "Guest",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            color: Colors.white.withOpacity(
+                                              0.8,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                  _buildMessageContent(data, isMe, messageType),
-                                ],
+                                    isHidden
+                                        ? Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 10,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.withOpacity(
+                                                0.3,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: Colors.grey.withOpacity(
+                                                  0.5,
+                                                ),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.visibility_off,
+                                                  size: 14,
+                                                  color: Colors.grey.shade400,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Flexible(
+                                                  child: Text(
+                                                    'This message is hidden, hold this message to unhide',
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade400,
+                                                      fontSize: 13,
+                                                      fontStyle:
+                                                          FontStyle.italic,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : _buildMessageContent(
+                                            data,
+                                            isMe,
+                                            messageType,
+                                          ),
+                                    if (!isHidden &&
+                                        (likes.isNotEmpty ||
+                                            dislikes.isNotEmpty))
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (likes.isNotEmpty) ...[
+                                              Icon(
+                                                Icons.thumb_up,
+                                                size: 12,
+                                                color: Colors.blue.shade300,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '${likes.length}',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.blue.shade300,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                            if (dislikes.isNotEmpty) ...[
+                                              Icon(
+                                                Icons.thumb_down,
+                                                size: 12,
+                                                color: Colors.red.shade300,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '${dislikes.length}',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.red.shade300,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
 
@@ -647,6 +1065,8 @@ class _MyClassRoomState extends State<MyClassRoom> {
       // Video call message
       final callStatus = data["status"] ?? "active";
       final isEnded = callStatus == "ended";
+      final participantCount = data["participantCount"] ?? 0;
+      final hasParticipants = participantCount > 0;
 
       return Container(
         padding: const EdgeInsets.all(16),
@@ -654,7 +1074,9 @@ class _MyClassRoomState extends State<MyClassRoom> {
           gradient: LinearGradient(
             colors: isEnded
                 ? [Colors.grey.shade400, Colors.grey.shade600]
-                : [Colors.green.shade400, Colors.green.shade600],
+                : hasParticipants
+                ? [Colors.green.shade400, Colors.green.shade600]
+                : [Colors.orange.shade400, Colors.orange.shade600],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -663,7 +1085,9 @@ class _MyClassRoomState extends State<MyClassRoom> {
             BoxShadow(
               color: isEnded
                   ? Colors.grey.withOpacity(0.3)
-                  : Colors.green.withOpacity(0.3),
+                  : hasParticipants
+                  ? Colors.green.withOpacity(0.3)
+                  : Colors.orange.withOpacity(0.3),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),
@@ -681,7 +1105,9 @@ class _MyClassRoomState extends State<MyClassRoom> {
             Text(
               isEnded
                   ? "Video call ended"
-                  : (data["text"] ?? "Video call started"),
+                  : hasParticipants
+                  ? "Video call in progress"
+                  : "Video call started - waiting for participants",
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontSize: 14,
@@ -689,6 +1115,17 @@ class _MyClassRoomState extends State<MyClassRoom> {
               ),
               textAlign: TextAlign.center,
             ),
+            if (!isEnded && hasParticipants) ...[
+              const SizedBox(height: 8),
+              Text(
+                '$participantCount ${participantCount == 1 ? "participant" : "participants"}',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ],
         ),
       );
