@@ -40,7 +40,7 @@ class _MyReportState extends State<MyReport> {
         .snapshots();
   }
 
-  // Filter users based on search query
+  // Filter users based on search query (exact start match)
   bool _matchesSearch(Map<String, dynamic> userData) {
     if (_searchQuery.isEmpty) return true;
 
@@ -49,9 +49,9 @@ class _MyReportState extends State<MyReport> {
     final fullname = (userData['fullname'] ?? '').toString().toLowerCase();
     final email = (userData['email'] ?? '').toString().toLowerCase();
 
-    return username.contains(query) ||
-        fullname.contains(query) ||
-        email.contains(query);
+    return username.startsWith(query) ||
+        fullname.startsWith(query) ||
+        email.startsWith(query);
   }
 
   @override
@@ -64,90 +64,9 @@ class _MyReportState extends State<MyReport> {
           children: [
             _buildSearchBar(),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _getUsersStream(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Error: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.black87),
-                      ),
-                    );
-                  }
-
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
-                      ),
-                    );
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.people_outline,
-                            size: 80,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No users found',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final filteredDocs = snapshot.data!.docs.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return _matchesSearch(data);
-                  }).toList();
-
-                  if (filteredDocs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 80,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No users match your search',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(24),
-                    itemCount: filteredDocs.length,
-                    itemBuilder: (context, index) {
-                      final userDoc = filteredDocs[index];
-                      final userData = userDoc.data() as Map<String, dynamic>;
-                      final userId = userDoc.id;
-
-                      return _buildUserCard(userId, userData);
-                    },
-                  );
-                },
-              ),
+              child: _searchQuery.isEmpty
+                  ? _buildNotificationsPanel()
+                  : _buildUserSearchResults(),
             ),
           ],
         ),
@@ -187,8 +106,7 @@ class _MyReportState extends State<MyReport> {
                 _searchQuery = value;
               });
             },
-            style: GoogleFonts.poppins(color: Colors.black87, fontSize: 16,
-            ),
+            style: GoogleFonts.poppins(color: Colors.black87, fontSize: 16),
             decoration: InputDecoration(
               hintText: 'Search by username, fullname, or email...',
               hintStyle: GoogleFonts.poppins(
@@ -202,8 +120,7 @@ class _MyReportState extends State<MyReport> {
               ),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
-                      icon: Icon(Icons.clear, color: Colors.grey.shade600,
-                      ),
+                      icon: Icon(Icons.clear, color: Colors.grey.shade600),
                       onPressed: () {
                         setState(() {
                           _searchController.clear();
@@ -235,6 +152,277 @@ class _MyReportState extends State<MyReport> {
         ],
       ),
     );
+  }
+
+  Widget _buildNotificationsPanel() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(Icons.notifications_active, color: Colors.cyan, size: 28),
+              const SizedBox(width: 12),
+              Text(
+                'Incoming Notifications',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Notifications List
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .orderBy('timestamp', descending: true)
+                  .limit(50)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Error loading notifications',
+                      style: GoogleFonts.poppins(color: Colors.grey.shade400),
+                    ),
+                  );
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
+                    ),
+                  );
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.notifications_off,
+                          size: 60,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No notifications yet',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  itemCount: snapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    final notification = snapshot.data!.docs[index];
+                    final data = notification.data() as Map<String, dynamic>;
+                    return _buildNotificationCard(notification.id, data);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserSearchResults() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _getUsersStream(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.cyan),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No users found',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final filteredDocs = snapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return _matchesSearch(data);
+        }).toList();
+
+        if (filteredDocs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search_off, size: 80, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  'No users match your search',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(24),
+          itemCount: filteredDocs.length,
+          itemBuilder: (context, index) {
+            final userDoc = filteredDocs[index];
+            final userData = userDoc.data() as Map<String, dynamic>;
+            final userId = userDoc.id;
+
+            return _buildUserCard(userId, userData);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildNotificationCard(
+    String notificationId,
+    Map<String, dynamic> data,
+  ) {
+    final type = data['type'] ?? 'info';
+    final message = data['message'] ?? 'No message';
+    final timestamp = data['timestamp'] as Timestamp?;
+    final isRead = data['isRead'] ?? false;
+
+    IconData icon;
+    Color color;
+
+    switch (type) {
+      case 'warning':
+        icon = Icons.warning_amber;
+        color = Colors.orange;
+        break;
+      case 'error':
+        icon = Icons.error_outline;
+        color = Colors.red;
+        break;
+      case 'success':
+        icon = Icons.check_circle_outline;
+        color = Colors.green;
+        break;
+      default:
+        icon = Icons.info_outline;
+        color = Colors.blue;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isRead ? Colors.grey.shade800 : Colors.grey.shade900,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isRead ? Colors.transparent : color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: isRead ? FontWeight.normal : FontWeight.w600,
+                  ),
+                ),
+                if (timestamp != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _formatTimestamp(timestamp),
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey.shade400,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!isRead)
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestamp(Timestamp timestamp) {
+    final date = timestamp.toDate();
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
   }
 
   Widget _buildUserCard(String userId, Map<String, dynamic> userData) {
