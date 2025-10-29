@@ -1,6 +1,7 @@
-// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use, avoid_print
 
 import 'dart:convert';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -9,8 +10,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import '../services/agora_config.dart';
-import 'video_call_screen.dart';
+import '../services/permission_service.dart';
+import 'call_screen.dart';
 
 /// ✅ Reusable widget to fetch & display a user's profile image
 class UserAvatar extends StatelessWidget {
@@ -71,6 +74,71 @@ class MyClassRoom extends StatefulWidget {
 class _MyClassRoomState extends State<MyClassRoom> {
   final TextEditingController _messageController = TextEditingController();
   final user = FirebaseAuth.instance.currentUser;
+  
+  // Agora video call variables
+  late RtcEngine _engine;
+  bool _localUserJoined = false;
+  int? _remoteUid;
+  bool _isInitiatingCall = false;
+  String? _activeCallMessageId; // Track the active call message
+
+  @override
+  void initState() {
+    super.initState();
+    _initAgora();
+  }
+
+  // ✅ Initialize Agora engine
+  Future<void> _initAgora() async {
+    try {
+      _engine = createAgoraRtcEngine();
+
+      await _engine.initialize(
+        RtcEngineContext(
+          appId: AgoraConfig.appId,
+          channelProfile: ChannelProfileType.channelProfileCommunication,
+        ),
+      );
+
+      // Note: We don't enable video/audio here anymore
+      // It will be done when starting a call to trigger permission prompts
+
+      _engine.registerEventHandler(
+        RtcEngineEventHandler(
+          onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+            print("Teacher joined channel: ${connection.channelId}");
+            setState(() {
+              _localUserJoined = true;
+            });
+          },
+          onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
+            print("Remote user $remoteUid joined");
+            setState(() {
+              _remoteUid = remoteUid;
+            });
+          },
+          onUserOffline:
+              (
+                RtcConnection connection,
+                int remoteUid,
+                UserOfflineReasonType reason,
+              ) {
+                print("Remote user $remoteUid left channel");
+                setState(() {
+                  if (_remoteUid == remoteUid) {
+                    _remoteUid = null;
+                  }
+                });
+              },
+          onError: (ErrorCodeType err, String msg) {
+            print("Agora error: $err, $msg");
+          },
+        ),
+      );
+    } catch (e) {
+      print("Error initializing Agora: $e");
+    }
+  }
 
   // ✅ fetch username
   Future<String> _getUsername(String uid) async {
@@ -236,78 +304,242 @@ class _MyClassRoomState extends State<MyClassRoom> {
   Future<void> _startVideoCall() async {
     if (user == null) return;
 
+    setState(() {
+      _isInitiatingCall = true;
+      _remoteUid = null; // Reset remote UID
+    });
+
     try {
+      // Request permissions (mobile) or prepare for browser prompt (web)
+      bool permissionsGranted =
+          await PermissionService.requestVideoCallPermissions();
+
+      if (!permissionsGranted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: const [
+                Icon(Icons.warning, color: Colors.orange, size: 28),
+                SizedBox(width: 12),
+                Text('Permissions Required'),
+              ],
+            ),
+            content: Text(PermissionService.getPermissionErrorMessage()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        setState(() {
+          _isInitiatingCall = false;
+        });
+        return;
+      }
+
+      // Initialize Agora with permissions - this will trigger browser prompt on web
+      bool agoraInitialized =
+          await PermissionService.initializeAgoraWithPermissions(_engine);
+
+      if (!agoraInitialized) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: const [
+                Icon(Icons.error, color: Colors.red, size: 28),
+                SizedBox(width: 12),
+                Text('Camera/Microphone Error'),
+              ],
+            ),
+            content: Text(
+              'Failed to access camera/microphone.\n\n'
+              '${PermissionService.getPermissionErrorMessage()}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        setState(() {
+          _isInitiatingCall = false;
+        });
+        return;
+      }
       // Get teacher name
-      final senderName = await _getUsername(user!.uid);
+      final teacherName = await _getUsername(user!.uid);
+
+      // Create a unique channel name and call ID
+      final channelName = AgoraConfig.getClassChannelName(widget.classId);
+      final vcId = "${widget.classId}_${DateTime.now().millisecondsSinceEpoch}";
+
+      // Store call details in Firestore for students to join
+      await FirebaseFirestore.instance.collection('VideoCalls').doc(vcId).set({
+        'callerId': user!.uid,
+        'callerName': teacherName,
+        'classId': widget.classId,
+        'className': widget.className,
+        'channelName': channelName,
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'initiated',
+        'teacherUid': AgoraConfig.getTeacherUid(user!.uid),
+      });
 
       // Send message in class chat about video call
-      await FirebaseFirestore.instance
+      final messageRef = await FirebaseFirestore.instance
           .collection("classes")
           .doc(widget.classId)
           .collection("messages")
           .add({
             "senderId": user!.uid,
-            "senderName": senderName,
+            "senderName": teacherName,
             "text": "📞 Video call started! Tap to join.",
             "type": "video_call",
             "status": "active",
-            "participantCount": 0, // Initialize with 0 participants
+            "participantCount": 0,
             "timestamp": FieldValue.serverTimestamp(),
-            "channelName": AgoraConfig.getClassChannelName(widget.classId),
+            "channelName": channelName,
             "className": widget.className,
+            "vcId": vcId,
           });
 
-      // Get all students enrolled in this class
-      final classDoc = await FirebaseFirestore.instance
-          .collection("classes")
-          .doc(widget.classId)
-          .get();
+      setState(() {
+        _activeCallMessageId = messageRef.id;
+      });
 
-      if (classDoc.exists) {
-        final classData = classDoc.data();
-        final studentIds = List<String>.from(classData?['students'] ?? []);
+      // Reset the engine event handler to ensure clean event handling
+      _engine.registerEventHandler(
+        RtcEngineEventHandler(
+          onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+            print("Teacher joined channel: ${connection.channelId}");
+            print("Local UID: ${connection.localUid}");
+            setState(() {
+              _localUserJoined = true;
+            });
+          },
+          onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
+            print("Remote user $remoteUid joined the channel");
+            setState(() {
+              _remoteUid = remoteUid;
+            });
+          },
+          onUserOffline:
+              (
+                RtcConnection connection,
+                int remoteUid,
+                UserOfflineReasonType reason,
+              ) {
+                print("Remote user $remoteUid left channel");
+                setState(() {
+                  if (_remoteUid == remoteUid) {
+                    _remoteUid = null;
+                  }
+                });
+              },
+          onError: (ErrorCodeType err, String msg) {
+            print("Agora error: $err, $msg");
+          },
+        ),
+      );
 
-        // Send notification to each student
-        for (String studentId in studentIds) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(studentId)
-              .collection('notifications')
-              .add({
-                'title': 'Video Call Started',
-                'message':
-                    '${widget.className} is live! Join the video call now.',
-                'from': user!.uid,
-                'fromName': senderName,
-                'classId': widget.classId,
-                'className': widget.className,
-                'channelName': AgoraConfig.getClassChannelName(widget.classId),
-                'timestamp': FieldValue.serverTimestamp(),
-                'read': false,
-                'type': 'video_call',
-              });
-        }
-      }
+      // Join the channel with teacher UID
+      await _engine.joinChannel(
+        token: '', // Leave empty for App ID authentication in testing
+        channelId: channelName,
+        uid: AgoraConfig.getTeacherUid(user!.uid),
+        options: const ChannelMediaOptions(
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+          publishMicrophoneTrack: true,
+          publishCameraTrack: true,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
 
-      // Navigate to video call screen
-      Navigator.push(
+      // Navigate to the call screen
+      final result = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => VideoCallScreen(
-            channelName: AgoraConfig.getClassChannelName(widget.classId),
-            className: widget.className,
-            isTeacher: true,
-            classId: widget.classId,
+          builder: (context) => CallScreen(
+            channelName: channelName,
+            engine: _engine,
+            localUserJoined: _localUserJoined,
+            remoteUid: _remoteUid,
+            vcId: vcId,
           ),
         ),
       );
+
+      // When teacher returns from call, end it for everyone
+      await _endCallForEveryone(vcId);
+
+      setState(() {
+        _isInitiatingCall = false;
+      });
+
+      // Show call result notification if needed
+      if (result == 'call_ended') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Call ended'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
     } catch (e) {
+      print('Error initiating video call: $e');
+      String errorMessage = 'Failed to initiate video call: $e';
+      if (e.toString().contains('permission')) {
+        errorMessage =
+            'Failed to initiate video call: Camera or microphone permission denied.';
+      } else if (e.toString().contains('network')) {
+        errorMessage =
+            'Failed to initiate video call: Network error. Please check your connection.';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to start video call: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
+    } finally {
+      setState(() {
+        _isInitiatingCall = false;
+      });
+    }
+  }
+
+  // ✅ End call for everyone when teacher leaves
+  Future<void> _endCallForEveryone(String vcId) async {
+    try {
+      // Update Firestore call status to ended
+      await FirebaseFirestore.instance
+          .collection('VideoCalls')
+          .doc(vcId)
+          .update({'status': 'ended', 'endedAt': FieldValue.serverTimestamp()});
+
+      // Update the message in chat
+      if (_activeCallMessageId != null) {
+        await FirebaseFirestore.instance
+            .collection("classes")
+            .doc(widget.classId)
+            .collection("messages")
+            .doc(_activeCallMessageId)
+            .update({'status': 'ended'});
+      }
+
+      print("Call ended for everyone");
+    } catch (e) {
+      print("Error ending call: $e");
     }
   }
 
@@ -619,6 +851,8 @@ class _MyClassRoomState extends State<MyClassRoom> {
   @override
   void dispose() {
     _messageController.dispose();
+    _engine.leaveChannel();
+    _engine.release();
     super.dispose();
   }
 
@@ -655,8 +889,17 @@ class _MyClassRoomState extends State<MyClassRoom> {
               icon: const Icon(Icons.info_outline, color: Colors.white),
             ),
             IconButton(
-              onPressed: () => _startVideoCall(),
-              icon: const Icon(Icons.video_camera_front, color: Colors.white),
+              onPressed: _isInitiatingCall ? null : () => _startVideoCall(),
+              icon: _isInitiatingCall
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.video_camera_front, color: Colors.white),
               tooltip: 'Start video call',
             ),
             IconButton(

@@ -1,16 +1,24 @@
 class AgoraConfig {
-  // Agora App ID
-  static const String appId = 'ad58fb30521d4a2ba58e9fa663d8557b';
-
-  // Optional: For token-based authentication
-  static const String token =
-      ''; // Leave empty for testing, generate token for production
-
-  // Primary Certificate
-  static const String primaryCertificate = '16b55f42cdb14dd89d30e6afa2b76a28';
-
-  // Channel naming convention
+  // Agora App ID for test mode
+  static const String appId = 'ef1a1d0d999f4d73b034428f6f5a28ce';
+  
+  // Generate channel name for a class
   static String getClassChannelName(String classId) {
     return 'class_$classId';
   }
+
+  // Fixed UIDs for consistent peer identification
+  static const int teacherBaseUid = 1000;
+  static const int studentBaseUid = 2000;
+  
+  // Generate UID for teacher
+  static int getTeacherUid(String teacherId) {
+    return teacherBaseUid + teacherId.hashCode.abs() % 1000;
+  }
+  
+  // Generate UID for student
+  static int getStudentUid(String studentId) {
+    return studentBaseUid + studentId.hashCode.abs() % 1000;
+  }
 }
+
