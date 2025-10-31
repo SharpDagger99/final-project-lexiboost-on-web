@@ -188,24 +188,17 @@ class _CallScreenState extends State<CallScreen> {
 
           // If the remote user left and it matches our tracked remote UID
           if (_remoteUid == remoteUid && !_callEnded && !isNavigatingBack) {
-            print("Remote user disconnected, ending call automatically");
+            print("Remote user disconnected");
 
             setState(() {
               _remoteUid = null;
               _participantCount--;
             });
 
-            // Show the alert dialog
+            // Show the alert dialog with option to wait or leave
             if (mounted) {
               _showUserLeftDialog();
             }
-
-            // End the call gracefully
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted && !_callEnded && !isNavigatingBack) {
-                _handleCallEnd(isRemoteEnd: true);
-              }
-            });
           }
         },
         onConnectionStateChanged: (
@@ -214,8 +207,12 @@ class _CallScreenState extends State<CallScreen> {
           ConnectionChangedReasonType reason,
         ) {
           print("Connection state changed: $state, reason: $reason");
-          if (state == ConnectionStateType.connectionStateDisconnected ||
-              state == ConnectionStateType.connectionStateFailed) {
+          // Only show connection lost if it's a real network failure, not intentional disconnect
+          if ((state == ConnectionStateType.connectionStateDisconnected ||
+              state == ConnectionStateType.connectionStateFailed) &&
+              !_callEnded && 
+              !isNavigatingBack &&
+              reason != ConnectionChangedReasonType.connectionChangedLeaveChannel) {
             _showConnectionLostDialog();
           }
         },
@@ -261,17 +258,24 @@ class _CallScreenState extends State<CallScreen> {
           children: const [
             Icon(Icons.person_off, color: Colors.orange, size: 28),
             SizedBox(width: 12),
-            Text('User Disconnected'),
+            Text('Student Disconnected'),
           ],
         ),
-        content: const Text('Other user has left the call.'),
+        content: const Text('The student has left the call. You can wait for them to rejoin or end the call.'),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _handleCallEnd(isRemoteEnd: true);
             },
-            child: const Text('OK'),
+            child: const Text('Wait'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _handleCallEnd(isRemoteEnd: false);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('End Call'),
           ),
         ],
       ),
