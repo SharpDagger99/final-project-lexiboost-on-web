@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously, deprecated_member_use, avoid_print
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use, avoid_print, unnecessary_to_list_in_spreads
 
 import 'dart:convert';
 import 'dart:async';
@@ -889,6 +889,11 @@ class _MyClassRoomState extends State<MyClassRoom> {
               icon: const Icon(Icons.info_outline, color: Colors.white),
             ),
             IconButton(
+              onPressed: () => _showClassMembers(context),
+              icon: const Icon(Icons.people, color: Colors.white),
+              tooltip: 'Show members',
+            ),
+            IconButton(
               onPressed: _isInitiatingCall ? null : () => _startVideoCall(),
               icon: _isInitiatingCall
                   ? const SizedBox(
@@ -1442,6 +1447,529 @@ class _MyClassRoomState extends State<MyClassRoom> {
       context: context,
       builder: (context) => VideoPlayerDialog(videoUrl: videoUrl),
     );
+  }
+
+  // Show class members dialog
+  void _showClassMembers(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.blue.shade50,
+                    Colors.white,
+                  ],
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Handle bar
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.people,
+                          color: Colors.blue.shade700,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Class Members',
+                              style: GoogleFonts.poppins(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade800,
+                              ),
+                            ),
+                            Text(
+                              widget.className,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Members list
+                  Expanded(
+                    child: StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('classes')
+                          .doc(widget.classId)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: Colors.blue),
+                          );
+                        }
+
+                        final classData = snapshot.data!.data() as Map<String, dynamic>?;
+                        if (classData == null) {
+                          return Center(
+                            child: Text(
+                              'No class data found',
+                              style: GoogleFonts.poppins(color: Colors.grey),
+                            ),
+                          );
+                        }
+
+                        final studentIds = List<String>.from(classData['studentIds'] ?? []);
+                        final teacherId = classData['teacherId'] as String?;
+
+                        if (studentIds.isEmpty && teacherId == null) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.people_outline,
+                                  size: 60,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No members yet',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return ListView(
+                          controller: scrollController,
+                          children: [
+                            // Teacher section
+                            if (teacherId != null) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Teacher',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                              FutureBuilder<DocumentSnapshot>(
+                                future: FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(teacherId)
+                                    .get(),
+                                builder: (context, teacherSnapshot) {
+                                  if (!teacherSnapshot.hasData) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  
+                                  final teacherData = teacherSnapshot.data!.data() as Map<String, dynamic>?;
+                                  final teacherFullname = teacherData?['fullname'] ?? teacherData?['username'] ?? 'Unknown';
+                                  final teacherEmail = teacherData?['email'] ?? '';
+                                  final teacherImage = teacherData?['profileImage'];
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.blue.shade200,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 24,
+                                          backgroundColor: Colors.blue,
+                                          backgroundImage: teacherImage != null
+                                              ? MemoryImage(base64Decode(teacherImage))
+                                              : null,
+                                          child: teacherImage == null
+                                              ? Text(
+                                                  teacherFullname.isNotEmpty
+                                                      ? teacherFullname[0].toUpperCase()
+                                                      : 'T',
+                                                  style: GoogleFonts.poppins(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    teacherFullname,
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.blue.shade800,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.blue,
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text(
+                                                      'Teacher',
+                                                      style: GoogleFonts.poppins(
+                                                        fontSize: 10,
+                                                        color: Colors.white,
+                                                        fontWeight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                teacherEmail,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 13,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Students (${studentIds.length})',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                            ] else if (studentIds.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Students (${studentIds.length})',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            // Students list
+                            ...studentIds.map((studentId) {
+                              return FutureBuilder<DocumentSnapshot>(
+                                future: FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(studentId)
+                                    .get(),
+                                builder: (context, studentSnapshot) {
+                                  if (!studentSnapshot.hasData) {
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.blue,
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  final studentData = studentSnapshot.data!.data() as Map<String, dynamic>?;
+                                  if (studentData == null) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  final username = studentData['username'] ?? 'Unknown';
+                                  final email = studentData['email'] ?? '';
+                                  final profileImage = studentData['profileImage'];
+
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.grey.shade200,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.grey.shade200,
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 20,
+                                          backgroundColor: Colors.blue,
+                                          backgroundImage: profileImage != null
+                                              ? MemoryImage(base64Decode(profileImage))
+                                              : null,
+                                          child: profileImage == null
+                                              ? Text(
+                                                  username.isNotEmpty
+                                                      ? username[0].toUpperCase()
+                                                      : 'S',
+                                                  style: GoogleFonts.poppins(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                username,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                email,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_circle_outline),
+                                          color: Colors.red,
+                                          onPressed: () => _showRemoveStudentConfirmation(
+                                            context,
+                                            studentId,
+                                            username,
+                                          ),
+                                          tooltip: 'Remove student',
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Show remove student confirmation
+  void _showRemoveStudentConfirmation(
+    BuildContext context,
+    String studentId,
+    String studentName,
+  ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Remove Student',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to remove "$studentName" from "${widget.className}"?\n\nThey will no longer be able to access this class chat.',
+            style: GoogleFonts.poppins(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close confirmation dialog
+                _removeStudent(studentId, studentName);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(
+                'Remove',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Remove student from class
+  Future<void> _removeStudent(String studentId, String studentName) async {
+    try {
+      // Get teacher info
+      final teacherDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user?.uid)
+          .get();
+      final teacherName = teacherDoc.data()?['fullname'] ?? teacherDoc.data()?['username'] ?? 'Teacher';
+
+      // Remove student from class
+      await FirebaseFirestore.instance
+          .collection('classes')
+          .doc(widget.classId)
+          .update({
+        'studentIds': FieldValue.arrayRemove([studentId]),
+      });
+
+      // Send notification to removed student
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentId)
+          .collection('notifications')
+          .add({
+        'title': 'Removed from Class',
+        'message': 'You have been removed from "${widget.className}" by $teacherName',
+        'from': user?.uid ?? '',
+        'fromName': teacherName,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+        'pinned': false,
+        'type': 'class_removed',
+        'classId': widget.classId,
+        'className': widget.className,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$studentName has been removed from the class'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error removing student: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // Show class info dialog

@@ -1,4 +1,4 @@
-// ignore_for_file: avoid_print, deprecated_member_use, curly_braces_in_flow_control_structures
+// ignore_for_file: avoid_print, deprecated_member_use, curly_braces_in_flow_control_structures, unnecessary_to_list_in_spreads
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,15 +28,16 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   bool _muted = false;
   bool _cameraOff = false;
-  int? _remoteUid;
+  final Set<int> _remoteUsers = {}; // Track multiple remote users
+  final Map<int, Map<String, dynamic>> _userProfiles = {}; // Cache user profile data
+  int? _focusedUid; // Track which video is focused/selected
   bool _callEnded = false;
-  bool _isSharingScreen = false;
   bool _showChat = false;
   int _participantCount = 1; // Start with 1 (self)
   final TextEditingController _chatController = TextEditingController();
-  final List<Map<String, String>> _chatMessages = [];
   late StreamSubscription<DocumentSnapshot> _callStatusStream;
   late StreamSubscription<QuerySnapshot> _handsRaisedStream;
+  StreamSubscription<QuerySnapshot>? _chatMessagesStream;
   List<Map<String, dynamic>> _raisedHands = [];
 
   @override
@@ -47,13 +48,102 @@ class _CallScreenState extends State<CallScreen> {
     _listenForRaisedHands();
     _checkCameraAvailability();
 
-    // Initialize with provided remote UID
-    _remoteUid = widget.remoteUid;
-    if (_remoteUid != null) {
+    // Initialize with provided remote UID if exists
+    if (widget.remoteUid != null) {
+      _remoteUsers.add(widget.remoteUid!);
+      _loadUserProfile(widget.remoteUid!);
       _participantCount = 2; // Self + remote user
     }
+    
+    _updateParticipantCount(_participantCount);
 
-    print("CallScreen initialized with remote UID: $_remoteUid");
+    print("CallScreen initialized with ${_remoteUsers.length} remote user(s)");
+  }
+
+  // Load user profile from Firestore (for students)
+  Future<void> _loadUserProfile(int uid) async {
+    try {
+      // Get students from the class
+      final callDoc = await FirebaseFirestore.instance
+          .collection('VideoCalls')
+          .doc(widget.vcId)
+          .get();
+      
+      if (callDoc.exists) {
+        final callData = callDoc.data();
+        final classId = callData?['classId'];
+        
+        if (classId != null) {
+          // Get class document to find student IDs
+          final classDoc = await FirebaseFirestore.instance
+              .collection('classes')
+              .doc(classId)
+              .get();
+          
+          if (classDoc.exists) {
+            final classData = classDoc.data();
+            final studentIds = List<String>.from(classData?['studentIds'] ?? []);
+            
+            // Fetch all students from the class
+            for (var studentId in studentIds) {
+              try {
+                final studentDoc = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(studentId)
+                    .get();
+                
+                if (studentDoc.exists) {
+                  final studentData = studentDoc.data();
+                  // For now, use first student found (in real app, need proper UID mapping)
+                  setState(() {
+                    _userProfiles[uid] = {
+                      'username': studentData?['username'] ?? 'Student',
+                      'profileImage': studentData?['profileImage'],
+                    };
+                  });
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+      }
+      
+      // Fallback: just get any student
+      if (!_userProfiles.containsKey(uid)) {
+        final userQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .where('role', isEqualTo: 'student')
+            .limit(1)
+            .get();
+        
+        if (userQuery.docs.isNotEmpty) {
+          final userData = userQuery.docs.first.data();
+          setState(() {
+            _userProfiles[uid] = {
+              'username': userData['username'] ?? 'Student',
+              'profileImage': userData['profileImage'],
+            };
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading user profile: $e');
+    }
+  }
+
+  // Update participant count in Firestore
+  Future<void> _updateParticipantCount(int count) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('VideoCalls')
+          .doc(widget.vcId)
+          .update({'participantCount': count});
+    } catch (e) {
+      print('Error updating participant count: $e');
+    }
   }
 
   // Listen for raised hands from students
@@ -64,16 +154,41 @@ class _CallScreenState extends State<CallScreen> {
         .collection('raisedHands')
         .orderBy('raisedAt', descending: false)
         .snapshots()
-        .listen((snapshot) {
-      setState(() {
-        _raisedHands = snapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'userId': data['userId'],
+        .listen((snapshot) async {
+      List<Map<String, dynamic>> hands = [];
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final userId = data['userId'];
+        
+        // Fetch username from users collection
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
+          
+          final username = userDoc.data()?['username'] ?? 'Student ${userId.substring(0, 6)}';
+          
+          hands.add({
+            'userId': userId,
+            'username': username,
             'docId': doc.id,
             'raisedAt': data['raisedAt'],
-          };
-        }).toList();
+          });
+        } catch (e) {
+          print('Error fetching username: $e');
+          hands.add({
+            'userId': userId,
+            'username': 'Student ${userId.substring(0, 6)}',
+            'docId': doc.id,
+            'raisedAt': data['raisedAt'],
+          });
+        }
+      }
+      
+      setState(() {
+        _raisedHands = hands;
       });
     });
   }
@@ -174,10 +289,12 @@ class _CallScreenState extends State<CallScreen> {
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           print("CallScreen: Remote user $remoteUid joined");
           setState(() {
-            _remoteUid = remoteUid;
-            _participantCount++;
+            _remoteUsers.add(remoteUid);
+            _participantCount = _remoteUsers.length + 1; // +1 for teacher
           });
-          _showUserJoinedDialog(remoteUid);
+          _loadUserProfile(remoteUid);
+          _updateParticipantCount(_participantCount);
+          // Removed user joined dialog
         },
         onUserOffline: (
           RtcConnection connection,
@@ -186,18 +303,19 @@ class _CallScreenState extends State<CallScreen> {
         ) {
           print("CallScreen: Remote user $remoteUid left with reason: $reason");
 
-          // If the remote user left and it matches our tracked remote UID
-          if (_remoteUid == remoteUid && !_callEnded && !isNavigatingBack) {
+          if (_remoteUsers.contains(remoteUid) && !_callEnded && !isNavigatingBack) {
             print("Remote user disconnected");
 
             setState(() {
-              _remoteUid = null;
-              _participantCount--;
+              _remoteUsers.remove(remoteUid);
+              _userProfiles.remove(remoteUid);
+              _participantCount = _remoteUsers.length + 1; // +1 for teacher
             });
+            _updateParticipantCount(_participantCount);
 
-            // Show the alert dialog with option to wait or leave
+            // Show notification that a user left
             if (mounted) {
-              _showUserLeftDialog();
+              _showUserLeftNotification(remoteUid);
             }
           }
         },
@@ -220,64 +338,20 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  void _showUserJoinedDialog(int uid) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
-            Icon(Icons.person_add, color: Colors.green, size: 28),
-            SizedBox(width: 12),
-            Text('User Joined'),
+  void _showUserLeftNotification(int uid) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.person_off, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('A student left the call (${_remoteUsers.length} remaining)'),
+            ),
           ],
         ),
-        content: Text('User $uid joined the call'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    // Auto dismiss after 2 seconds
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    });
-  }
-
-  void _showUserLeftDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
-            Icon(Icons.person_off, color: Colors.orange, size: 28),
-            SizedBox(width: 12),
-            Text('Student Disconnected'),
-          ],
-        ),
-        content: const Text('The student has left the call. You can wait for them to rejoin or end the call.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: const Text('Wait'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _handleCallEnd(isRemoteEnd: false);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('End Call'),
-          ),
-        ],
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -354,6 +428,44 @@ class _CallScreenState extends State<CallScreen> {
 
   bool isNavigatingBack = false;
 
+  // Show confirmation dialog before ending call
+  void _showEndCallConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.warning, color: Colors.orange, size: 28),
+            SizedBox(width: 12),
+            Text('End Call'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to end the call for everyone? All participants will be disconnected.',
+          style: TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Close confirmation dialog
+              _handleCallEnd(isRemoteEnd: false);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('End Call'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleCallEnd({bool isRemoteEnd = false}) async {
     if (_callEnded || isNavigatingBack) return; // Prevent duplicate handling
 
@@ -403,7 +515,7 @@ class _CallScreenState extends State<CallScreen> {
     return WillPopScope(
       onWillPop: () async {
         if (!_callEnded && !isNavigatingBack) {
-          await _handleCallEnd();
+          _showEndCallConfirmation();
         }
         return false;
       },
@@ -411,89 +523,73 @@ class _CallScreenState extends State<CallScreen> {
         backgroundColor: Colors.black,
         body: Stack(
           children: [
-            // Remote video view (full screen)
-            Positioned.fill(child: _remoteVideo()),
+            // Video grid view (full screen, includes local + remote users)
+            // Hide video when chat is open
+            if (!_showChat)
+              Positioned.fill(child: _remoteVideo()),
 
-            // Local video preview (top-right, rounded)
-            Positioned(
-              top: 40,
-              right: 16,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+            // Participant count (top-left) - only show when chat is closed
+            if (!_showChat)
+              Positioned(
+                top: 40,
+                left: 16,
                 child: Container(
-                  width: 120,
-                  height: 160,
-                  color: Colors.black,
-                  child: AgoraVideoView(
-                    controller: VideoViewController(
-                      rtcEngine: widget.engine,
-                      canvas: const VideoCanvas(uid: 0),
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.people, color: Colors.white, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$_participantCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
 
-            // Participant count (top-left)
-            Positioned(
-              top: 40,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.people, color: Colors.white, size: 18),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$_participantCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+            // Connection status indicator - only show when chat is closed
+            if (!_showChat)
+              Positioned(
+                top: 90,
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _remoteUsers.isNotEmpty ? Icons.wifi : Icons.wifi_off,
+                        color: _remoteUsers.isNotEmpty ? Colors.green : Colors.red,
+                        size: 16,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Text(
+                        _remoteUsers.isNotEmpty ? "Connected" : "Waiting...",
+                        style: TextStyle(
+                          color: _remoteUsers.isNotEmpty ? Colors.green : Colors.red,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // Connection status indicator
-            Positioned(
-              top: 90,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _remoteUid != null ? Icons.wifi : Icons.wifi_off,
-                      color: _remoteUid != null ? Colors.green : Colors.red,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _remoteUid != null ? "Connected" : "Waiting...",
-                      style: TextStyle(
-                        color: _remoteUid != null ? Colors.green : Colors.red,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Raised hands list (left side, below connection status)
-            if (_raisedHands.isNotEmpty)
+            // Raised hands list (left side, below connection status) - only show when chat is closed
+            if (_raisedHands.isNotEmpty && !_showChat)
               Positioned(
                 top: 150,
                 left: 16,
@@ -562,7 +658,7 @@ class _CallScreenState extends State<CallScreen> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Student ${hand['userId'].toString().substring(0, 6)}...',
+                                      hand['username'] ?? 'Student',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 12,
@@ -592,18 +688,15 @@ class _CallScreenState extends State<CallScreen> {
                 ),
               ),
 
-            // Chat panel (right side)
+            // Chat panel (full screen overlay) - covers everything when open
             if (_showChat)
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: 300,
+              Positioned.fill(
                 child: _buildChatPanel(),
               ),
 
-            // Bottom control buttons
-            Align(
+            // Bottom control buttons - only show when chat is closed
+            if (!_showChat)
+              Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 40),
@@ -637,13 +730,6 @@ class _CallScreenState extends State<CallScreen> {
                       ),
                       const SizedBox(width: 16),
                       _controlButton(
-                        icon: Icons.screen_share,
-                        color: Colors.white,
-                        bgColor: _isSharingScreen ? Colors.blue : Colors.grey.shade700,
-                        onTap: _toggleScreenShare,
-                      ),
-                      const SizedBox(width: 16),
-                      _controlButton(
                         icon: Icons.chat,
                         color: Colors.white,
                         bgColor: _showChat ? Colors.blue : Colors.grey.shade700,
@@ -665,7 +751,7 @@ class _CallScreenState extends State<CallScreen> {
                         icon: Icons.call_end,
                         color: Colors.white,
                         bgColor: Colors.red,
-                        onTap: () => _handleCallEnd(),
+                        onTap: () => _showEndCallConfirmation(),
                       ),
                     ],
                   ),
@@ -676,25 +762,6 @@ class _CallScreenState extends State<CallScreen> {
         ),
       ),
     );
-  }
-
-  // Toggle screen share
-  void _toggleScreenShare() async {
-    try {
-      if (_isSharingScreen) {
-        await widget.engine.stopScreenCapture();
-        setState(() => _isSharingScreen = false);
-      } else {
-        await widget.engine.startScreenCapture(
-          const ScreenCaptureParameters2(captureAudio: true, captureVideo: true),
-        );
-        setState(() => _isSharingScreen = true);
-      }
-    } catch (e) {
-      print('Error toggling screen share: $e');
-      _showErrorDialog('Screen Share Error', 
-          'Failed to ${_isSharingScreen ? "stop" : "start"} screen sharing: $e');
-    }
   }
 
   // Build chat panel
@@ -732,59 +799,76 @@ class _CallScreenState extends State<CallScreen> {
               ],
             ),
           ),
-          // Messages list
+          // Messages list with StreamBuilder
           Expanded(
-            child: _chatMessages.isEmpty
-                ? const Center(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('VideoCalls')
+                  .doc(widget.vcId)
+                  .collection('messages')
+                  .orderBy('timestamp', descending: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
                     child: Text(
                       'No messages yet',
                       style: TextStyle(color: Colors.white54),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _chatMessages.length,
-                    itemBuilder: (context, index) {
-                      final message = _chatMessages[index];
-                      final isMe = message['sender'] == 'You';
-                      return Align(
-                        alignment:
-                            isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isMe ? Colors.blue : Colors.grey.shade800,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                message['sender']!,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                message['text']!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
+                  );
+                }
+
+                final messages = snapshot.data!.docs;
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final messageData = messages[index].data() as Map<String, dynamic>;
+                    final senderName = messageData['senderName'] ?? 'Unknown';
+                    final text = messageData['text'] ?? '';
+                    final isTeacher = messageData['isTeacher'] ?? false;
+
+                    return Align(
+                      alignment:
+                          isTeacher ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
-                      );
-                    },
-                  ),
+                        decoration: BoxDecoration(
+                          color: isTeacher ? Colors.blue : Colors.grey.shade800,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              senderName,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              text,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
           // Message input
           Container(
@@ -834,42 +918,26 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   // Send chat message
-  void _sendMessage() {
+  Future<void> _sendMessage() async {
     final text = _chatController.text.trim();
     if (text.isEmpty) return;
 
-    setState(() {
-      _chatMessages.add({'sender': 'You', 'text': text});
-    });
-
     _chatController.clear();
 
-    // Here you could send the message via Firestore or Agora data stream
-    // For now, it's local only
-  }
-
-  // Show error dialog
-  void _showErrorDialog(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 28),
-            const SizedBox(width: 12),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+    try {
+      await FirebaseFirestore.instance
+          .collection('VideoCalls')
+          .doc(widget.vcId)
+          .collection('messages')
+          .add({
+        'text': text,
+        'senderName': 'Teacher',
+        'isTeacher': true,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error sending message: $e');
+    }
   }
 
   /// Styled Control Button Widget
@@ -889,21 +957,29 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  /// Remote Video View
+  /// Remote Video View - Grid layout for multiple users (Web: responsive with 200x200 boxes)
   Widget _remoteVideo() {
-    // First check if we have a remote UID from props or state
-    final remoteUid = _remoteUid ?? widget.remoteUid;
-
-    if (remoteUid != null) {
-      print("Rendering remote video with UID: $remoteUid");
-      return AgoraVideoView(
-        controller: VideoViewController.remote(
-          rtcEngine: widget.engine,
-          canvas: VideoCanvas(uid: remoteUid),
-          connection: RtcConnection(channelId: widget.channelName),
-        ),
-      );
-    } else {
+    // Get all users: focused first, then local (0), then remote users
+    List<int> allUsers = [];
+    
+    // Add focused user first if exists
+    if (_focusedUid != null && (_focusedUid == 0 || _remoteUsers.contains(_focusedUid))) {
+      allUsers.add(_focusedUid!);
+    }
+    
+    // Add local user if not already added
+    if (!allUsers.contains(0)) {
+      allUsers.add(0);
+    }
+    
+    // Add remaining remote users
+    for (var uid in _remoteUsers) {
+      if (!allUsers.contains(uid)) {
+        allUsers.add(uid);
+      }
+    }
+    
+    if (allUsers.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -911,19 +987,265 @@ class _CallScreenState extends State<CallScreen> {
             CircularProgressIndicator(color: Colors.white70),
             SizedBox(height: 20),
             Text(
-              'Waiting for the other user to join...',
+              'Waiting for students to join...',
               style: TextStyle(color: Colors.white70, fontSize: 18),
             ),
           ],
         ),
       );
     }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate responsive grid based on screen width - max 200px per box
+        final double boxSize = 200.0; // Fixed 200px for all video boxes
+        final double focusedBoxSize = 200.0; // Same size (200px) for focused video
+        final double spacing = 8.0;
+        
+        // If there's a focused video, show it larger in center, others in grid below
+        if (_focusedUid != null) {
+          final focusedIndex = allUsers.indexOf(_focusedUid!);
+          if (focusedIndex != -1) {
+            // Move focused to first
+            allUsers.removeAt(focusedIndex);
+            allUsers.insert(0, _focusedUid!);
+          }
+          
+          // Calculate grid for remaining users
+          final remainingUsers = allUsers.length > 1 ? allUsers.length - 1 : 1;
+          final int crossAxisCount = ((constraints.maxWidth - spacing) / (boxSize + spacing)).floor().clamp(1, remainingUsers);
+          
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                // Focused video (larger, centered) - tap to unfocus
+                Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _focusedUid = null; // Unfocus by tapping again
+                      });
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.all(16),
+                      width: focusedBoxSize,
+                      height: focusedBoxSize,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue, width: 4),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _buildVideoView(_focusedUid!),
+                            _buildVideoOverlay(_focusedUid!, true),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Other users in grid
+                if (allUsers.length > 1)
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(8),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: spacing,
+                      mainAxisSpacing: spacing,
+                      childAspectRatio: 1.0,
+                    ),
+                    itemCount: allUsers.length - 1,
+                    itemBuilder: (context, index) {
+                      final uid = allUsers[index + 1];
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _focusedUid = uid;
+                          });
+                        },
+                        child: Container(
+                          width: boxSize,
+                          height: boxSize,
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: uid == 0 ? Colors.blue : Colors.grey.shade700,
+                              width: 2,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                _buildVideoView(uid),
+                                _buildVideoOverlay(uid, false),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          );
+        }
+        
+        // No focused video - show all in grid
+        final int crossAxisCount = ((constraints.maxWidth - spacing) / (boxSize + spacing)).floor().clamp(1, allUsers.length);
+        
+        return Center(
+          child: GridView.builder(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(8),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
+              childAspectRatio: 1.0, // Square boxes (200x200 max)
+            ),
+            itemCount: allUsers.length,
+            itemBuilder: (context, index) {
+              final uid = allUsers[index];
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _focusedUid = uid;
+                  });
+                },
+                child: Container(
+                  width: boxSize,
+                  height: boxSize,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: uid == 0 ? Colors.blue : Colors.grey.shade700,
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildVideoView(uid),
+                        _buildVideoOverlay(uid, false),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+  
+  // Build video view widget
+  Widget _buildVideoView(int uid) {
+    final isLocalUser = uid == 0;
+    
+    if (isLocalUser) {
+      // Local user camera
+      return AgoraVideoView(
+        controller: VideoViewController(
+          rtcEngine: widget.engine,
+          canvas: const VideoCanvas(
+            uid: 0,
+            sourceType: VideoSourceType.videoSourceCamera,
+          ),
+        ),
+      );
+    } else {
+      // Remote users
+      return AgoraVideoView(
+        controller: VideoViewController.remote(
+          rtcEngine: widget.engine,
+          canvas: VideoCanvas(
+            uid: uid,
+            sourceType: VideoSourceType.videoSourceCamera,
+          ),
+          connection: RtcConnection(channelId: widget.channelName),
+        ),
+        onAgoraVideoViewCreated: (viewId) {
+          print("Video view created for UID: $uid");
+        },
+      );
+    }
+  }
+  
+  // Build video overlay (username, indicators)
+  Widget _buildVideoOverlay(int uid, bool isFocused) {
+    final userProfile = _userProfiles[uid];
+    final isLocalUser = uid == 0;
+    
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Username overlay
+        Positioned(
+          bottom: 8,
+          left: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              isLocalUser
+                  ? 'Teacher'
+                  : (userProfile?['username'] ?? 'Student'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        
+        // Focus indicator
+        if (isFocused)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.center_focus_strong,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
   void dispose() {
     _callStatusStream.cancel();
     _handsRaisedStream.cancel();
+    _chatMessagesStream?.cancel();
     _chatController.dispose();
     super.dispose();
   }

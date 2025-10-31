@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
 import 'package:lexi_on_web/teacher/classroom.dart';
+import 'package:lexi_on_web/teacher/class1_dialogs.dart';
 
 class MyClass1 extends StatefulWidget {
   const MyClass1({super.key});
@@ -74,7 +75,7 @@ class _MyClass1State extends State<MyClass1> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Class'),
         content: Text(
-          'Are you sure you want to delete "$className"?\n\nThis action cannot be undone.',
+          'Are you sure you want to delete "$className"?\n\nAll students will be removed from this class. This action cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -93,6 +94,36 @@ class _MyClass1State extends State<MyClass1> {
     if (confirm != true) return;
 
     try {
+      // Get class data to notify students
+      final classDoc = await _firestore.collection('classes').doc(classId).get();
+      final classData = classDoc.data();
+      
+      if (classData != null) {
+        final studentIds = List<String>.from(classData['studentIds'] ?? []);
+        final teacherName = classData['teacherName'] ?? 'Teacher';
+
+        // Notify all students about class deletion
+        for (String studentId in studentIds) {
+          await _firestore
+              .collection('users')
+              .doc(studentId)
+              .collection('notifications')
+              .add({
+                'title': 'Class Deleted',
+                'message': 'The class "$className" has been deleted by $teacherName',
+                'from': _auth.currentUser?.uid ?? '',
+                'fromName': teacherName,
+                'timestamp': FieldValue.serverTimestamp(),
+                'read': false,
+                'pinned': false,
+                'type': 'class_deleted',
+                'classId': classId,
+                'className': className,
+              });
+        }
+      }
+
+      // Delete the class
       await _firestore.collection('classes').doc(classId).delete();
 
       if (mounted) {
@@ -115,6 +146,161 @@ class _MyClass1State extends State<MyClass1> {
     }
   }
 
+  // Show class options bottom sheet
+  void _showClassOptions(Map<String, dynamic> classData) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        final className = classData['className'] ?? 'Unnamed Class';
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // Class name
+              Text(
+                className,
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Options
+              _buildOptionTile(
+                icon: Icons.person_add,
+                title: 'Add Students',
+                subtitle: 'Add new students to this class',
+                color: Colors.blue,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAddStudentsDialog(classData);
+                },
+              ),
+              const SizedBox(height: 12),
+              _buildOptionTile(
+                icon: Icons.palette,
+                title: 'Change Color',
+                subtitle: 'Customize the class color',
+                color: Colors.purple,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showColorPickerDialog(classData);
+                },
+              ),
+              const SizedBox(height: 12),
+              _buildOptionTile(
+                icon: Icons.info_outline,
+                title: 'View Details',
+                subtitle: 'See class information and students',
+                color: Colors.grey,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showClassDetails(classData);
+                },
+              ),
+              const SizedBox(height: 12),
+              _buildOptionTile(
+                icon: Icons.delete,
+                title: 'Delete Class',
+                subtitle: 'Permanently delete this class',
+                color: Colors.red,
+                onTap: () {
+                  Navigator.pop(context);
+                  final classId = classData['classId'];
+                  final className = classData['className'] ?? 'Unnamed Class';
+                  _deleteClass(classId, className);
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: color,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Show class details
   void _showClassDetails(Map<String, dynamic> classData) {
     showDialog(
@@ -128,7 +314,35 @@ class _MyClass1State extends State<MyClass1> {
             Navigator.pop(context);
             _deleteClass(classId, className);
           },
+          onAddStudents: () {
+            Navigator.pop(context);
+            _showAddStudentsDialog(classData);
+          },
+          onChangeColor: () {
+            Navigator.pop(context);
+            _showColorPickerDialog(classData);
+          },
         );
+      },
+    );
+  }
+
+  // Show add students dialog
+  void _showAddStudentsDialog(Map<String, dynamic> classData) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AddStudentsDialog(classData: classData);
+      },
+    );
+  }
+
+  // Show color picker dialog
+  void _showColorPickerDialog(Map<String, dynamic> classData) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return ColorPickerDialog(classData: classData);
       },
     );
   }
@@ -292,6 +506,12 @@ class _MyClass1State extends State<MyClass1> {
                           classData['studentIds'] ?? [],
                         );
                         final createdAt = classData['createdAt'] as Timestamp?;
+                        
+                        // Get custom color or default to blue
+                        final colorValue = classData['color'] as int?;
+                        final classColor = colorValue != null 
+                            ? Color(colorValue) 
+                            : Colors.blue;
 
                         return GestureDetector(
                           onTap: () {
@@ -306,13 +526,13 @@ class _MyClass1State extends State<MyClass1> {
                               ),
                             );
                           },
-                          onLongPress: () => _showClassDetails(classData),
+                          onLongPress: () => _showClassOptions(classData),
                           child: Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  Colors.blue.withOpacity(0.8),
-                                  Colors.blue.withOpacity(0.6),
+                                  classColor.withOpacity(0.8),
+                                  classColor.withOpacity(0.6),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -584,6 +804,7 @@ class _CreateClassDialogState extends State<CreateClassDialog> {
         'teacherName': teacherName,
         'studentIds': _selectedStudentIds,
         'createdAt': FieldValue.serverTimestamp(),
+        'color': Colors.blue.value, // Default color
       });
 
       // Send notification to each selected student
@@ -967,8 +1188,16 @@ class _CreateClassDialogState extends State<CreateClassDialog> {
 class ClassDetailsDialog extends StatelessWidget {
   final Map<String, dynamic> classData;
   final VoidCallback? onDelete;
+  final VoidCallback? onAddStudents;
+  final VoidCallback? onChangeColor;
 
-  const ClassDetailsDialog({super.key, required this.classData, this.onDelete});
+  const ClassDetailsDialog({
+    super.key,
+    required this.classData,
+    this.onDelete,
+    this.onAddStudents,
+    this.onChangeColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1154,8 +1383,50 @@ class ClassDetailsDialog extends StatelessWidget {
                       },
                     ),
             ),
+            const SizedBox(height: 16),
+            
+            // Action buttons
+            if (onAddStudents != null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onAddStudents,
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Add Students'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
+            if (onChangeColor != null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onChangeColor,
+                  icon: const Icon(Icons.palette),
+                  label: const Text('Change Color'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
             if (onDelete != null) ...[
-              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
