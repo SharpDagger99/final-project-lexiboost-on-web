@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:lexi_on_web/start.dart';
 
 // Import all your pages
@@ -200,7 +201,7 @@ class _MyAdminState extends State<MyAdmin> {
                                     icon: Icons.videogame_asset,
                                     title: "Game Create",
                                     index: 2),
-                                _buildSidebarItem(
+                                _buildSidebarItemWithBadge(
                                     icon: Icons.receipt_long, title: "Report", index: 3),
 
                                 const Spacer(),
@@ -272,7 +273,7 @@ class _MyAdminState extends State<MyAdmin> {
                             icon: Icons.videogame_asset,
                             title: "Game Create",
                             index: 2),
-                        _buildSidebarItem(
+                        _buildSidebarItemWithBadge(
                             icon: Icons.receipt_long, title: "Report", index: 3),
 
                         const Spacer(),
@@ -322,6 +323,85 @@ class _MyAdminState extends State<MyAdmin> {
             isSidebarOpen = false; // Close sidebar on selection
           });
         }
+      },
+    );
+  }
+
+  Widget _buildSidebarItemWithBadge({
+    required IconData icon,
+    required String title,
+    required int index,
+  }) {
+    bool isSelected = selectedIndex == index;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('reports')
+          .snapshots(),
+      builder: (context, snapshot) {
+        int badgeCount = 0;
+        
+        if (snapshot.hasData) {
+          // Count pending reports (status: pending or null)
+          badgeCount = snapshot.data!.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final status = data['status'] as String?;
+            return status == null || status == 'pending';
+          }).length;
+        }
+
+        return ListTile(
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? Colors.blue : Colors.white70,
+              ),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF2C2F2C), width: 2),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : '$badgeCount',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          title: Text(
+            title,
+            style: GoogleFonts.poppins(
+              color: isSelected ? Colors.blue : Colors.white,
+              fontSize: 15,
+            ),
+          ),
+          selected: isSelected,
+          selectedTileColor: Colors.white12,
+          onTap: () {
+            setState(() {
+              selectedIndex = index;
+              isSidebarOpen = false; // Close sidebar on selection
+            });
+          },
+        );
       },
     );
   }
