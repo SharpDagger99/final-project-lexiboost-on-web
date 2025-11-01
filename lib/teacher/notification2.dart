@@ -478,12 +478,20 @@ class _MyNotification2State extends State<MyNotification2> {
                                           ? Icons.message
                                           : type == 'teacher_accepted'
                                               ? Icons.check_circle
-                                              : Icons.notifications,
+                                              : type == 'game_hidden' || type == 'game_removed'
+                                                  ? Icons.visibility_off
+                                                  : type == 'game_restored'
+                                                      ? Icons.restore
+                                                      : Icons.notifications,
                                       color: type == 'message'
                                           ? Colors.blue
                                           : type == 'teacher_accepted'
                                               ? Colors.green
-                                              : Colors.orange,
+                                              : type == 'game_hidden' || type == 'game_removed'
+                                                  ? Colors.orange
+                                                  : type == 'game_restored'
+                                                      ? Colors.green
+                                                      : Colors.orange,
                                       size: 24,
                                     ),
                                   ),

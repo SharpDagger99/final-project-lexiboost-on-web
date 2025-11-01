@@ -23,7 +23,7 @@ class ChartWidgets {
     }
 
     final chartConfig = config ?? ChartConfig.defaultConfig();
-    final maxValue = data.map((e) => e.count).reduce((a, b) => a > b ? a : b);
+    // Note: maxValue no longer needed since Y-axis is fixed at 0-100% for percentage charts
 
     return SizedBox(
       height: height,
@@ -81,18 +81,22 @@ class ChartWidgets {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: 1,
+                interval: 10, // Show every 10% (0%, 10%, 20%, etc.)
                 getTitlesWidget: (double value, TitleMeta meta) {
-                  return Text(
-                    value.toInt().toString(),
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withOpacity(0.6),
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      '${value.toInt()}%',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.right,
                     ),
                   );
                 },
-                reservedSize: 42,
+                reservedSize: 55, // Increased reserved space for percentage labels
               ),
             ),
           ),
@@ -100,7 +104,7 @@ class ChartWidgets {
           minX: 0,
           maxX: (data.length - 1).toDouble(),
           minY: 0,
-          maxY: (maxValue + 10).toDouble(),
+          maxY: 100.0, // Percentage scale (0-100%)
           lineBarsData: [
             LineChartBarData(
               spots: data.asMap().entries.map((entry) {
@@ -140,7 +144,7 @@ class ChartWidgets {
                 return touchedBarSpots.map((barSpot) {
                   final flSpot = barSpot;
                   return LineTooltipItem(
-                    '${data[flSpot.x.toInt()].month}\n${flSpot.y.toInt()} users',
+                    '${data[flSpot.x.toInt()].month}\n${flSpot.y.toInt()}%',
                     GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

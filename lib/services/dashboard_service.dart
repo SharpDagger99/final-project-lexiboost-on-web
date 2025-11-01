@@ -99,22 +99,32 @@ class DashboardService {
     }
   }
 
-  /// Get user growth data by weekday for the chart
+  /// Get user growth data by weekday for the chart (current week only, percentage-based)
   Future<List<MonthlyChartData>> _getMonthlyGrowthData() async {
     try {
       final now = DateTime.now();
       
+      // Get start of current week (Monday 00:00:00)
+      final daysFromMonday = now.weekday - 1; // 0 = Monday, 6 = Sunday
+      final startOfWeek = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: daysFromMonday));
+      
+      // Get end of current week (Sunday 23:59:59)
+      final endOfWeek = startOfWeek.add(const Duration(days: 7));
+      
       // Initialize weekday stats (Monday = 1, Sunday = 7)
       final weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       final weekdayStats = <String, MonthlyChartData>{};
+      final weekdayCounts = <String, int>{};
       
       for (var i = 0; i < 7; i++) {
         final weekdayName = weekdayNames[i];
         weekdayStats[weekdayName] = MonthlyChartData(
           month: weekdayName,
-          count: 0,
-          date: now.subtract(Duration(days: 6 - i)), // For sorting
+          count: 0, // Will be converted to percentage
+          date: startOfWeek.add(Duration(days: i)),
         );
+        weekdayCounts[weekdayName] = 0;
       }
 
       // Fetch all users (teachers and students)
@@ -128,27 +138,43 @@ class DashboardService {
           .where('role', isEqualTo: 'student')
           .get();
 
-      // Count users by their creation weekday
+      // Count users by their creation weekday (only current week)
       final allUsers = [...teachersSnapshot.docs, ...studentsSnapshot.docs];
+      int totalWeekRegistrations = 0;
 
       for (var doc in allUsers) {
         final data = doc.data();
         if (data['createdAt'] != null) {
           final createdAt = (data['createdAt'] as Timestamp).toDate();
           
-          // Get weekday (1 = Monday, 7 = Sunday)
-          final weekday = createdAt.weekday;
-          final weekdayName = weekdayNames[weekday - 1];
-          
-          if (weekdayStats.containsKey(weekdayName)) {
-            final existingData = weekdayStats[weekdayName]!;
-            weekdayStats[weekdayName] = MonthlyChartData(
-              month: weekdayName,
-              count: existingData.count + 1,
-              date: existingData.date,
-            );
+          // Only count registrations from current week
+          if (createdAt.isAfter(startOfWeek.subtract(const Duration(milliseconds: 1))) &&
+              createdAt.isBefore(endOfWeek)) {
+            // Get weekday (1 = Monday, 7 = Sunday)
+            final weekday = createdAt.weekday;
+            final weekdayName = weekdayNames[weekday - 1];
+            
+            if (weekdayCounts.containsKey(weekdayName)) {
+              weekdayCounts[weekdayName] = (weekdayCounts[weekdayName] ?? 0) + 1;
+              totalWeekRegistrations++;
+            }
           }
         }
+      }
+
+      // Convert counts to percentages (0-100)
+      for (var i = 0; i < 7; i++) {
+        final weekdayName = weekdayNames[i];
+        final count = weekdayCounts[weekdayName] ?? 0;
+        final percentage = totalWeekRegistrations > 0
+            ? (count / totalWeekRegistrations * 100).round()
+            : 0;
+        
+        weekdayStats[weekdayName] = MonthlyChartData(
+          month: weekdayName,
+          count: percentage, // Store as percentage (0-100)
+          date: weekdayStats[weekdayName]!.date,
+        );
       }
 
       // Return in weekday order (Mon to Sun)

@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lexi_on_web/editor/game_save.dart';
 import 'package:lexi_on_web/editor/game_published.dart';
+import 'package:lexi_on_web/editor/game_report.dart';
 
 // Custom page route with fade and slide animation
 class FadeSlidePageRoute extends PageRouteBuilder {
@@ -251,6 +252,20 @@ class _MyGameCreateState extends State<MyGameCreate> {
                       onPressed: () {
                         Navigator.of(context).push(
                           FadeSlidePageRoute(page: const MyGamePublished()),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ---------------- Game Controller Container ---------------- //
+                    _buildOptionCard(
+                      title: "Game Controller",
+                      description: "Manage the teacher's game",
+                      icon: "assets/others/game_report.png",
+                      color: Colors.orange,
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          FadeSlidePageRoute(page: const MyGameReports()),
                         );
                       },
                     ),

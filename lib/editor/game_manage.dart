@@ -867,11 +867,11 @@ class _MyManagementState extends State<MyManagement> {
           ),
           title: Row(
             children: [
-              const Icon(Icons.print, color: Colors.blue, size: 28),
+              const Icon(Icons.download, color: Colors.blue, size: 28),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  "Print Student Reports",
+                  "Download Student Reports",
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
@@ -1010,16 +1010,16 @@ class _MyManagementState extends State<MyManagement> {
                 if (_selectedStudentIds.isEmpty) {
                   Get.snackbar(
                     'No Selection',
-                    'Please select at least one student to print',
+                    'Please select at least one student to download',
                     backgroundColor: Colors.orange,
                     colorText: Colors.white,
                   );
                   return;
                 }
-                _printStudentReports();
+                _showDownloadConfirmation();
               },
               child: Text(
-                "Print (${_selectedStudentIds.length})",
+                "Download (${_selectedStudentIds.length})",
                 style: GoogleFonts.poppins(color: Colors.white),
               ),
             ),
@@ -1029,7 +1029,94 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
-  /// Print student reports
+  /// Helper function to escape CSV fields
+  String _escapeCsvField(String field) {
+    // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+    if (field.contains(',') || field.contains('"') || field.contains('\n')) {
+      return '"${field.replaceAll('"', '""')}"';
+    }
+    return field;
+  }
+
+  /// Show confirmation dialog before downloading student reports
+  Future<void> _showDownloadConfirmation() async {
+    // Get selected students
+    final selectedStudents =
+        allCompletedUsers?.where((userData) {
+          final userId = userData['userId'] as String?;
+          return userId != null && _selectedStudentIds.contains(userId);
+        }).toList() ??
+        [];
+
+    if (selectedStudents.isEmpty) {
+      Get.snackbar(
+        'Error',
+        'No students selected for export',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    // Show confirmation dialog
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2F33),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.download, color: Colors.blue, size: 28),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "Confirm Download",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          "Do you want to download CSV file for ${selectedStudents.length} selected student(s)?",
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _printStudentReports();
+            },
+            child: Text(
+              "Download",
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Export student reports as CSV/Excel
   Future<void> _printStudentReports() async {
     if (gameId == null || title == null) return;
 
@@ -1042,193 +1129,32 @@ class _MyManagementState extends State<MyManagement> {
         [];
 
     if (selectedStudents.isEmpty) {
-      Get.snackbar(
-        'Error',
-        'No students selected for printing',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
       return;
     }
 
-    // Build HTML content for printing
-    // Escape single quotes in title for JavaScript
-    final escapedTitle = title!.replaceAll("'", "\\'");
-    String htmlContent =
-        '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Student Reports - $escapedTitle</title>
-  <script>
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 500);
-    };
-  </script>
-  <style>
-    @media print {
-      @page {
-        margin: 1cm;
-      }
-      body {
-        margin: 0;
-        padding: 20px;
-      }
-    }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 20px;
-      padding: 20px;
-      color: #333;
-      background-color: #fff;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 30px;
-      padding-bottom: 20px;
-      border-bottom: 3px solid #4A148C;
-    }
-    .header h1 {
-      color: #4A148C;
-      margin: 0;
-      font-size: 28px;
-    }
-    .header p {
-      color: #666;
-      margin: 5px 0;
-    }
-    .student-section {
-      page-break-inside: avoid;
-      margin-bottom: 40px;
-      padding: 20px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background-color: #f9f9f9;
-    }
-    .student-header {
-      background-color: #4A148C;
-      color: white;
-      padding: 15px;
-      border-radius: 6px;
-      margin-bottom: 15px;
-    }
-    .student-header h2 {
-      margin: 0;
-      font-size: 22px;
-    }
-    .student-info {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-    .info-item {
-      padding: 10px;
-      background-color: white;
-      border-radius: 4px;
-      border-left: 4px solid #4A148C;
-    }
-    .info-label {
-      font-weight: bold;
-      color: #666;
-      font-size: 12px;
-      text-transform: uppercase;
-      margin-bottom: 5px;
-    }
-    .info-value {
-      color: #333;
-      font-size: 16px;
-    }
-    .rounds-section {
-      margin-top: 20px;
-    }
-    .rounds-title {
-      font-size: 18px;
-      font-weight: bold;
-      color: #4A148C;
-      margin-bottom: 15px;
-    }
-    .rounds-table {
-      width: 100%;
-      border-collapse: collapse;
-      background-color: white;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-    .rounds-table th {
-      background-color: #4A148C;
-      color: white;
-      padding: 12px;
-      text-align: left;
-      font-weight: bold;
-    }
-    .rounds-table td {
-      padding: 12px;
-      border-bottom: 1px solid #eee;
-    }
-    .rounds-table tr:last-child td {
-      border-bottom: none;
-    }
-    .round-correct {
-      color: #4CAF50;
-      font-weight: bold;
-    }
-    .round-failed {
-      color: #F44336;
-      font-weight: bold;
-    }
-    .total-score {
-      margin-top: 20px;
-      padding: 20px;
-      background: linear-gradient(135deg, #FFC107 0%, #FFA000 100%);
-      border-radius: 8px;
-      text-align: center;
-    }
-    .total-score-label {
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 14px;
-      margin-bottom: 5px;
-    }
-    .total-score-value {
-      color: white;
-      font-size: 36px;
-      font-weight: bold;
-    }
-    .no-rounds {
-      padding: 20px;
-      text-align: center;
-      color: #999;
-      font-style: italic;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>$escapedTitle</h1>
-    <p>Student Performance Reports</p>
-    <p>Generated on: ${DateTime.now().toString().split('.')[0]}</p>
-  </div>
-''';
+    // Build CSV content
+    final StringBuffer csvBuffer = StringBuffer();
+    final generatedDate = DateTime.now().toString().split('.')[0];
 
-    // Helper function to escape HTML
-    String escapeHtml(String text) {
-      return text
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#039;');
-    }
+    // Add header
+    csvBuffer.writeln('Game: ${_escapeCsvField(title!)}');
+    csvBuffer.writeln('Generated on: $generatedDate');
+    csvBuffer.writeln(''); // Empty line
+
+    // Main data headers
+    csvBuffer.writeln(
+      'Username,Email,Completed Date,Time Taken,Total Score,Total Rounds,'
+      'Round 1 Status,Round 1 Score,Round 2 Status,Round 2 Score,'
+      'Round 3 Status,Round 3 Score,Round 4 Status,Round 4 Score,'
+      'Round 5 Status,Round 5 Score,Round 6 Status,Round 6 Score,'
+      'Round 7 Status,Round 7 Score,Round 8 Status,Round 8 Score,'
+      'Round 9 Status,Round 9 Score,Round 10 Status,Round 10 Score',
+    );
 
     // Add each student's data
     for (var student in selectedStudents) {
-      final username = escapeHtml(
-        student['username']?.toString() ?? 'Unknown User',
-      );
-      final email = escapeHtml(student['email']?.toString() ?? 'N/A');
+      final username = student['username']?.toString() ?? 'Unknown User';
+      final email = student['email']?.toString() ?? 'N/A';
       final completedAt = student['completedAt'];
       final startedAt = student['startedAt'];
       final completedDate = _formatDate(completedAt);
@@ -1248,109 +1174,62 @@ class _MyManagementState extends State<MyManagement> {
         }
       }
 
-      htmlContent +=
-          '''
-  <div class="student-section">
-    <div class="student-header">
-      <h2>$username</h2>
-    </div>
-    <div class="student-info">
-      <div class="info-item">
-        <div class="info-label">Email</div>
-        <div class="info-value">$email</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">Completed Date</div>
-        <div class="info-value">$completedDate</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">Time Taken</div>
-        <div class="info-value">$duration</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">Total Score</div>
-        <div class="info-value">$totalScore${roundScores.isNotEmpty ? ' / ${roundScores.length}' : ''}</div>
-      </div>
-    </div>
-''';
+      // Build CSV row
+      final List<String> row = [
+        _escapeCsvField(username),
+        _escapeCsvField(email),
+        _escapeCsvField(completedDate),
+        _escapeCsvField(duration),
+        totalScore.toString(),
+        roundScores.isNotEmpty ? roundScores.length.toString() : '0',
+      ];
 
-      // Add rounds table if available
-      if (roundScores.isNotEmpty) {
-        htmlContent += '''
-    <div class="rounds-section">
-      <div class="rounds-title">Round Details</div>
-      <table class="rounds-table">
-        <thead>
-          <tr>
-            <th>Round</th>
-            <th>Status</th>
-            <th>Score</th>
-          </tr>
-        </thead>
-        <tbody>
-''';
-
+      // Add round data (up to 10 rounds)
+      for (int i = 1; i <= 10; i++) {
+        bool found = false;
         for (var roundDataRaw in roundScores) {
           if (roundDataRaw is! Map) continue;
-
           final roundData = Map<String, dynamic>.from(roundDataRaw);
           final round = roundData['round'] ?? 0;
-          final score = roundData['score'] ?? 0;
-          final correct = roundData['correct'] ?? false;
-
-          htmlContent +=
-              '''
-          <tr>
-            <td>Round $round</td>
-            <td class="${correct ? 'round-correct' : 'round-failed'}">
-              ${correct ? '✓ Correct' : '✗ Failed'}
-            </td>
-            <td>$score</td>
-          </tr>
-''';
+          if (round == i) {
+            final score = roundData['score'] ?? 0;
+            final correct = roundData['correct'] ?? false;
+            row.add(correct ? 'Correct' : 'Failed');
+            row.add(score.toString());
+            found = true;
+            break;
+          }
         }
-
-        htmlContent += '''
-        </tbody>
-      </table>
-    </div>
-''';
-      } else {
-        htmlContent += '''
-    <div class="no-rounds">No round data available</div>
-''';
+        if (!found) {
+          row.add('');
+          row.add('');
+        }
       }
 
-      // Add total score card
-      htmlContent +=
-          '''
-    <div class="total-score">
-      <div class="total-score-label">Total Score</div>
-      <div class="total-score-value">$totalScore${roundScores.isNotEmpty ? ' / ${roundScores.length}' : ''}</div>
-    </div>
-  </div>
-''';
+      csvBuffer.writeln(row.join(','));
     }
 
-    htmlContent += '''
-</body>
-</html>
-''';
-
-    // Open print window - use blob URL approach
-    // The HTML contains a script that auto-triggers print when loaded
-    final blob = html.Blob([htmlContent], 'text/html');
+    // Create and download CSV file
+    final csvContent = csvBuffer.toString();
+    final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
     final url = html.Url.createObjectUrlFromBlob(blob);
-    html.window.open(url, '_blank');
-
-    // Clean up URL after a delay
-    Future.delayed(const Duration(seconds: 5), () {
+    
+    // Create download link
+    html.AnchorElement(href: url)
+      ..setAttribute(
+        'download',
+        'Student_Reports_${DateTime.now().millisecondsSinceEpoch}.csv',
+      )
+      ..click();
+    
+    // Clean up
+    Future.delayed(const Duration(seconds: 1), () {
       html.Url.revokeObjectUrl(url);
     });
 
     Get.snackbar(
       'Success',
-      'Print dialog opened for ${selectedStudents.length} student(s)',
+      'CSV file downloaded for ${selectedStudents.length} student(s)',
       backgroundColor: Colors.green,
       colorText: Colors.white,
     );
@@ -1808,13 +1687,13 @@ class _MyManagementState extends State<MyManagement> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     const Icon(
-                                      Icons.print,
+                                      Icons.download,
                                       color: Colors.white,
                                       size: 16,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      "Print",
+                                      "Download",
                                       style: GoogleFonts.poppins(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,

@@ -1,5 +1,6 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter, unnecessary_brace_in_string_interps
 
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/chart_data.dart';
@@ -56,6 +57,11 @@ class _MyDashBoardState extends State<MyDashBoard> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: _showDownloadConfirmation,
+            tooltip: 'Download Dashboard',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadDashboardData,
             tooltip: 'Refresh Data',
@@ -99,16 +105,32 @@ class _MyDashBoardState extends State<MyDashBoard> {
                           SizedBox(height: _getResponsiveSpacing(context) * 2),
 
                           // User Growth Chart
-                          Text(
-                            'User Registrations by Weekday',
-                            style: GoogleFonts.poppins(
-                              fontSize: _getResponsiveFontSize(
-                                context,
-                                base: 20,
+                          Row(
+                            children: [
+                              Text(
+                                'User Registrations by Weekday',
+                                style: GoogleFonts.poppins(
+                                  fontSize: _getResponsiveFontSize(
+                                    context,
+                                    base: 20,
+                                  ),
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
                               ),
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '(${_getCurrentWeekDateRange()})',
+                                style: GoogleFonts.poppins(
+                                  fontSize: _getResponsiveFontSize(
+                                    context,
+                                    base: 14,
+                                  ),
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
                           ),
                           SizedBox(height: _getResponsiveSpacing(context)),
                           _buildUserGrowthChart(),
@@ -173,10 +195,39 @@ class _MyDashBoardState extends State<MyDashBoard> {
 
   double _getChartHeight(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    if (width >= 1200) return 400;
-    if (width >= 800) return 360;
-    if (width >= 600) return 320;
-    return 280;
+    if (width >= 1200) return 450; // Increased from 400
+    if (width >= 800) return 400; // Increased from 360
+    if (width >= 600) return 360; // Increased from 320
+    return 320; // Increased from 280
+  }
+
+  /// Get current week date range (Monday - Sunday)
+  String _getCurrentWeekDateRange() {
+    final now = DateTime.now();
+    final daysFromMonday = now.weekday - 1;
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: daysFromMonday));
+    final endOfWeek = startOfWeek.add(const Duration(days: 6));
+    
+    // Format: "MMM dd - MMM dd, yyyy"
+    final startMonth = _getMonthAbbreviation(startOfWeek.month);
+    final endMonth = _getMonthAbbreviation(endOfWeek.month);
+    
+    if (startOfWeek.year == endOfWeek.year) {
+      if (startOfWeek.month == endOfWeek.month) {
+        return '${startMonth} ${startOfWeek.day} - ${endOfWeek.day}, ${startOfWeek.year}';
+      } else {
+        return '${startMonth} ${startOfWeek.day} - ${endMonth} ${endOfWeek.day}, ${startOfWeek.year}';
+      }
+    } else {
+      return '${startMonth} ${startOfWeek.day}, ${startOfWeek.year} - ${endMonth} ${endOfWeek.day}, ${endOfWeek.year}';
+    }
+  }
+
+  String _getMonthAbbreviation(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
   }
 
   Widget _buildStatsGrid() {
@@ -441,5 +492,151 @@ class _MyDashBoardState extends State<MyDashBoard> {
         ),
       ],
     );
+  }
+
+  /// Helper function to escape CSV fields
+  String _escapeCsvField(String field) {
+    // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+    if (field.contains(',') || field.contains('"') || field.contains('\n')) {
+      return '"${field.replaceAll('"', '""')}"';
+    }
+    return field;
+  }
+
+  /// Show confirmation dialog before downloading dashboard data
+  Future<void> _showDownloadConfirmation() async {
+    if (!mounted) return;
+
+    // Show confirmation dialog
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A3E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.download, color: Colors.cyan, size: 28),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "Confirm Download",
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          "Do you want to download the dashboard analytics as a CSV file?",
+          style: GoogleFonts.poppins(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.cyan,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _printDashboardData();
+            },
+            child: Text(
+              "Download",
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Export dashboard data as CSV/Excel
+  Future<void> _printDashboardData() async {
+    // Build CSV content
+    final StringBuffer csvBuffer = StringBuffer();
+    final generatedDate = DateTime.now().toString().split('.')[0];
+
+    // Add header information
+    csvBuffer.writeln('LexiBoost Admin Dashboard Report');
+    csvBuffer.writeln('Generated on: $generatedDate');
+    csvBuffer.writeln(''); // Empty line
+
+    // Overview Section
+    csvBuffer.writeln('OVERVIEW STATISTICS');
+    csvBuffer.writeln('Metric,Value');
+    csvBuffer.writeln('Total Teachers,${_stats.totalTeachers}');
+    csvBuffer.writeln('Total Students,${_stats.totalStudents}');
+    csvBuffer.writeln('Total Classes,${_stats.totalClasses}');
+    csvBuffer.writeln('Active Video Calls,${_stats.activeVideoCalls}');
+    csvBuffer.writeln('Published Games,${_stats.totalPublishedGames}');
+    csvBuffer.writeln('Total Users,${_stats.totalUsers}');
+    csvBuffer.writeln(''); // Empty line
+
+    // User Distribution Analytics
+    csvBuffer.writeln('USER DISTRIBUTION');
+    csvBuffer.writeln('User Type,Count,Percentage');
+    csvBuffer.writeln(
+      'Teachers,${_stats.totalTeachers},${_stats.teacherPercentage.toStringAsFixed(2)}%',
+    );
+    csvBuffer.writeln(
+      'Students,${_stats.totalStudents},${_stats.studentPercentage.toStringAsFixed(2)}%',
+    );
+    csvBuffer.writeln(''); // Empty line
+
+    // User Registrations by Weekday (Current Week - Percentage Based)
+    final weekRange = _getCurrentWeekDateRange();
+    csvBuffer.writeln('USER REGISTRATIONS BY WEEKDAY ($weekRange)');
+    csvBuffer.writeln('Weekday,Percentage');
+    if (_stats.monthlyGrowth.isNotEmpty) {
+      for (var data in _stats.monthlyGrowth) {
+        csvBuffer.writeln('${_escapeCsvField(data.month)},${data.count}%');
+      }
+    } else {
+      csvBuffer.writeln('No data available,0%');
+    }
+
+    // Create and download CSV file
+    final csvContent = csvBuffer.toString();
+    final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    
+    // Create download link
+    html.AnchorElement(href: url)
+      ..setAttribute('download', 'Dashboard_Report_${DateTime.now().millisecondsSinceEpoch}.csv')
+      ..click();
+    
+    // Clean up
+    Future.delayed(const Duration(seconds: 1), () {
+      html.Url.revokeObjectUrl(url);
+    });
+
+    // Show success message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('CSV file downloaded'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
