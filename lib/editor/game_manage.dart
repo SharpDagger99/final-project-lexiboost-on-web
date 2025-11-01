@@ -1,6 +1,7 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, avoid_web_libraries_in_flutter
 
 import 'dart:convert';
+import 'dart:html' as html;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -27,8 +28,10 @@ class _MyManagementState extends State<MyManagement> {
   String? title;
   String? gameSet;
   String? gameCode;
+  String? gameRule; // Store game rule to check if it's score mode
   String? userId;
   String _filterType = 'all'; // 'all' or 'my_students'
+  Set<String> _selectedStudentIds = {}; // Track selected students for printing
 
   @override
   void initState() {
@@ -55,22 +58,48 @@ class _MyManagementState extends State<MyManagement> {
   Future<void> _loadData() async {
     if (gameId == null || userId == null) return;
     
-    // Fetch completed users and teacher's students in parallel
+    // Fetch completed users, teacher's students, and game rule in parallel
     final results = await Future.wait([
       _fetchCompletedUsers(gameId!),
       _fetchMyStudentIds(),
+      _fetchGameRule(),
     ]);
     
     final users = results[0] as List<Map<String, dynamic>>;
     final studentIds = results[1] as List<String>;
+    final rule = results[2] as String?;
     
     if (mounted) {
       setState(() {
         allCompletedUsers = users;
         myStudentIds = studentIds;
         completedUsers = users; // Default to all
+        gameRule = rule;
         isLoading = false;
       });
+    }
+  }
+
+  /// Fetch game rule to check if it's score mode
+  Future<String?> _fetchGameRule() async {
+    try {
+      if (gameId == null || userId == null) return null;
+
+      final gameDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId!)
+          .collection('created_games')
+          .doc(gameId!)
+          .get();
+
+      if (gameDoc.exists) {
+        final data = gameDoc.data();
+        return data?['gameRule'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching game rule: $e');
+      return null;
     }
   }
 
@@ -157,11 +186,141 @@ class _MyManagementState extends State<MyManagement> {
               userDoc.data() as Map<String, dynamic>;
           Map<String, dynamic>? completedData =
               completedGame.data() as Map<String, dynamic>?;
+          
+          String userId = userDoc.id;
+
+          // Fetch scores from game_score subcollection if Score mode
+          List<Map<String, dynamic>> roundScoresFromGameScore = [];
+          int totalScoreFromGameScore = 0;
+
+          try {
+            // Try to get scores from teacher's created_games first (where scores are actually stored)
+            if (this.userId != null) {
+              QuerySnapshot teacherGameScoreSnapshot;
+              try {
+                teacherGameScoreSnapshot = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(this.userId!)
+                    .collection('created_games')
+                    .doc(gameId)
+                    .collection('game_score')
+                    .where('userId', isEqualTo: userId)
+                    .orderBy('page')
+                    .get();
+              } catch (e) {
+                // If orderBy fails (no index), try without orderBy
+                teacherGameScoreSnapshot = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(this.userId!)
+                    .collection('created_games')
+                    .doc(gameId)
+                    .collection('game_score')
+                    .where('userId', isEqualTo: userId)
+                    .get();
+              }
+
+              if (teacherGameScoreSnapshot.docs.isNotEmpty) {
+                // Convert to list and sort by page manually
+                List<QueryDocumentSnapshot> sortedDocs = List.from(
+                  teacherGameScoreSnapshot.docs,
+                );
+                sortedDocs.sort((a, b) {
+                  final pageA = (a.data() as Map)['page'] as int? ?? 0;
+                  final pageB = (b.data() as Map)['page'] as int? ?? 0;
+                  return pageA.compareTo(pageB);
+                });
+
+                for (var scoreDoc in sortedDocs) {
+                  final scoreData = scoreDoc.data() as Map<String, dynamic>;
+                  final page = scoreData['page'] as int? ?? 0;
+                  final score = scoreData['score'] as int? ?? 0;
+
+                  roundScoresFromGameScore.add({
+                    'round': page,
+                    'score': score,
+                    'correct': score > 0,
+                  });
+                  totalScoreFromGameScore += score;
+                }
+              }
+            }
+
+            // If not found, try user's created_games (fallback)
+            if (roundScoresFromGameScore.isEmpty) {
+              QuerySnapshot gameScoreSnapshot;
+              try {
+                gameScoreSnapshot = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .collection('created_games')
+                    .doc(gameId)
+                    .collection('game_score')
+                    .where('userId', isEqualTo: userId)
+                    .orderBy('page')
+                    .get();
+              } catch (e) {
+                // If orderBy fails (no index), try without orderBy
+                gameScoreSnapshot = await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .collection('created_games')
+                    .doc(gameId)
+                    .collection('game_score')
+                    .where('userId', isEqualTo: userId)
+                    .get();
+              }
+
+              if (gameScoreSnapshot.docs.isNotEmpty) {
+                // Convert to list and sort by page manually
+                List<QueryDocumentSnapshot> sortedDocs = List.from(
+                  gameScoreSnapshot.docs,
+                );
+                sortedDocs.sort((a, b) {
+                  final pageA = (a.data() as Map)['page'] as int? ?? 0;
+                  final pageB = (b.data() as Map)['page'] as int? ?? 0;
+                  return pageA.compareTo(pageB);
+                });
+
+                for (var scoreDoc in sortedDocs) {
+                  final scoreData = scoreDoc.data() as Map<String, dynamic>;
+                  final page = scoreData['page'] as int? ?? 0;
+                  final score = scoreData['score'] as int? ?? 0;
+
+                  roundScoresFromGameScore.add({
+                    'round': page,
+                    'score': score,
+                    'correct': score > 0,
+                  });
+                  totalScoreFromGameScore += score;
+                }
+              }
+            }
+          } catch (e) {
+            print('Error fetching game_score: $e');
+          }
+
+          // Use game_score data if available, otherwise use completed_games data
+          List<Map<String, dynamic>>? finalRoundScores =
+              roundScoresFromGameScore.isNotEmpty
+              ? roundScoresFromGameScore
+              : (completedData?['roundScores'] as List<dynamic>?)
+                    ?.map((e) => e as Map<String, dynamic>)
+                    .toList();
+
+          int finalTotalScore = roundScoresFromGameScore.isNotEmpty
+              ? totalScoreFromGameScore
+              : (completedData?['totalScore'] as int? ?? 0);
+          
           completedUsers.add({
-            'userId': userDoc.id, // Store user ID for filtering
+            'userId': userId, // Store user ID for filtering
             'username': userData['username'] ?? 'Unknown User',
+            'email': userData['email'] ?? '', // Add email for printing
             'profileImage': userData['profileImage'] ?? '',
             'completedAt': completedData?['completedAt'] ?? null,
+            'startedAt': completedData?['startedAt'] ?? null,
+            'totalScore': finalTotalScore,
+            'roundScores': finalRoundScores,
+            'gameRule': completedData?['gameRule'] ?? gameRule,
           });
         }
       }
@@ -329,6 +488,270 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
+  /// Show score details dialog for Score mode
+  Future<void> _showScoreDetails(Map<String, dynamic> player) async {
+    try {
+      final roundScoresRaw = player['roundScores'];
+      List<dynamic> roundScores = [];
+
+      // Handle different data formats from Firestore
+      if (roundScoresRaw != null) {
+        if (roundScoresRaw is List) {
+          roundScores = roundScoresRaw;
+        } else if (roundScoresRaw is Map) {
+          // If it's a map, convert values to list
+          roundScores = roundScoresRaw.values.toList();
+        } else {
+          // Single value - wrap in list
+          roundScores = [roundScoresRaw];
+        }
+      }
+
+      final totalScore = player['totalScore'] ?? 0;
+      final username = player['username'] ?? 'Unknown User';
+
+      if (roundScores.isEmpty) {
+        // Show a message if no score data available
+        Get.snackbar(
+          'No Score Data',
+          'Score data not available for this player',
+          backgroundColor: Colors.orange,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (BuildContext ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2C2F33),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.emoji_events, color: Colors.amber, size: 28),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "User Score",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                username,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.9,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Round-by-round scores
+                    Text(
+                      'Round Details:',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // List of rounds
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: roundScores.length,
+                      itemBuilder: (context, index) {
+                        final roundDataRaw = roundScores[index];
+
+                        if (roundDataRaw is! Map) {
+                          return const SizedBox.shrink();
+                        }
+
+                        final roundData = Map<String, dynamic>.from(
+                          roundDataRaw,
+                        );
+                        final round = roundData['round'] ?? (index + 1);
+                        final score = roundData['score'] ?? 0;
+                        final correct = roundData['correct'] ?? false;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: correct
+                                ? Colors.green.withOpacity(0.2)
+                                : Colors.red.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: correct ? Colors.green : Colors.red,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: correct ? Colors.green : Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$round',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Round $round',
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      correct
+                                          ? '✓ Correct (+$score)'
+                                          : '✗ Failed (0)',
+                                      style: GoogleFonts.poppins(
+                                        color: correct
+                                            ? Colors.green[300]
+                                            : Colors.red[300],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: correct
+                                      ? Colors.green
+                                      : Colors.red.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$score',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Total Score Card at the bottom
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.amber[700]!, Colors.amber[500]!],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Total Score',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$totalScore / ${roundScores.length}',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                "Close",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('Error showing score details: $e');
+      if (mounted) {
+        Get.snackbar(
+          'Error',
+          'Failed to load score details: ${e.toString()}',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      }
+    }
+  }
+
   /// Show confirmation dialog for unpublishing
   Future<void> _showUnpublishDialog() async {
     return showDialog(
@@ -398,6 +821,585 @@ class _MyManagementState extends State<MyManagement> {
       return '${date.day}/${date.month}/${date.year}';
     } catch (e) {
       return 'Unknown';
+    }
+  }
+
+  /// Show print dialog for My Students section
+  Future<void> _showPrintDialog() async {
+    // Get filtered my students
+    final myStudents =
+        allCompletedUsers?.where((userData) {
+          final userId = userData['userId'] as String?;
+          return userId != null && myStudentIds?.contains(userId) == true;
+        }).toList() ??
+        [];
+
+    if (myStudents.isEmpty) {
+      Get.snackbar(
+        'No Students',
+        'No students found to print',
+        backgroundColor: Colors.orange,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    // Reset selection if needed
+    if (_selectedStudentIds.isEmpty) {
+      // Select all by default
+      _selectedStudentIds = myStudents
+          .map((s) => s['userId'] as String?)
+          .where((id) => id != null)
+          .cast<String>()
+          .toSet();
+    }
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF2C2F33),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.print, color: Colors.blue, size: 28),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Print Student Reports",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.6,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Select All / Deselect All buttons
+                  Row(
+                    children: [
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () {
+                          setDialogState(() {
+                            _selectedStudentIds = myStudents
+                                .map((s) => s['userId'] as String?)
+                                .where((id) => id != null)
+                                .cast<String>()
+                                .toSet();
+                          });
+                        },
+                        child: Text(
+                          "Select All",
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () {
+                          setDialogState(() {
+                            _selectedStudentIds.clear();
+                          });
+                        },
+                        child: Text(
+                          "Deselect All",
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Select students to print (${_selectedStudentIds.length}/${myStudents.length} selected):',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // List of students with checkboxes
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: myStudents.map((student) {
+                          final userId = student['userId'] as String? ?? '';
+                          final username = student['username'] ?? 'Unknown';
+                          final isSelected = _selectedStudentIds.contains(
+                            userId,
+                          );
+
+                          return CheckboxListTile(
+                            value: isSelected,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  _selectedStudentIds.add(userId);
+                                } else {
+                                  _selectedStudentIds.remove(userId);
+                                }
+                              });
+                            },
+                            title: Text(
+                              username,
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                            activeColor: Colors.blue,
+                            checkColor: Colors.white,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (_selectedStudentIds.isEmpty) {
+                  Get.snackbar(
+                    'No Selection',
+                    'Please select at least one student to print',
+                    backgroundColor: Colors.orange,
+                    colorText: Colors.white,
+                  );
+                  return;
+                }
+                _printStudentReports();
+              },
+              child: Text(
+                "Print (${_selectedStudentIds.length})",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Print student reports
+  Future<void> _printStudentReports() async {
+    if (gameId == null || title == null) return;
+
+    // Get selected students
+    final selectedStudents =
+        allCompletedUsers?.where((userData) {
+          final userId = userData['userId'] as String?;
+          return userId != null && _selectedStudentIds.contains(userId);
+        }).toList() ??
+        [];
+
+    if (selectedStudents.isEmpty) {
+      Get.snackbar(
+        'Error',
+        'No students selected for printing',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    // Build HTML content for printing
+    // Escape single quotes in title for JavaScript
+    final escapedTitle = title!.replaceAll("'", "\\'");
+    String htmlContent =
+        '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Student Reports - $escapedTitle</title>
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+  </script>
+  <style>
+    @media print {
+      @page {
+        margin: 1cm;
+      }
+      body {
+        margin: 0;
+        padding: 20px;
+      }
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 20px;
+      padding: 20px;
+      color: #333;
+      background-color: #fff;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 3px solid #4A148C;
+    }
+    .header h1 {
+      color: #4A148C;
+      margin: 0;
+      font-size: 28px;
+    }
+    .header p {
+      color: #666;
+      margin: 5px 0;
+    }
+    .student-section {
+      page-break-inside: avoid;
+      margin-bottom: 40px;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background-color: #f9f9f9;
+    }
+    .student-header {
+      background-color: #4A148C;
+      color: white;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+    }
+    .student-header h2 {
+      margin: 0;
+      font-size: 22px;
+    }
+    .student-info {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .info-item {
+      padding: 10px;
+      background-color: white;
+      border-radius: 4px;
+      border-left: 4px solid #4A148C;
+    }
+    .info-label {
+      font-weight: bold;
+      color: #666;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .info-value {
+      color: #333;
+      font-size: 16px;
+    }
+    .rounds-section {
+      margin-top: 20px;
+    }
+    .rounds-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #4A148C;
+      margin-bottom: 15px;
+    }
+    .rounds-table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .rounds-table th {
+      background-color: #4A148C;
+      color: white;
+      padding: 12px;
+      text-align: left;
+      font-weight: bold;
+    }
+    .rounds-table td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+    }
+    .rounds-table tr:last-child td {
+      border-bottom: none;
+    }
+    .round-correct {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    .round-failed {
+      color: #F44336;
+      font-weight: bold;
+    }
+    .total-score {
+      margin-top: 20px;
+      padding: 20px;
+      background: linear-gradient(135deg, #FFC107 0%, #FFA000 100%);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .total-score-label {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+    .total-score-value {
+      color: white;
+      font-size: 36px;
+      font-weight: bold;
+    }
+    .no-rounds {
+      padding: 20px;
+      text-align: center;
+      color: #999;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>$escapedTitle</h1>
+    <p>Student Performance Reports</p>
+    <p>Generated on: ${DateTime.now().toString().split('.')[0]}</p>
+  </div>
+''';
+
+    // Helper function to escape HTML
+    String escapeHtml(String text) {
+      return text
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+    }
+
+    // Add each student's data
+    for (var student in selectedStudents) {
+      final username = escapeHtml(
+        student['username']?.toString() ?? 'Unknown User',
+      );
+      final email = escapeHtml(student['email']?.toString() ?? 'N/A');
+      final completedAt = student['completedAt'];
+      final startedAt = student['startedAt'];
+      final completedDate = _formatDate(completedAt);
+      final duration = _formatDuration(startedAt, completedAt);
+      final totalScore = student['totalScore'] ?? 0;
+      final roundScoresRaw = student['roundScores'];
+
+      // Parse round scores
+      List<dynamic> roundScores = [];
+      if (roundScoresRaw != null) {
+        if (roundScoresRaw is List) {
+          roundScores = roundScoresRaw;
+        } else if (roundScoresRaw is Map) {
+          roundScores = roundScoresRaw.values.toList();
+        } else {
+          roundScores = [roundScoresRaw];
+        }
+      }
+
+      htmlContent +=
+          '''
+  <div class="student-section">
+    <div class="student-header">
+      <h2>$username</h2>
+    </div>
+    <div class="student-info">
+      <div class="info-item">
+        <div class="info-label">Email</div>
+        <div class="info-value">$email</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Completed Date</div>
+        <div class="info-value">$completedDate</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Time Taken</div>
+        <div class="info-value">$duration</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Total Score</div>
+        <div class="info-value">$totalScore${roundScores.isNotEmpty ? ' / ${roundScores.length}' : ''}</div>
+      </div>
+    </div>
+''';
+
+      // Add rounds table if available
+      if (roundScores.isNotEmpty) {
+        htmlContent += '''
+    <div class="rounds-section">
+      <div class="rounds-title">Round Details</div>
+      <table class="rounds-table">
+        <thead>
+          <tr>
+            <th>Round</th>
+            <th>Status</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+''';
+
+        for (var roundDataRaw in roundScores) {
+          if (roundDataRaw is! Map) continue;
+
+          final roundData = Map<String, dynamic>.from(roundDataRaw);
+          final round = roundData['round'] ?? 0;
+          final score = roundData['score'] ?? 0;
+          final correct = roundData['correct'] ?? false;
+
+          htmlContent +=
+              '''
+          <tr>
+            <td>Round $round</td>
+            <td class="${correct ? 'round-correct' : 'round-failed'}">
+              ${correct ? '✓ Correct' : '✗ Failed'}
+            </td>
+            <td>$score</td>
+          </tr>
+''';
+        }
+
+        htmlContent += '''
+        </tbody>
+      </table>
+    </div>
+''';
+      } else {
+        htmlContent += '''
+    <div class="no-rounds">No round data available</div>
+''';
+      }
+
+      // Add total score card
+      htmlContent +=
+          '''
+    <div class="total-score">
+      <div class="total-score-label">Total Score</div>
+      <div class="total-score-value">$totalScore${roundScores.isNotEmpty ? ' / ${roundScores.length}' : ''}</div>
+    </div>
+  </div>
+''';
+    }
+
+    htmlContent += '''
+</body>
+</html>
+''';
+
+    // Open print window - use blob URL approach
+    // The HTML contains a script that auto-triggers print when loaded
+    final blob = html.Blob([htmlContent], 'text/html');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.window.open(url, '_blank');
+
+    // Clean up URL after a delay
+    Future.delayed(const Duration(seconds: 5), () {
+      html.Url.revokeObjectUrl(url);
+    });
+
+    Get.snackbar(
+      'Success',
+      'Print dialog opened for ${selectedStudents.length} student(s)',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
+  }
+
+  /// Format duration helper (e.g., "3 minutes 20 seconds")
+  String _formatDuration(dynamic startedAt, dynamic completedAt) {
+    if (startedAt == null || completedAt == null) return 'N/A';
+
+    try {
+      DateTime startDate;
+      DateTime endDate;
+
+      // Parse start time
+      if (startedAt is Timestamp) {
+        startDate = startedAt.toDate();
+      } else if (startedAt is String) {
+        startDate = DateTime.parse(startedAt);
+      } else {
+        return 'N/A';
+      }
+
+      // Parse end time
+      if (completedAt is Timestamp) {
+        endDate = completedAt.toDate();
+      } else if (completedAt is String) {
+        endDate = DateTime.parse(completedAt);
+      } else {
+        return 'N/A';
+      }
+
+      // Calculate duration
+      Duration duration = endDate.difference(startDate);
+      int totalSeconds = duration.inSeconds;
+
+      if (totalSeconds < 0) return 'N/A';
+
+      int minutes = totalSeconds ~/ 60;
+      int seconds = totalSeconds % 60;
+
+      if (minutes > 0 && seconds > 0) {
+        return '$minutes minute${minutes > 1 ? 's' : ''} $seconds second${seconds > 1 ? 's' : ''}';
+      } else if (minutes > 0) {
+        return '$minutes minute${minutes > 1 ? 's' : ''}';
+      } else {
+        return '$seconds second${seconds > 1 ? 's' : ''}';
+      }
+    } catch (e) {
+      return 'N/A';
     }
   }
 
@@ -736,7 +1738,7 @@ class _MyManagementState extends State<MyManagement> {
                         ),
                       ),
                       const Spacer(),
-                      // Filter Buttons
+                      // Filter Buttons and Print Button
                       Row(
                         children: [
                           AnimatedButton(
@@ -792,6 +1794,37 @@ class _MyManagementState extends State<MyManagement> {
                               ],
                             ),
                           ),
+                          // Print button - only show when My Students filter is active
+                          if (_filterType == 'my_students')
+                            Padding(
+                              padding: const EdgeInsets.only(left: 12),
+                              child: AnimatedButton(
+                                height: 36,
+                                width: 100,
+                                color: Colors.green,
+                                shadowDegree: ShadowDegree.light,
+                                onPressed: _showPrintDialog,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.print,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      "Print",
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -877,6 +1910,13 @@ class _MyManagementState extends State<MyManagement> {
                             ),
                             itemBuilder: (context, index) {
                               final player = completedUsers![index];
+                              final isScoreMode =
+                                  (gameRule?.toLowerCase() == 'score' ||
+                                  player['gameRule']
+                                          ?.toString()
+                                          .toLowerCase() ==
+                                      'score');
+                              
                               return ListTile(
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: isSmallScreen ? 12 : 16,
@@ -914,19 +1954,68 @@ class _MyManagementState extends State<MyManagement> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                subtitle: player['completedAt'] != null
-                                    ? Text(
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (player['completedAt'] != null)
+                                      Text(
                                         "Completed: ${_formatDate(player['completedAt'])}",
                                         style: GoogleFonts.poppins(
                                           color: Colors.white54,
                                           fontSize: 12,
                                         ),
-                                      )
-                                    : null,
-                                trailing: const Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
+                                      ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "Time: ${_formatDuration(player['startedAt'], player['completedAt'])}",
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.blue.shade300,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    if (isScoreMode &&
+                                        player['totalScore'] != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          "Total Score: ${player['totalScore']}",
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.amber.shade300,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isScoreMode &&
+                                        player['totalScore'] != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
+                                        child: Icon(
+                                          Icons.emoji_events,
+                                          color: Colors.amber,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    const Icon(
+                                      Icons.check_circle,
+                                      color: Colors.green,
+                                    ),
+                                  ],
+                                ),
+                                onTap: isScoreMode
+                                    ? () async {
+                                        await _showScoreDetails(player);
+                                      }
+                                    : null,
                               );
                             },
                           ),
