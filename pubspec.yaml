@@ -57,7 +57,6 @@ dependencies:
   permission_handler: ^12.0.1
   fl_chart: ^1.1.1
 
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -84,6 +83,7 @@ flutter:
     - assets/logo/
     - assets/others/
     - assets/samples/
+    - assets/blog/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
