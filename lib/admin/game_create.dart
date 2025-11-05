@@ -57,6 +57,46 @@ class MyGameCreate extends StatefulWidget {
 
 class _MyGameCreateState extends State<MyGameCreate> {
   int unnamedCounter = 1; // for "Unnamed (number)" games
+  String _userRole = 'student'; // Default role
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserRole();
+  }
+
+  /// Get current user's role from Firestore
+  Future<void> _loadUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {
+        _userRole = 'student';
+      });
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _userRole = userDoc.data()?['role'] ?? 'student';
+        });
+      } else {
+        setState(() {
+          _userRole = 'student';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to get user role: $e');
+      setState(() {
+        _userRole = 'student';
+      });
+    }
+  }
 
   Future<void> _showCreateDialog() async {
     final TextEditingController titleController = TextEditingController();
@@ -255,20 +295,23 @@ class _MyGameCreateState extends State<MyGameCreate> {
                         );
                       },
                     ),
-                    const SizedBox(height: 16),
-
+                    
                     // ---------------- Game Controller Container ---------------- //
-                    _buildOptionCard(
-                      title: "Game Controller",
-                      description: "Manage the teacher's game",
-                      icon: "assets/others/game_report.png",
-                      color: Colors.orange,
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          FadeSlidePageRoute(page: const MyGameReports()),
-                        );
-                      },
-                    ),
+                    // Only show for admin users
+                    if (_userRole == 'admin') ...[
+                      const SizedBox(height: 16),
+                      _buildOptionCard(
+                        title: "Game Controller",
+                        description: "Manage the teacher's game",
+                        icon: "assets/others/game_report.png",
+                        color: Colors.orange,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            FadeSlidePageRoute(page: const MyGameReports()),
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -26,6 +26,7 @@ import 'package:lexi_on_web/editor/game%20types/what_called.dart';
 import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
+import 'package:lexi_on_web/editor/game%20types/stroke.dart';
 import 'package:lexi_on_web/services/settings_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -160,6 +161,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   List<bool> visibleLetters = [];
   Uint8List? selectedImageBytes;
   Uint8List? whatCalledImageBytes;
+  Uint8List? strokeImageBytes;
   List<String> multipleChoices = [];
 
   List<Uint8List?> guessAnswerImages = [null, null, null];
@@ -333,6 +335,16 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     });
   }
 
+  /// Check if Stroke game type is used in any page
+  bool _hasStrokeGameType() {
+    for (final page in pages) {
+      if (page.gameType == 'Stroke') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Validate all pages for required data
   Map<int, String> _validatePages() {
     Map<int, String> errors = {};
@@ -439,6 +451,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       // New image uploaded, imageUrl will be updated on save
       preservedImageUrl = null;
     }
+    // Preserve imageUrl for Stroke if no new stroke image bytes
+    if (selectedGameType == 'Stroke' && strokeImageBytes == null) {
+      preservedImageUrl = pages[currentPageIndex].imageUrl;
+    } else if (selectedGameType == 'Stroke' && strokeImageBytes != null) {
+      preservedImageUrl = null;
+    }
     
     pages[currentPageIndex] = PageData(
       title: '',
@@ -452,7 +470,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       readSentence: readSentenceController.text,
       listenAndRepeat: listenAndRepeatController.text,
       visibleLetters: List.from(visibleLetters),
-      selectedImageBytes: selectedImageBytes,
+      selectedImageBytes: selectedGameType == 'Stroke' ? strokeImageBytes : selectedImageBytes,
       whatCalledImageBytes: whatCalledImageBytes,
       multipleChoices: List.from(pages[currentPageIndex].multipleChoices),
       guessAnswerImages: List.from(guessAnswerImages),
@@ -516,6 +534,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       visibleLetters = List.from(pageData.visibleLetters);
       selectedImageBytes = pageData.selectedImageBytes;
       whatCalledImageBytes = pageData.whatCalledImageBytes;
+      // Load stroke image bytes if game type is Stroke
+      if (pageData.gameType == 'Stroke') {
+        strokeImageBytes = pageData.selectedImageBytes;
+      } else {
+        strokeImageBytes = null;
+      }
       multipleChoices = List.from(pageData.multipleChoices);
       guessAnswerImages = List.from(pageData.guessAnswerImages);
       imageMatchImages = List.from(pageData.imageMatchImages);
@@ -607,6 +631,15 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
 
       progressValue = (pageIndex + 1) / pages.length;
+      
+      // Ensure gameRule is set to 'score' if Stroke is used in any page
+      if (_hasStrokeGameType() && selectedGameRule != 'score') {
+        selectedGameRule = 'score';
+        heartEnabled = false;
+        timerMinutesController.clear();
+        timerSecondsController.clear();
+        timerSeconds = 0;
+      }
       
       debugPrint(
         'After setState, selectedImageBytes is null: ${selectedImageBytes == null}',
@@ -1464,6 +1497,11 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               debugPrint('  - box$i: ${gameTypeData['box$i']}');
             }
           }
+        } else if (gameType == 'Stroke') {
+          // Stroke specific fields - load the sentence to write and image URL
+          readSentence = gameTypeData['sentence'] ?? '';
+          debugPrint('Stroke sentence: $readSentence');
+          debugPrint('Stroke imageUrl: ${gameTypeData['imageUrl']}');
         }
 
         // Debug print the loaded data for this game type
@@ -1619,6 +1657,16 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         pages = loadedPages;
         // Start at the last page instead of the first
         currentPageIndex = pages.length - 1;
+        
+        // Ensure gameRule is set to 'score' if Stroke is used in any page
+        if (_hasStrokeGameType() && selectedGameRule != 'score') {
+          selectedGameRule = 'score';
+          heartEnabled = false;
+          timerMinutesController.clear();
+          timerSecondsController.clear();
+          timerSeconds = 0;
+        }
+        
         if (pages.isNotEmpty) {
           _loadPageData(currentPageIndex);
         }
@@ -2877,6 +2925,32 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         }
 
         gameTypeData.addAll(mathData);
+      } else if (pageData.gameType == 'Stroke') {
+        // Upload image if new bytes exist, otherwise use existing URL
+        String? imageUrl = pageData.imageUrl;
+        if (pageData.selectedImageBytes != null) {
+          try {
+            debugPrint('Uploading new image for Stroke...');
+            imageUrl = await _uploadImageToStorage(
+              pageData.selectedImageBytes!,
+              'stroke_image',
+            );
+            // Update the page data with the new URL
+            pages[pages.indexOf(pageData)].imageUrl = imageUrl;
+            debugPrint('Stroke image uploaded successfully: $imageUrl');
+          } catch (e) {
+            debugPrint('Failed to upload image for Stroke: $e');
+          }
+        } else {
+          debugPrint('Using existing imageUrl: $imageUrl');
+        }
+        
+        gameTypeData.addAll({
+          'sentence': pageData.readSentence,
+          'imageUrl': imageUrl ?? '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'stroke',
+        });
       }
 
       await gameTypeRef
@@ -2996,11 +3070,20 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 child: Text('Image Match'),
               ),
               DropdownMenuItem(value: 'Math', child: Text('Math')),
+              DropdownMenuItem(value: 'Stroke', child: Text('Stroke')),
             ],
             onChanged: (String? newValue) {
               if (newValue != null) {
                 setState(() {
                   selectedGameType = newValue;
+                  // Automatically set gameRule to 'score' if Stroke is selected
+                  if (newValue == 'Stroke') {
+                    selectedGameRule = 'score';
+                    heartEnabled = false;
+                    timerMinutesController.clear();
+                    timerSecondsController.clear();
+                    timerSeconds = 0;
+                  }
                 });
                 // Reset test status when game type is changed
                 _resetGameTestStatus();
@@ -3181,7 +3264,17 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             initialMatches: imageMatchMappings,
           )
         else if (selectedGameType == 'Math')
-          MyMathSettings(mathState: mathState),
+          MyMathSettings(mathState: mathState)
+        else if (selectedGameType == 'Stroke')
+          MyStrokeSettings(
+            sentenceController: readSentenceController,
+            onImagePicked: (Uint8List imageBytes) {
+              setState(() {
+                strokeImageBytes = imageBytes;
+              });
+              _triggerAutoSave();
+            },
+          ),
 
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 10),
@@ -3533,7 +3626,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
               height: 50,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: _hasStrokeGameType() 
+                    ? Colors.grey.withOpacity(0.5)
+                    : Colors.white,
                 borderRadius: BorderRadius.circular(10),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -3541,10 +3636,17 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 value: selectedGameRule,
                 dropdownColor: Colors.white,
                 underline: const SizedBox(),
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+                icon: Icon(
+                  Icons.arrow_drop_down,
+                  color: _hasStrokeGameType() 
+                      ? Colors.grey
+                      : Colors.black,
+                ),
                 style: GoogleFonts.poppins(
                   fontSize: 16,
-                  color: Colors.black,
+                  color: _hasStrokeGameType() 
+                      ? Colors.grey
+                      : Colors.black,
                   fontWeight: FontWeight.w500,
                 ),
                 isExpanded: true,
@@ -3560,23 +3662,49 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   ),
                   DropdownMenuItem(value: 'score', child: Text('Score')),
                 ],
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      selectedGameRule = newValue;
-                      heartEnabled = newValue == 'heart';
-                      if (newValue != 'timer') {
-                        timerMinutesController.clear();
-                        timerSecondsController.clear();
-                        timerSeconds = 0;
-                      }
-                    });
-                  }
-                },
+                onChanged: _hasStrokeGameType()
+                    ? null // Disable if Stroke is used
+                    : (String? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            selectedGameRule = newValue;
+                            heartEnabled = newValue == 'heart';
+                            if (newValue != 'timer') {
+                              timerMinutesController.clear();
+                              timerSecondsController.clear();
+                              timerSeconds = 0;
+                            }
+                          });
+                        }
+                      },
               ),
             ),
           ],
         ),
+        if (_hasStrokeGameType())
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  color: Colors.red,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Game Rules is locked to 'Score' because Stroke game type is used in this game.",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (selectedGameRule == 'timer') ...[
           const SizedBox(height: 10),
           Row(
@@ -4298,7 +4426,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             width: 300,
                                             height: 50,
                                             decoration: BoxDecoration(
-                                              color: Colors.white,
+                                              color: _hasStrokeGameType() 
+                                                  ? Colors.grey.withOpacity(0.5)
+                                                  : Colors.white,
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                             ),
@@ -4309,13 +4439,17 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               value: selectedGameRule,
                                               dropdownColor: Colors.white,
                                               underline: const SizedBox(),
-                                              icon: const Icon(
+                                              icon: Icon(
                                                 Icons.arrow_drop_down,
-                                                color: Colors.black,
+                                                color: _hasStrokeGameType() 
+                                                    ? Colors.grey
+                                                    : Colors.black,
                                               ),
                                               style: GoogleFonts.poppins(
                                                 fontSize: 16,
-                                                color: Colors.black,
+                                                color: _hasStrokeGameType() 
+                                                    ? Colors.grey
+                                                    : Colors.black,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                               isExpanded: true,
@@ -4341,27 +4475,53 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                   child: Text('Score'),
                                                 ),
                                               ],
-                                              onChanged: (String? newValue) {
-                                                if (newValue != null) {
-                                                  setState(() {
-                                                    selectedGameRule = newValue;
-                                                    // Update heart and timer states based on selection
-                                                    heartEnabled =
-                                                        newValue == 'heart';
-                                                    if (newValue != 'timer') {
-                                                      timerMinutesController
-                                                          .clear();
-                                                      timerSecondsController
-                                                          .clear();
-                                                      timerSeconds = 0;
-                                                    }
-                                                  });
-                                                }
-                                              },
+                                              onChanged: _hasStrokeGameType()
+                                                  ? null // Disable if Stroke is used
+                                                  : (String? newValue) {
+                                                      if (newValue != null) {
+                                                        setState(() {
+                                                          selectedGameRule = newValue;
+                                                          // Update heart and timer states based on selection
+                                                          heartEnabled =
+                                                              newValue == 'heart';
+                                                          if (newValue != 'timer') {
+                                                            timerMinutesController
+                                                                .clear();
+                                                            timerSecondsController
+                                                                .clear();
+                                                            timerSeconds = 0;
+                                                          }
+                                                        });
+                                                      }
+                                                    },
                                             ),
                                           ),
                                           ],
                                         ),
+                                        if (_hasStrokeGameType())
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 8),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.info_outline,
+                                                  color: Colors.red,
+                                                  size: 16,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    "Game Rules is locked to 'Score' because Stroke game type is used in this game.",
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 12,
+                                                      color: Colors.red,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
 
                                         // Timer configuration (minutes and seconds) - placed below the Game Rules dropdown
                                         if (selectedGameRule == 'timer') ...[
@@ -5052,7 +5212,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           pickedImages: imageMatchImages,
                                           count: imageMatchCount,
                                         )
-                                      : MyMath(mathState: mathState),
+                                      : selectedGameType == 'Math'
+                                      ? MyMath(mathState: mathState)
+                                      : MyStroke(
+                                          sentenceController: readSentenceController,
+                                          pickedImage: strokeImageBytes,
+                                          imageUrl: pages[currentPageIndex].imageUrl,
+                                        ),
                                 ),
 
                                 
@@ -5147,11 +5313,23 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                 value: 'Math',
                                 child: Text('Math'),
                               ),
+                              DropdownMenuItem(
+                                value: 'Stroke',
+                                child: Text('Stroke'),
+                              ),
                             ],
                             onChanged: (String? newValue) {
                               if (newValue != null) {
                                 setState(() {
                                   selectedGameType = newValue;
+                                  // Automatically set gameRule to 'score' if Stroke is selected
+                                  if (newValue == 'Stroke') {
+                                    selectedGameRule = 'score';
+                                    heartEnabled = false;
+                                    timerMinutesController.clear();
+                                    timerSecondsController.clear();
+                                    timerSeconds = 0;
+                                  }
                                 });
                                             // Reset test status when game type is changed
                                             _resetGameTestStatus();
@@ -5419,7 +5597,17 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             initialMatches: imageMatchMappings,
                                           )
                                         else if (selectedGameType == 'Math')
-                                          MyMathSettings(mathState: mathState),
+                                          MyMathSettings(mathState: mathState)
+                                        else if (selectedGameType == 'Stroke')
+                                          MyStrokeSettings(
+                                            sentenceController: readSentenceController,
+                                            onImagePicked: (Uint8List imageBytes) {
+                                              setState(() {
+                                                strokeImageBytes = imageBytes;
+                                              });
+                                              _triggerAutoSave();
+                                            },
+                                          ),
                                       ],
                                     ),
                                   ),

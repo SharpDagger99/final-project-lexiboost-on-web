@@ -20,14 +20,54 @@ class MyGamePublished extends StatefulWidget {
 
 class _MyGamePublishedState extends State<MyGamePublished> {
   final User? user = FirebaseAuth.instance.currentUser;
+  String _userRole = 'student'; // Default role
 
+  /// Get current user ID - returns null if user is not authenticated
+  String? get _currentUserId => user?.uid;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadUserRole();
+  }
+
+  /// Get current user's role from Firestore
+  Future<void> _loadUserRole() async {
+    final userId = _currentUserId;
+    if (userId == null) {
+      setState(() {
+        _userRole = 'student';
+      });
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(userId) // Explicitly use current user's ID
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _userRole = userDoc.data()?['role'] ?? 'student';
+        });
+      } else {
+        setState(() {
+          _userRole = 'student';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to get user role: $e');
+      setState(() {
+        _userRole = 'student';
+      });
+    }
+  }
 
   /// Navigate back with animation
   void _navigateBack() {
     Navigator.of(context).pop();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +95,7 @@ class _MyGamePublishedState extends State<MyGamePublished> {
           const SizedBox(width: 48),
         ],
       ),
-      body: user == null
+      body: _currentUserId == null
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -80,11 +120,25 @@ class _MyGamePublishedState extends State<MyGamePublished> {
               // Query only current user's published games from their created_games subcollection
               stream: FirebaseFirestore.instance
                   .collection("users")
-                  .doc(user!.uid)
+                  .doc(_currentUserId) // Explicitly use current user's ID
                   .collection("created_games")
                   .where("publish", isEqualTo: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                // Store current user ID - we know it's not null here since we checked earlier
+                final userId = _currentUserId;
+                if (userId == null) {
+                  return Center(
+                    child: Text(
+                      "Please log in to view your published games.",
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  );
+                }
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: CircularProgressIndicator(color: Colors.white),
@@ -179,14 +233,17 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                   itemBuilder: (context, index) {
                     final game = games[index];
                     final gameData = game.data() as Map<String, dynamic>?;
-                    final title = gameData?["title"] ?? "Untitled";
+                    final title = gameData?["title"]?.toString() ?? "Untitled";
                     final gameId = game.id; // Document ID is the gameId
-                    final userId = user!.uid; // Current user is the owner
-                    final description = gameData?["description"] ?? "";
-                    final difficulty = gameData?["difficulty"] ?? "easy";
-                    final prizeCoins = gameData?["prizeCoins"] ?? "0";
-                    final gameSet = gameData?["gameSet"] as String?;
-                    final gameCode = gameData?["gameCode"] as String?;
+                    // userId is already defined in the builder scope above
+                    final description =
+                        gameData?["description"]?.toString() ?? "";
+                    final difficulty =
+                        gameData?["difficulty"]?.toString() ?? "easy";
+                    final prizeCoins =
+                        gameData?["prizeCoins"]?.toString() ?? "0";
+                    final gameSet = gameData?["gameSet"]?.toString();
+                    final gameCode = gameData?["gameCode"]?.toString();
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),
@@ -465,51 +522,54 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
-            AnimatedButton(
-              height: 50,
-              width: 100,
-              color: Colors.orange,
-              shadowDegree: ShadowDegree.light,
-              onPressed: () {
-                print(
-                  'Navigating to game_rate with gameId: $gameId, title: $title',
-                );
-                try {
-                  Get.toNamed(
-                    "/game_rate",
-                    arguments: {"gameId": gameId, "title": title},
+            // Review button - only show if user is not admin
+            if (_userRole != 'admin') ...[
+              const SizedBox(width: 6),
+              AnimatedButton(
+                height: 50,
+                width: 100,
+                color: Colors.orange,
+                shadowDegree: ShadowDegree.light,
+                onPressed: () {
+                  print(
+                    'Navigating to game_rate with gameId: $gameId, title: $title',
                   );
-                } catch (e) {
-                  print('Navigation error: $e');
-                  // Fallback to direct navigation
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const MyGameRate(),
-                      settings: RouteSettings(
-                        arguments: {"gameId": gameId, "title": title},
+                  try {
+                    Get.toNamed(
+                      "/game_rate",
+                      arguments: {"gameId": gameId, "title": title},
+                    );
+                  } catch (e) {
+                    print('Navigation error: $e');
+                    // Fallback to direct navigation
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const MyGameRate(),
+                        settings: RouteSettings(
+                          arguments: {"gameId": gameId, "title": title},
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "Review",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
                     ),
-                  );
-                }
-              },
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Review",
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.star, color: Colors.white, size: 16),
-                ],
+                    const SizedBox(width: 4),
+                    const Icon(Icons.star, color: Colors.white, size: 16),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 6),
+            ],
+            if (_userRole != 'admin') const SizedBox(width: 6),
             AnimatedButton(
               height: 50,
               width: 100,
@@ -729,53 +789,56 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                 ),
               ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: AnimatedButton(
-                height: 40,
-                color: Colors.orange,
-                shadowDegree: ShadowDegree.light,
-                onPressed: () {
-                  print(
-                    'Navigating to game_rate with gameId: $gameId, title: $title',
-                  );
-                  try {
-                    Get.toNamed(
-                      "/game_rate",
-                      arguments: {"gameId": gameId, "title": title},
+            // Review button - only show if user is not admin
+            if (_userRole != 'admin') ...[
+              const SizedBox(width: 6),
+              Expanded(
+                child: AnimatedButton(
+                  height: 40,
+                  color: Colors.orange,
+                  shadowDegree: ShadowDegree.light,
+                  onPressed: () {
+                    print(
+                      'Navigating to game_rate with gameId: $gameId, title: $title',
                     );
-                  } catch (e) {
-                    print('Navigation error: $e');
-                    // Fallback to direct navigation
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const MyGameRate(),
-                        settings: RouteSettings(
-                          arguments: {"gameId": gameId, "title": title},
+                    try {
+                      Get.toNamed(
+                        "/game_rate",
+                        arguments: {"gameId": gameId, "title": title},
+                      );
+                    } catch (e) {
+                      print('Navigation error: $e');
+                      // Fallback to direct navigation
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const MyGameRate(),
+                          settings: RouteSettings(
+                            arguments: {"gameId": gameId, "title": title},
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.star, color: Colors.white, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Review",
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
                         ),
                       ),
-                    );
-                  }
-                },
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.star, color: Colors.white, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      "Review",
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
+            ],
+            if (_userRole != 'admin') const SizedBox(width: 6),
             Expanded(
               child: AnimatedButton(
                 height: 40,

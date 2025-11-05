@@ -20,10 +20,16 @@ class MyGameSave extends StatefulWidget {
 class _MyGameSaveState extends State<MyGameSave> {
   final User? user = FirebaseAuth.instance.currentUser;
 
+  /// Get current user ID - returns null if user is not authenticated
+  String? get _currentUserId => user?.uid;
+
   Future<void> _deleteGame(String gameId) async {
+    final userId = _currentUserId;
+    if (userId == null) return; // Safety check - user must be authenticated
+
     await FirebaseFirestore.instance
         .collection("users")
-        .doc(user!.uid)
+        .doc(userId)
         .collection("created_games")
         .doc(gameId)
         .delete();
@@ -114,7 +120,7 @@ class _MyGameSaveState extends State<MyGameSave> {
             const SizedBox(width: 48),
           ],
         ),
-        body: user == null
+        body: _currentUserId == null
             ? Center(
                 child: Text(
                   "No user logged in.",
@@ -125,7 +131,7 @@ class _MyGameSaveState extends State<MyGameSave> {
             : StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection("users")
-                    .doc(user!.uid)
+                    .doc(_currentUserId) // Explicitly use current user's ID
                     .collection("created_games")
                     .orderBy("created_at", descending: true)
                     .snapshots(),
@@ -155,11 +161,12 @@ class _MyGameSaveState extends State<MyGameSave> {
                   itemCount: games.length,
                   itemBuilder: (context, index) {
                     final game = games[index];
-                    final title = game["title"] ?? "Untitled";
+                    final gameData = game.data() as Map<String, dynamic>? ?? {};
                     final gameId = game.id;
-                    final description = game["description"] ?? "";
-                    final difficulty = game["difficulty"] ?? "easy";
-                    final prizeCoins = game["prizeCoins"] ?? "0";
+                    final title = gameData["title"]?.toString() ?? "Untitled";
+                    final description = gameData["description"]?.toString() ?? "";
+                    final difficulty = gameData["difficulty"]?.toString() ?? "easy";
+                    final prizeCoins = gameData["prizeCoins"]?.toString() ?? "0";
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),

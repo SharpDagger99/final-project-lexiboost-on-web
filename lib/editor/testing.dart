@@ -17,6 +17,7 @@ import 'package:lexi_on_web/editor/game%20types/what_called.dart';
 import 'package:lexi_on_web/editor/game%20types/listen_and_repeat.dart';
 import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
+import 'package:lexi_on_web/editor/game%20types/stroke.dart';
 
 // Page data class to store page content
 class TestPageData {
@@ -103,6 +104,10 @@ class _MyTestingState extends State<MyTesting> {
       TextEditingController(); // For What is it called user answer
   final TextEditingController listenRepeatUserAnswerController =
       TextEditingController(); // For Listen and Repeat user answer
+  final TextEditingController strokeSentenceController =
+      TextEditingController(); // For Stroke sentence
+  final TextEditingController strokeUserAnswerController =
+      TextEditingController(); // For Stroke user answer
 
   // State variables
   double progressValue = 0.0;
@@ -368,6 +373,8 @@ class _MyTestingState extends State<MyTesting> {
           hint = gameTypeData['gameHint'] ?? '';
         } else if (gameType == 'Listen and Repeat') {
           listenAndRepeat = gameTypeData['answer'] ?? '';
+        } else if (gameType == 'Stroke') {
+          readSentence = gameTypeData['sentence'] ?? '';
         }
 
         loadedPages.add(
@@ -602,6 +609,10 @@ class _MyTestingState extends State<MyTesting> {
       readSentenceController.text = pageData.readSentence;
       listenAndRepeatController.text = pageData.listenAndRepeat;
       hintController.text = pageData.hint;
+      // Load Stroke sentence
+      if (pageData.gameType == 'Stroke') {
+        strokeSentenceController.text = pageData.readSentence;
+      }
       visibleLetters = List.from(pageData.visibleLetters);
       selectedImageBytes = pageData.selectedImageBytes;
       whatCalledImageBytes = pageData.whatCalledImageBytes;
@@ -630,6 +641,7 @@ class _MyTestingState extends State<MyTesting> {
       userAnswerController.clear();
       whatCalledUserAnswerController.clear();
       listenRepeatUserAnswerController.clear();
+      strokeUserAnswerController.clear();
 
       // Clear user answer for Math game
       mathState.previewResultController.clear();
@@ -676,6 +688,8 @@ class _MyTestingState extends State<MyTesting> {
     userAnswerController.dispose();
     whatCalledUserAnswerController.dispose();
     listenRepeatUserAnswerController.dispose();
+    strokeSentenceController.dispose();
+    strokeUserAnswerController.dispose();
     super.dispose();
   }
 
@@ -715,6 +729,10 @@ class _MyTestingState extends State<MyTesting> {
     } else if (currentPage.gameType == 'Image Match') {
       // Check if all images have been matched
       return matchedImages.length == currentPage.imageMatchCount;
+    } else if (currentPage.gameType == 'Stroke') {
+      // For Stroke, allow empty drawing pad (for teacher/admin verification)
+      // Always return true to allow proceeding even if drawing pad is empty
+      return true;
     }
 
     // For other game types, always return true (they have their own validation)
@@ -751,6 +769,10 @@ class _MyTestingState extends State<MyTesting> {
       final userAnswer = mathState.previewResultController.text.trim();
       final correctAnswer = currentPage.mathAnswer.trim();
       return userAnswer == correctAnswer;
+    } else if (currentPage.gameType == 'Stroke') {
+      // For Stroke, assume correct if user has drawn something (validation passes)
+      // In the future, this could integrate with handwriting recognition
+      return true;
     }
 
     // For other game types, assume correct if validation passes
@@ -783,6 +805,74 @@ class _MyTestingState extends State<MyTesting> {
         });
       }
       
+      return;
+    }
+
+    // For Stroke game type, show confirmation dialog before proceeding
+    final currentPage = pages[currentPageIndex];
+    if (currentPage.gameType == 'Stroke') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF2A2C2A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: Text(
+              'Confirm Submission',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            content: Text(
+              'Are you sure you want to proceed to the next round?',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: Colors.white70,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(
+                  'Proceed',
+                  style: GoogleFonts.poppins(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true) {
+        return; // User cancelled
+      }
+
+      // Proceed without win/lose logic for Stroke
+      // Check if this is the last page
+      if (currentPageIndex < pages.length - 1) {
+        // Move to next page
+        _loadPageData(currentPageIndex + 1);
+      } else {
+        // This is the last page, update game_test and go back
+        await _updateGameTest();
+      }
       return;
     }
 
@@ -1256,6 +1346,15 @@ class _MyTestingState extends State<MyTesting> {
                                             }
                                           });
                                         },
+                                      )
+                                    : selectedGameType == 'Stroke'
+                                    ? MyStroke(
+                                        sentenceController:
+                                            strokeSentenceController,
+                                        userAnswerController:
+                                            strokeUserAnswerController,
+                                        pickedImage: selectedImageBytes,
+                                        imageUrl: imageUrl,
                                       )
                                     : MyMath(mathState: mathState),
                               ),

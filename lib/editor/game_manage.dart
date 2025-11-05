@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
+import 'package:lexi_on_web/editor/game_check.dart';
 
 class MyManagement extends StatefulWidget {
   const MyManagement({super.key});
@@ -321,6 +322,8 @@ class _MyManagementState extends State<MyManagement> {
             'totalScore': finalTotalScore,
             'roundScores': finalRoundScores,
             'gameRule': completedData?['gameRule'] ?? gameRule,
+            'pendingReview': completedData?['pendingReview'] ?? false,
+            'reviewStatus': completedData?['reviewStatus'] ?? 'completed',
           });
         }
       }
@@ -486,6 +489,142 @@ class _MyManagementState extends State<MyManagement> {
         ],
       ),
     );
+  }
+
+  /// Show confirmation dialog before navigating to game check
+  Future<void> _showReviewConfirmation(Map<String, dynamic> player) async {
+    print('🔵 _showReviewConfirmation called for player: ${player['username']}');
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        print('🔵 Dialog builder called');
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2C2F33),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.rate_review, color: Colors.orange, size: 28),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Review Submission",
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            "Do you want to review ${player['username']}'s submission?\n\nYou'll be able to check their answers and mark them as correct or incorrect.",
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                print('🔴 Cancel button pressed');
+                Navigator.of(ctx).pop(false);
+              },
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                print('🟢 Continue button pressed');
+                Navigator.of(ctx).pop(true);
+              },
+              child: Text(
+                "Continue",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    
+    print('🔵 Dialog closed. confirmed value: $confirmed');
+    print('🔵 mounted state: $mounted');
+    
+    // Navigate after dialog closes if user confirmed
+    if (confirmed == true) {
+      print('📋 Navigating to game_check with:');
+      print('  gameId: $gameId');
+      print('  title: $title');
+      print('  userId: $userId');
+      print('  studentUserId: ${player['userId']}');
+      print('  studentUsername: ${player['username']}');
+      
+      try {
+        if (mounted) {
+          print('📋 Calling Get.toNamed...');
+          
+          // Try GetX navigation
+          final navigationArgs = {
+            "gameId": gameId,
+            "title": title,
+            "userId": userId,
+            "studentUserId": player['userId'],
+            "studentUsername": player['username'],
+          };
+          
+          print('📋 Calling Get.toNamed with arguments: $navigationArgs');
+          
+          try {
+            Get.toNamed(
+              "/game_check",
+              arguments: navigationArgs,
+            );
+            print('✅ Get.toNamed called successfully');
+          } catch (getError) {
+            print('⚠️ Get.toNamed failed: $getError');
+            print('📋 Trying Get.to() with direct page...');
+            
+            // Fallback: Use Get.to() directly
+            try {
+              Get.to(
+                () => const MyGameCheck(),
+                arguments: navigationArgs,
+              );
+              print('✅ Get.to() called successfully');
+            } catch (getToError) {
+              print('❌ Get.to() also failed: $getToError');
+              print('📋 Last resort: Using Navigator.push with MaterialPageRoute...');
+              
+              // Last resort: Use Navigator directly
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MyGameCheck(),
+                    settings: RouteSettings(arguments: navigationArgs),
+                  ),
+                );
+                print('✅ Navigator.push called successfully');
+              }
+            }
+          }
+        } else {
+          print('⚠️ Widget not mounted, cannot navigate');
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error navigating to game_check: $e');
+        print('❌ Stack trace: $stackTrace');
+      }
+    } else {
+      print('⚠️ Navigation cancelled (confirmed: $confirmed)');
+    }
   }
 
   /// Show score details dialog for Score mode
@@ -1796,6 +1935,11 @@ class _MyManagementState extends State<MyManagement> {
                                           .toLowerCase() ==
                                       'score');
                               
+                              // Check pending review with proper boolean handling
+                              final pendingReviewValue = player['pendingReview'];
+                              final isPendingReview = pendingReviewValue == true || 
+                                                      (pendingReviewValue is String && pendingReviewValue.toLowerCase() == 'true');
+                              
                               return ListTile(
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: isSmallScreen ? 12 : 16,
@@ -1859,9 +2003,13 @@ class _MyManagementState extends State<MyManagement> {
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
                                         child: Text(
-                                          "Total Score: ${player['totalScore']}",
+                                          isPendingReview
+                                              ? "⏳ Pending Review"
+                                              : "Total Score: ${player['totalScore']}",
                                           style: GoogleFonts.poppins(
-                                            color: Colors.amber.shade300,
+                                            color: isPendingReview
+                                                ? Colors.orange.shade300
+                                                : Colors.amber.shade300,
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -1872,7 +2020,16 @@ class _MyManagementState extends State<MyManagement> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (isScoreMode &&
+                                    if (isPendingReview)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: Icon(
+                                          Icons.pending_actions,
+                                          color: Colors.orange,
+                                          size: 20,
+                                        ),
+                                      )
+                                    else if (isScoreMode &&
                                         player['totalScore'] != null)
                                       Padding(
                                         padding: const EdgeInsets.only(
@@ -1884,17 +2041,24 @@ class _MyManagementState extends State<MyManagement> {
                                           size: 20,
                                         ),
                                       ),
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
+                                    Icon(
+                                      isPendingReview ? Icons.rate_review : Icons.check_circle,
+                                      color: isPendingReview ? Colors.orange : Colors.green,
                                     ),
                                   ],
                                 ),
-                                onTap: isScoreMode
-                                    ? () async {
-                                        await _showScoreDetails(player);
-                                      }
-                                    : null,
+                                onTap: () async {
+                                    // Check if pending review first (priority)
+                                    final pendingReviewValue = player['pendingReview'];
+                                    final bool isActuallyPending = pendingReviewValue == true || 
+                                                                   (pendingReviewValue is String && pendingReviewValue.toLowerCase() == 'true');
+                                    
+                                    if (isActuallyPending) {
+                                      await _showReviewConfirmation(player);
+                                    } else if (isScoreMode) {
+                                      await _showScoreDetails(player);
+                                    }
+                                  },
                               );
                             },
                           ),
