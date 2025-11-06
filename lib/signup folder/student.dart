@@ -37,7 +37,7 @@ class _MyStudentState extends State<MyStudent> with SingleTickerProviderStateMix
   }
   
   Future<void> _downloadApp() async {
-    const url = 'https://drive.google.com/uc?export=download&id=13aicUzbhQsXsz_1ZYboFo5x-2_mzmg7J';
+    const url = 'https://drive.google.com/uc?export=download&id=1VLTunOGQHgC5qU9UqrFNdFYS1EVX-iDR';
     final uri = Uri.parse(url);
     
     if (await canLaunchUrl(uri)) {
