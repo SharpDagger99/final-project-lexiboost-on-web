@@ -234,14 +234,15 @@ class _MyManagementState extends State<MyManagement> {
                 for (var scoreDoc in sortedDocs) {
                   final scoreData = scoreDoc.data() as Map<String, dynamic>;
                   final page = scoreData['page'] as int? ?? 0;
-                  final score = scoreData['score'] as int? ?? 0;
+                  final score = scoreData['score'] as int? ?? 0; // 0/1 for correct/wrong
+                  final pageScore = scoreData['pageScore'] as int? ?? 0; // Numeric score for the page
 
                   roundScoresFromGameScore.add({
                     'round': page,
-                    'score': score,
+                    'score': pageScore, // Use pageScore instead of score
                     'correct': score > 0,
                   });
-                  totalScoreFromGameScore += score;
+                  totalScoreFromGameScore += pageScore; // Sum pageScore instead of score
                 }
               }
             }
@@ -285,14 +286,15 @@ class _MyManagementState extends State<MyManagement> {
                 for (var scoreDoc in sortedDocs) {
                   final scoreData = scoreDoc.data() as Map<String, dynamic>;
                   final page = scoreData['page'] as int? ?? 0;
-                  final score = scoreData['score'] as int? ?? 0;
+                  final score = scoreData['score'] as int? ?? 0; // 0/1 for correct/wrong
+                  final pageScore = scoreData['pageScore'] as int? ?? 0; // Numeric score for the page
 
                   roundScoresFromGameScore.add({
                     'round': page,
-                    'score': score,
+                    'score': pageScore, // Use pageScore instead of score
                     'correct': score > 0,
                   });
-                  totalScoreFromGameScore += score;
+                  totalScoreFromGameScore += pageScore; // Sum pageScore instead of score
                 }
               }
             }
@@ -308,9 +310,22 @@ class _MyManagementState extends State<MyManagement> {
                     ?.map((e) => e as Map<String, dynamic>)
                     .toList();
 
-          int finalTotalScore = roundScoresFromGameScore.isNotEmpty
-              ? totalScoreFromGameScore
-              : (completedData?['totalScore'] as int? ?? 0);
+          // Calculate total score: totalScore from completed_games is the maximum possible total score (set by teacher)
+          // Use totalScore from completed_games (set by teacher in game_check) as the maximum possible score
+          int finalTotalScore = completedData?['totalScore'] as int? ?? 0;
+          
+          // If totalScore is not set, fallback to sum of pageScore values or calculate from roundScores
+          if (finalTotalScore == 0) {
+            if (roundScoresFromGameScore.isNotEmpty) {
+              // Use sum of pageScore from game_score as fallback
+              finalTotalScore = totalScoreFromGameScore;
+            } else if (finalRoundScores != null) {
+              // Fallback: calculate from roundScores if available
+              for (var roundScore in finalRoundScores) {
+                finalTotalScore += (roundScore['score'] as int? ?? 0);
+              }
+            }
+          }
           
           completedUsers.add({
             'userId': userId, // Store user ID for filtering
@@ -646,8 +661,17 @@ class _MyManagementState extends State<MyManagement> {
         }
       }
 
-      final totalScore = player['totalScore'] ?? 0;
+      final totalScore = player['totalScore'] ?? 0; // Maximum possible total score
       final username = player['username'] ?? 'Unknown User';
+
+      // Calculate awarded score (sum of pageScore from all rounds)
+      int awardedScore = 0;
+      for (var roundScore in roundScores) {
+        if (roundScore is Map) {
+          final score = roundScore['score'] as int? ?? 0;
+          awardedScore += score; // Sum of actual awarded pageScore values
+        }
+      }
 
       if (roundScores.isEmpty) {
         // Show a message if no score data available
@@ -846,7 +870,7 @@ class _MyManagementState extends State<MyManagement> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$totalScore / ${roundScores.length}',
+                            '$awardedScore / $totalScore',
                             style: GoogleFonts.poppins(
                               color: Colors.white,
                               fontSize: 32,
@@ -862,6 +886,67 @@ class _MyManagementState extends State<MyManagement> {
             ),
           ),
           actions: [
+            AnimatedButton(
+              height: 40,
+              width: 120,
+              color: Colors.orange,
+              shadowDegree: ShadowDegree.dark,
+              onPressed: () {
+                Navigator.pop(ctx);
+                // Navigate to game_check with player data
+                final playerUserId = player['userId'] as String?;
+                if (playerUserId != null && gameId != null && userId != null) {
+                  final navigationArgs = {
+                    "gameId": gameId,
+                    "title": title,
+                    "userId": userId,
+                    "studentUserId": playerUserId,
+                    "studentUsername": username,
+                  };
+                  
+                  try {
+                    Get.toNamed(
+                      "/game_check",
+                      arguments: navigationArgs,
+                    );
+                  } catch (e) {
+                    try {
+                      Get.to(
+                        () => const MyGameCheck(),
+                        arguments: navigationArgs,
+                      );
+                    } catch (e2) {
+                      if (mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MyGameCheck(),
+                            settings: RouteSettings(arguments: navigationArgs),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                }
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.refresh, color: Colors.white, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    "Recheck",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
