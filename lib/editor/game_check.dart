@@ -1,4 +1,4 @@
-// ignore_for_file: avoid_print, use_build_context_synchronously, deprecated_member_use
+// ignore_for_file: avoid_print, use_build_context_synchronously, deprecated_member_use, sized_box_for_whitespace
 
 import 'package:animated_button/animated_button.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -52,6 +52,8 @@ class _MyGameCheckState extends State<MyGameCheck> {
   final TextEditingController _totalScoreController = TextEditingController();
   int _totalScore = 0; // Total score for the game
 
+  // Search functionality removed
+
   @override
   void initState() {
     super.initState();
@@ -74,42 +76,132 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
   void _getArguments() {
     debugPrint('📥 MyGameCheck: Getting arguments...');
+    
+    // Try to get from Get.arguments first
     final args = Get.arguments as Map<String, dynamic>?;
+    
+    // If no arguments, try to parse from URL parameters
+    final uri = Uri.base;
+    
     if (args != null) {
       debugPrint('📥 Received arguments: $args');
-      setState(() {
-        gameId = args['gameId'] as String?;
-        title = args['title'] as String?;
-        userId = args['userId'] as String?;
-        studentUserId = args['studentUserId'] as String?;
-        studentUsername = args['studentUsername'] as String?;
-      });
-      debugPrint('📥 Parsed values:');
-      debugPrint('  gameId: $gameId');
-      debugPrint('  title: $title');
-      debugPrint('  userId: $userId');
-      debugPrint('  studentUserId: $studentUserId');
-      debugPrint('  studentUsername: $studentUsername');
-
-      if (gameId != null && studentUserId != null) {
-        debugPrint('✅ Arguments valid, loading submission data...');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _checkScreenSize();
-          _loadSubmissionData();
-        });
-      } else {
-        debugPrint(
-          '⚠️ Missing required arguments: gameId=$gameId, studentUserId=$studentUserId',
-        );
-        setState(() {
-          _isLoading = false;
-        });
-      }
     } else {
-      debugPrint('⚠️ No arguments received!');
+      debugPrint('📥 No Get.arguments, trying URL parameters...');
+      debugPrint('  URL: ${uri.toString()}');
+      debugPrint('  URL query params: ${uri.queryParameters}');
+    }
+    
+    // Update state with parsed values, treating empty strings as null
+    setState(() {
+      gameId = args?['gameId'] as String? ?? uri.queryParameters['gameId'];
+      
+      // Handle title - empty string should be treated as null
+      final titleFromArgs = args?['title'] as String?;
+      final titleFromUrl = uri.queryParameters['title'];
+      title = (titleFromArgs != null && titleFromArgs.isNotEmpty) ? titleFromArgs : 
+              (titleFromUrl != null && titleFromUrl.isNotEmpty) ? titleFromUrl : null;
+      
+      userId = args?['userId'] as String? ?? uri.queryParameters['userId'] ?? FirebaseAuth.instance.currentUser?.uid;
+      studentUserId = args?['studentUserId'] as String? ?? uri.queryParameters['studentUserId'];
+      
+      // Handle studentUsername - empty string should be treated as null
+      final usernameFromArgs = args?['studentUsername'] as String?;
+      final usernameFromUrl = uri.queryParameters['studentUsername'];
+      studentUsername = (usernameFromArgs != null && usernameFromArgs.isNotEmpty) ? usernameFromArgs : 
+                        (usernameFromUrl != null && usernameFromUrl.isNotEmpty) ? usernameFromUrl : null;
+    });
+    
+    debugPrint('📥 Parsed values:');
+    debugPrint('  gameId: $gameId');
+    debugPrint('  title: $title (${title == null ? "NULL - will fetch" : "OK"})');
+    debugPrint('  userId: $userId');
+    debugPrint('  studentUserId: $studentUserId');
+    debugPrint('  studentUsername: $studentUsername (${studentUsername == null ? "NULL - will fetch" : "OK"})');
+
+    if (gameId != null && studentUserId != null && userId != null) {
+      debugPrint('✅ Arguments valid, loading submission data...');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkScreenSize();
+        _loadSubmissionData();
+      });
+    } else {
+      debugPrint(
+        '⚠️ Missing required arguments: gameId=$gameId, userId=$userId, studentUserId=$studentUserId',
+      );
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  /// Fetch missing game and student details from Firestore
+  Future<void> _fetchMissingDetails() async {
+    try {
+      debugPrint('🔄 Fetching missing details from Firestore...');
+      
+      // Fetch game title if missing
+      if (title == null && gameId != null && userId != null) {
+        debugPrint('  Fetching game title...');
+        final gameDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId!)
+            .collection('created_games')
+            .doc(gameId!)
+            .get();
+        
+        if (gameDoc.exists) {
+          final data = gameDoc.data();
+          if (mounted) {
+            setState(() {
+              title = data?['title'] as String?;
+            });
+            debugPrint('  ✅ Game title fetched and updated: $title');
+          }
+        } else {
+          debugPrint('  ⚠️ Game document not found');
+        }
+      }
+      
+      // Fetch student username if missing
+      if (studentUsername == null && studentUserId != null) {
+        debugPrint('  Fetching student username...');
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(studentUserId!)
+            .get();
+        
+        if (userDoc.exists) {
+          final data = userDoc.data();
+          if (mounted) {
+            setState(() {
+              studentUsername = data?['username'] as String?;
+            });
+            debugPrint('  ✅ Student username fetched and updated: $studentUsername');
+          }
+        } else {
+          debugPrint('  ⚠️ Student user document not found');
+        }
+      }
+      
+      debugPrint('✅ Missing details fetch completed');
+    } catch (e) {
+      debugPrint('❌ Error fetching missing details: $e');
+    }
+  }
+
+  /// Navigate back to game_manage with proper parameters
+  void _navigateBackToGameManage() {
+    if (gameId != null) {
+      Get.offAllNamed(
+        '/game_manage?gameId=$gameId&title=${Uri.encodeComponent(title ?? '')}&userId=${userId ?? ''}',
+        arguments: {
+          'gameId': gameId,
+          'title': title,
+          'userId': userId,
+        },
+      );
+    } else {
+      Get.offAllNamed('/game_published');
     }
   }
 
@@ -138,6 +230,11 @@ class _MyGameCheckState extends State<MyGameCheck> {
       debugPrint(
         'Loading submission data for student: $studentUserId, game: $gameId',
       );
+
+      // Fetch missing game and student details if needed
+      if (title == null || studentUsername == null) {
+        await _fetchMissingDetails();
+      }
 
       // Load game rounds from teacher's created_games (ordered by page)
       final gameRoundsRef = FirebaseFirestore.instance
@@ -287,9 +384,19 @@ class _MyGameCheckState extends State<MyGameCheck> {
         setState(() {
           _isLoading = false;
         });
+        // Show error message to user
+        Get.snackbar(
+          'Error',
+          'Failed to load submission data: $e',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 5),
+        );
       }
     }
   }
+
+  // Student fetching removed
 
   /// Load a specific page
   void _loadPageData(int pageIndex) {
@@ -424,6 +531,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
             pageScore: newScore,
           );
         });
+        _checkAndUpdateTotalScore(); // Check if total score needs updating
         return; // Early return since we already updated state
       }
 
@@ -431,6 +539,9 @@ class _MyGameCheckState extends State<MyGameCheck> {
       setState(() {
         pages[pageIndex] = pageData.copyWith(pageScore: newScore);
       });
+
+      // Check if sum of page scores exceeds total score
+      _checkAndUpdateTotalScore();
 
       debugPrint(
         '✅ Page score updated: page ${pageData.pageNumber}, score: $newScore',
@@ -445,6 +556,24 @@ class _MyGameCheckState extends State<MyGameCheck> {
       );
     }
   }
+
+  /// Check if sum of page scores exceeds total score and update if needed
+  void _checkAndUpdateTotalScore() {
+    int sumOfPageScores = 0;
+    for (var page in pages) {
+      sumOfPageScores += page.pageScore;
+    }
+
+    // If sum of page scores is greater than total score, update total score
+    if (sumOfPageScores > _totalScore) {
+      _totalScore = sumOfPageScores;
+      _totalScoreController.text = sumOfPageScores.toString();
+      _updateTotalScore(sumOfPageScores);
+      debugPrint('✅ Total score auto-updated to sum of page scores: $sumOfPageScores');
+    }
+  }
+
+  // Search filter removed
 
   /// Mark answer as correct
   Future<void> _markAsCorrect() async {
@@ -644,7 +773,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
               ),
               onPressed: () {
                 Navigator.pop(ctx);
-                Get.back(); // Go back to game_manage
+                _navigateBackToGameManage();
               },
               child: Text(
                 "Done",
@@ -793,90 +922,81 @@ class _MyGameCheckState extends State<MyGameCheck> {
     }
   }
 
-  /// Build Column 1 content (Student Info & Navigation)
+  /// Build Column 1 content (Empty for now)
   Widget _buildColumn1Content() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Student Info Card
+        // Title
+        Text(
+          "Student Review",
+          style: GoogleFonts.poppins(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        // Student info card
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.blue.withOpacity(0.2),
-                Colors.purple.withOpacity(0.2),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
+            border: Border.all(
+              color: Colors.blue.withOpacity(0.3),
+              width: 1,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: Colors.blue,
-                    child: Text(
-                      studentUsername?.substring(0, 1).toUpperCase() ?? 'S',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          studentUsername ?? 'Unknown',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          title ?? '',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white60,
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Text(
+                "Current Student:",
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
               ),
-              const Divider(color: Colors.white24, height: 24),
-              Row(
-                children: [
-                  const Icon(Icons.description, color: Colors.orange, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    "Page ${currentPageIndex + 1} of ${pages.length}",
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                studentUsername ?? 'Unknown Student',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ],
           ),
         ),
+      ],
+    );
+  }
 
+  // Switch student function removed
+
+  /// Build Column 3 content (Review Controls)
+  Widget _buildColumn3Content() {
+    return Padding(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+        Text(
+          "Review Controls",
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Divider(color: Colors.white24),
         const SizedBox(height: 20),
 
-        // Progress indicator
+        // Review Progress
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -899,145 +1019,6 @@ class _MyGameCheckState extends State<MyGameCheck> {
           ],
         ),
 
-        const SizedBox(height: 20),
-        const Divider(color: Colors.white24),
-        const SizedBox(height: 20),
-
-        // Total Score Display
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.green.withOpacity(0.2),
-                Colors.blue.withOpacity(0.2),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Total Score",
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "${_calculateTotalScore()}",
-                style: GoogleFonts.poppins(
-                  fontSize: 32,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-        const Divider(color: Colors.white24),
-        const SizedBox(height: 20),
-
-        // Finish Review and Reset Checking buttons
-        Row(
-          children: [
-            AnimatedButton(
-              height: 50,
-              width: 150,
-              color: Colors.green,
-              shadowDegree: ShadowDegree.dark,
-              onPressed: _finishReview,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        "Finish",
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            AnimatedButton(
-              height: 50,
-              width: 200,
-              color: Colors.orange,
-              shadowDegree: ShadowDegree.dark,
-              onPressed: _isSaving ? () {} : _resetChecking,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.refresh,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              "Reset Checking",
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Build Column 3 content (Review Controls)
-  Widget _buildColumn3Content() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Review Controls",
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
         const SizedBox(height: 20),
         const Divider(color: Colors.white24),
         const SizedBox(height: 20),
@@ -1260,131 +1241,178 @@ class _MyGameCheckState extends State<MyGameCheck> {
         const SizedBox(height: 20),
 
         // Current score indicator
-        Expanded(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color:
-                        pages.isNotEmpty &&
-                            pages[currentPageIndex].currentScore > 0
-                        ? Colors.green.withOpacity(0.15)
-                        : Colors.orange.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color:
-                          pages.isNotEmpty &&
-                              pages[currentPageIndex].currentScore > 0
-                          ? Colors.green
-                          : Colors.orange,
-                      width: 2,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        pages.isNotEmpty &&
-                                pages[currentPageIndex].currentScore > 0
-                            ? Icons.check_circle
-                            : Icons.pending,
-                        color:
-                            pages.isNotEmpty &&
-                                pages[currentPageIndex].currentScore > 0
-                            ? Colors.green
-                            : Colors.orange,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            pages.isNotEmpty &&
-                                    pages[currentPageIndex].currentScore > 0
-                                ? "Marked as Correct"
-                                : "Not Yet Reviewed",
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color:
+                pages.isNotEmpty
+                ? (pages[currentPageIndex].currentScore > 0
+                    ? Colors.green.withOpacity(0.15)
+                    : (pages[currentPageIndex].currentScore == 0 && pages[currentPageIndex].scoreDocId != null
+                        ? Colors.red.withOpacity(0.15)
+                        : Colors.orange.withOpacity(0.15)))
+                : Colors.orange.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color:
+                  pages.isNotEmpty
+                  ? (pages[currentPageIndex].currentScore > 0
+                      ? Colors.green
+                      : (pages[currentPageIndex].currentScore == 0 && pages[currentPageIndex].scoreDocId != null
+                          ? Colors.red
+                          : Colors.orange))
+                  : Colors.orange,
+              width: 2,
             ),
           ),
-        ),
-
-        const SizedBox(height: 20),
-        const Divider(color: Colors.white24),
-        const SizedBox(height: 20),
-
-        // Page navigation
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Flexible(
-              child: AnimatedButton(
-                height: 50,
-                color: currentPageIndex > 0
-                    ? Colors.blue
-                    : Colors.grey.withOpacity(0.5),
-                onPressed: _goToPreviousPage,
-                child: Icon(
-                  Icons.arrow_upward_rounded,
-                  color: currentPageIndex > 0
-                      ? Colors.white
-                      : Colors.white.withOpacity(0.5),
-                ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                pages.isNotEmpty
+                    ? (pages[currentPageIndex].currentScore > 0
+                        ? Icons.check_circle
+                        : (pages[currentPageIndex].currentScore == 0 && pages[currentPageIndex].scoreDocId != null
+                            ? Icons.cancel
+                            : Icons.pending))
+                    : Icons.pending,
+                color:
+                    pages.isNotEmpty
+                    ? (pages[currentPageIndex].currentScore > 0
+                        ? Colors.green
+                        : (pages[currentPageIndex].currentScore == 0 && pages[currentPageIndex].scoreDocId != null
+                            ? Colors.red
+                            : Colors.orange))
+                    : Colors.orange,
+                size: 24,
               ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              flex: 2,
-              child: AnimatedButton(
-                height: 50,
-                color: Colors.green,
-                onPressed: () {
-                  // Show page selector dialog (similar to game_edit)
-                },
+              const SizedBox(width: 12),
+              Flexible(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    "${currentPageIndex + 1} of ${pages.length}",
+                    pages.isNotEmpty
+                        ? (pages[currentPageIndex].currentScore > 0
+                            ? "Marked as Correct"
+                            : (pages[currentPageIndex].currentScore == 0 && pages[currentPageIndex].scoreDocId != null
+                                ? "Marked as Wrong"
+                                : "Not Yet Reviewed"))
+                        : "Not Yet Reviewed",
                     style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
                       color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 40),
+
+        const Divider(color: Colors.white24),
+        const SizedBox(height: 20),
+
+        // All control buttons in a single row at bottom
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Up button
+            AnimatedButton(
+              height: 50,
+              width: 50,
+              color: currentPageIndex > 0
+                  ? Colors.blue
+                  : Colors.grey.withOpacity(0.5),
+              onPressed: _goToPreviousPage,
+              child: Icon(
+                Icons.arrow_upward_rounded,
+                color: currentPageIndex > 0
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.5),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Page indicator button
+            AnimatedButton(
+              height: 50,
+              width: 100,
+              color: Colors.green,
+              onPressed: () {
+                // Show page selector dialog (similar to game_edit)
+              },
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  "${currentPageIndex + 1} of ${pages.length}",
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            Flexible(
-              child: AnimatedButton(
-                height: 50,
-                color: Colors.blue,
-                onPressed: _goToNextPage,
-                child: Icon(
-                  currentPageIndex < pages.length - 1
-                      ? Icons.arrow_downward_rounded
-                      : Icons.check,
-                  color: Colors.white,
-                ),
+            // Down button
+            AnimatedButton(
+              height: 50,
+              width: 50,
+              color: Colors.blue,
+              onPressed: _goToNextPage,
+              child: Icon(
+                currentPageIndex < pages.length - 1
+                    ? Icons.arrow_downward_rounded
+                    : Icons.check,
+                color: Colors.white,
+                size: 24,
               ),
+            ),
+            const SizedBox(width: 8),
+            // Finish button
+            AnimatedButton(
+              height: 50,
+              width: 50,
+              color: Colors.green,
+              shadowDegree: ShadowDegree.dark,
+              onPressed: _finishReview,
+              child: const Icon(
+                Icons.check_circle,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Reset button
+            AnimatedButton(
+              height: 50,
+              width: 50,
+              color: Colors.orange,
+              shadowDegree: ShadowDegree.dark,
+              onPressed: _isSaving ? () {} : _resetChecking,
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.refresh,
+                      color: Colors.white,
+                      size: 24,
+                    ),
             ),
           ],
         ),
       ],
+    ),
     );
   }
 
@@ -1431,7 +1459,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
                 width: 100,
                 height: 50,
                 color: Colors.blue,
-                onPressed: () => Get.back(),
+                onPressed: _navigateBackToGameManage,
                 child: Text(
                   "Back",
                   style: GoogleFonts.poppins(
@@ -1472,6 +1500,22 @@ class _MyGameCheckState extends State<MyGameCheck> {
     if (pages.isEmpty) {
       return Scaffold(
         backgroundColor: const Color(0xFF1E201E),
+        appBar: AppBar(
+          backgroundColor: Colors.white.withOpacity(0.05),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: _navigateBackToGameManage,
+          ),
+          title: Text(
+            title ?? 'Game Check',
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1482,6 +1526,27 @@ class _MyGameCheckState extends State<MyGameCheck> {
                 "No submission data found",
                 style: GoogleFonts.poppins(fontSize: 18, color: Colors.white70),
               ),
+              const SizedBox(height: 8),
+              Text(
+                "This student may not have submitted any answers yet.",
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.white54),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              AnimatedButton(
+                width: 120,
+                height: 50,
+                color: Colors.blue,
+                onPressed: _navigateBackToGameManage,
+                child: Text(
+                  "Go Back",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1490,203 +1555,95 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E201E),
-      body: Stack(
-        children: [
-          // Dark overlay background when Column 1 sidebar is open
-          if (_isSmallScreen && _showSidebar)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () {
+      appBar: AppBar(
+        backgroundColor: Colors.white.withOpacity(0.05),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: _navigateBackToGameManage,
+        ),
+        title: Text(
+          title ?? 'Game Check',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        actions: [
+          // Sidebar toggle buttons moved to AppBar
+          if (_isMediumScreen)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: AnimatedButton(
+                onPressed: () {
                   setState(() {
-                    _showSidebar = false;
+                    _showColumn3Sidebar = !_showColumn3Sidebar;
+                    if (_showColumn3Sidebar && _showSidebar) {
+                      _showSidebar = false;
+                    }
                   });
                 },
-                child: Container(color: Colors.black.withOpacity(0.5)),
+                width: 50,
+                height: 50,
+                color: Colors.blue,
+                child: Icon(
+                  _showColumn3Sidebar ? Icons.close : Icons.build,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
-
-          // Dark overlay background when Column 3 sidebar is open
-          if (_isMediumScreen && _showColumn3Sidebar)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () {
+          if (_isSmallScreen)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: AnimatedButton(
+                onPressed: () {
                   setState(() {
-                    _showColumn3Sidebar = false;
+                    _showSidebar = !_showSidebar;
+                    if (_showSidebar && _showColumn3Sidebar) {
+                      _showColumn3Sidebar = false;
+                    }
                   });
                 },
-                child: Container(color: Colors.black.withOpacity(0.5)),
+                width: 50,
+                height: 50,
+                color: Colors.orange,
+                child: Icon(
+                  _showSidebar ? Icons.close : Icons.menu,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
-
-          // Sliding sidebar for small screens (Column 1 - Student Info)
-          if (_isSmallScreen && _showSidebar)
-            Positioned(
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E201E),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: 2,
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Main content area (FIRST - renders behind sidebars)
+            ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minWidth: (MediaQuery.of(context).size.width * 0.6).clamp(
+                      0,
+                      400,
                     ),
-                  ],
-                ),
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    if (details.delta.dy != 0) {
-                      final newOffset =
-                          _sidebarScrollController.offset -
-                          (details.delta.dy * 2);
-                      final maxScroll =
-                          _sidebarScrollController.position.maxScrollExtent;
-                      final clampedOffset = newOffset.clamp(0.0, maxScroll);
-                      _sidebarScrollController.jumpTo(clampedOffset);
-                    }
-                  },
-                  child: SingleChildScrollView(
-                    controller: _sidebarScrollController,
-                    padding: const EdgeInsets.all(20.0),
-                    physics: const BouncingScrollPhysics(),
-                    child: _buildColumn1Content(),
                   ),
-                ),
-              ),
-            ),
-
-          // Column 3 sidebar for medium screens (Review Controls)
-          if (_isMediumScreen && _showColumn3Sidebar)
-            Positioned(
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E201E),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    if (details.delta.dy != 0) {
-                      final newOffset =
-                          _column3ScrollController.offset -
-                          (details.delta.dy * 2);
-                      final maxScroll =
-                          _column3ScrollController.position.maxScrollExtent;
-                      final clampedOffset = newOffset.clamp(0.0, maxScroll);
-                      _column3ScrollController.jumpTo(clampedOffset);
-                    }
-                  },
-                  child: SingleChildScrollView(
-                    controller: _column3ScrollController,
-                    padding: const EdgeInsets.all(20.0),
-                    physics: const BouncingScrollPhysics(),
-                    child: _buildColumn3Content(),
-                  ),
-                ),
-              ),
-            ),
-
-          // Top-right tool and hamburger buttons
-          if (_isSmallScreen || _isMediumScreen)
-            Positioned(
-              top: 20,
-              right: 20,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  border: Border.all(color: Colors.white),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    if (_isMediumScreen)
-                      Padding(
-                        padding: const EdgeInsets.all(5.0),
-                        child: AnimatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _showColumn3Sidebar = !_showColumn3Sidebar;
-                              if (_showColumn3Sidebar && _showSidebar) {
-                                _showSidebar = false;
-                              }
-                            });
-                          },
-                          width: 50,
-                          height: 50,
-                          color: Colors.blue,
-                          child: Icon(
-                            _showColumn3Sidebar ? Icons.close : Icons.build,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                    if (_isSmallScreen)
-                      Padding(
-                        padding: const EdgeInsets.all(5.0),
-                        child: AnimatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _showSidebar = !_showSidebar;
-                              if (_showSidebar && _showColumn3Sidebar) {
-                                _showColumn3Sidebar = false;
-                              }
-                            });
-                          },
-                          width: 50,
-                          height: 50,
-                          color: Colors.orange,
-                          child: Icon(
-                            _showSidebar ? Icons.close : Icons.menu,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-
-          // Main content area
-          ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(
-              dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: (MediaQuery.of(context).size.width * 0.6).clamp(
-                    0,
-                    400,
-                  ),
-                ),
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width,
-                  child: Padding(
-                    padding: EdgeInsets.all(_isSmallScreen ? 10.0 : 30.0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // -------- Column 1 -------- (Student Info & Navigation)
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width,
+                    child: Padding(
+                      padding: EdgeInsets.all(_isSmallScreen ? 10.0 : 30.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        // -------- Column 1 -------- (Hidden on small screens)
                         if (!_isSmallScreen)
                           Expanded(
                             child: Column(
@@ -1702,7 +1659,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
                             ),
                           ),
 
-                        // -------- Column 2 -------- (Review Content)
+                        // -------- Column 2 --------
                         Expanded(
                           child: Center(
                             child: Container(
@@ -1744,30 +1701,120 @@ class _MyGameCheckState extends State<MyGameCheck> {
                           ),
                         ),
 
-                        // -------- Column 3 -------- (Review Controls)
+                        // -------- Column 3 -------- (Hidden on medium screens)
                         if (!_isMediumScreen)
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20.0),
-                              child: _buildColumn3Content(),
-                            ),
+                            child: _buildColumn3Content(),
                           ),
                       ],
                     ),
                   ),
                 ),
+               )             
+             ),
+            ),
+
+          // Dark overlay background when Column 1 sidebar is open (ABOVE main content)
+          if (_isSmallScreen && _showSidebar)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _showSidebar = false;
+                  });
+                },
+                child: Container(color: Colors.black.withOpacity(0.5)),
               ),
             ),
-          ),
-        ],
+
+          // Sliding sidebar for small screens (Column 1 - Student Info) - ON TOP
+          if (_isSmallScreen && _showSidebar)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              child: Material(
+                elevation: 16,
+                color: const Color(0xFF1E201E),
+                shadowColor: Colors.black,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1E201E),
+                  ),
+                  child: SingleChildScrollView(
+                    controller: _sidebarScrollController,
+                    padding: const EdgeInsets.all(20.0),
+                    physics: const BouncingScrollPhysics(),
+                    child: _buildColumn1Content(),
+                  ),
+                ),
+              ),
+            ),
+
+          // Column 3 sidebar for medium screens (Review Controls) - ON TOP
+          if (_isMediumScreen && _showColumn3Sidebar)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                color: const Color(0xFF1E201E),
+                child: Material(
+                  elevation: 16,
+                  color: const Color(0xFF1E201E),
+                  shadowColor: Colors.black,
+                  child: SafeArea(
+                    child: SingleChildScrollView(
+                      controller: _column3ScrollController,
+                      padding: const EdgeInsets.all(20.0),
+                      physics: const BouncingScrollPhysics(),
+                      child: _buildColumn3Content(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   /// Build review content based on game type
   Widget _buildReviewContent() {
+    if (pages.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.grey, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              "No pages available",
+              style: GoogleFonts.poppins(color: Colors.black54, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (currentPageIndex >= pages.length) {
-      return const Center(child: Text("No data"));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.grey, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              "Invalid page index",
+              style: GoogleFonts.poppins(color: Colors.black54, fontSize: 16),
+            ),
+          ],
+        ),
+      );
     }
 
     final pageData = pages[currentPageIndex];
@@ -1778,9 +1825,17 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
     // For other game types (to be implemented)
     return Center(
-      child: Text(
-        "Review for ${pageData.gameType} not yet implemented",
-        style: GoogleFonts.poppins(color: Colors.black87),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.construction, color: Colors.orange, size: 48),
+          const SizedBox(height: 16),
+          Text(
+            "Review for ${pageData.gameType} not yet implemented",
+            style: GoogleFonts.poppins(color: Colors.black87, fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -1796,19 +1851,6 @@ class _MyGameCheckState extends State<MyGameCheck> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section title
-        Container(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Text(
-            "Review Submission - Page ${currentPageIndex + 1}",
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-
         // Original Prompt (sentence or image)
         Text(
           "Original Prompt:",

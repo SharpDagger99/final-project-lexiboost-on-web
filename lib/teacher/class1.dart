@@ -749,16 +749,29 @@ class _CreateClassDialogState extends State<CreateClassDialog> {
             (teacherSubDoc.data()?['status'] ?? false)) {
           final userData = userDoc.data();
           final username = userData['username'] ?? 'Unknown';
+          final fullname = userData['fullname'] ?? 'Unknown';
+          final email = userData['email'] ?? '';
+          final schoolId = userData['schoolId'] ?? 'Not set';
+          final gradeLevel = userData['gradeLevel'] ?? 'Not set';
+          final section = userData['section'] ?? 'Not set';
 
+          // Enhanced search filter - includes fullname, schoolId, gradeLevel, and section
           if (_studentSearchQuery.isEmpty ||
-              username.toLowerCase().contains(
-                _studentSearchQuery.toLowerCase(),
-              )) {
+              username.toLowerCase().contains(_studentSearchQuery.toLowerCase()) ||
+              fullname.toLowerCase().contains(_studentSearchQuery.toLowerCase()) ||
+              email.toLowerCase().contains(_studentSearchQuery.toLowerCase()) ||
+              schoolId.toLowerCase().contains(_studentSearchQuery.toLowerCase()) ||
+              gradeLevel.toLowerCase().contains(_studentSearchQuery.toLowerCase()) ||
+              section.toLowerCase().contains(_studentSearchQuery.toLowerCase())) {
             students.add({
               'studentId': userDoc.id,
               'username': username,
-              'email': userData['email'] ?? '',
+              'fullname': fullname,
+              'email': email,
               'profileImage': userData['profileImage'],
+              'schoolId': schoolId,
+              'gradeLevel': gradeLevel,
+              'section': section,
             });
           }
         }

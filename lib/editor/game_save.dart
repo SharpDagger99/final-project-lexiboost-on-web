@@ -19,9 +19,50 @@ class MyGameSave extends StatefulWidget {
 
 class _MyGameSaveState extends State<MyGameSave> {
   final User? user = FirebaseAuth.instance.currentUser;
+  final TextEditingController _searchController = TextEditingController();
+  String _userRole = 'student'; // Default role
+  String _searchQuery = '';
 
   /// Get current user ID - returns null if user is not authenticated
   String? get _currentUserId => user?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserRole();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Get current user's role from Firestore
+  Future<void> _loadUserRole() async {
+    final userId = _currentUserId;
+    if (userId == null) {
+      setState(() {
+        _userRole = 'student';
+      });
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _userRole = userDoc.data()?['role'] ?? 'student';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to get user role: $e');
+    }
+  }
 
   Future<void> _deleteGame(String gameId) async {
     final userId = _currentUserId;
@@ -35,9 +76,13 @@ class _MyGameSaveState extends State<MyGameSave> {
         .delete();
   }
 
-  /// Navigate back with animation
+  /// Navigate back based on user role
   void _navigateBack() {
-    Navigator.of(context).pop();
+    if (_userRole == 'admin') {
+      Get.offAllNamed('/admin');
+    } else {
+      Get.offAllNamed('/teacher_home');
+    }
   }
 
   /// Show confirmation dialog
@@ -128,60 +173,139 @@ class _MyGameSaveState extends State<MyGameSave> {
                       GoogleFonts.poppins(fontSize: 18, color: Colors.white70),
                 ),
               )
-            : StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection("users")
-                    .doc(_currentUserId) // Explicitly use current user's ID
-                    .collection("created_games")
-                    .orderBy("created_at", descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    );
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
-                      child: Text(
-                        "No games created yet.",
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          color: Colors.white70,
+            : Column(
+                children: [
+                  // Search bar - outside StreamBuilder to prevent rebuild
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                      style: GoogleFonts.poppins(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Search by game name or mode (heart, time, score)...',
+                        hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.white54,
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.white54,
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _searchQuery = '';
+                                  });
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 15,
                         ),
                       ),
-                    );
-                  }
+                    ),
+                  ),
+                  
+                  // Games list with StreamBuilder
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection("users")
+                          .doc(_currentUserId)
+                          .collection("created_games")
+                          .orderBy("created_at", descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(color: Colors.white),
+                          );
+                        }
 
-                  final games = snapshot.data!.docs;
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return Center(
+                            child: Text(
+                              "No games created yet.",
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          );
+                        }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: games.length,
-                  itemBuilder: (context, index) {
-                    final game = games[index];
-                    final gameData = game.data() as Map<String, dynamic>? ?? {};
-                    final gameId = game.id;
-                    final title = gameData["title"]?.toString() ?? "Untitled";
-                    final description = gameData["description"]?.toString() ?? "";
-                    final difficulty = gameData["difficulty"]?.toString() ?? "easy";
-                    final prizeCoins = gameData["prizeCoins"]?.toString() ?? "0";
+                        final games = snapshot.data!.docs;
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: _buildGameCard(
-                        gameId,
-                        title,
-                        description,
-                        difficulty,
-                        prizeCoins,
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                        // Filter games based on search query
+                        final filteredGames = games.where((game) {
+                          if (_searchQuery.isEmpty) return true;
+                          
+                          final gameData = game.data() as Map<String, dynamic>? ?? {};
+                          final title = (gameData["title"]?.toString() ?? "").toLowerCase();
+                          final gameRule = (gameData["gameRule"]?.toString() ?? "").toLowerCase();
+                          final query = _searchQuery.toLowerCase();
+                          
+                          return title.contains(query) || gameRule.contains(query);
+                        }).toList();
+
+                        if (filteredGames.isEmpty) {
+                          return Center(
+                            child: Text(
+                              _searchQuery.isEmpty
+                                  ? "No games created yet."
+                                  : "No games found matching \"$_searchQuery\"",
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: filteredGames.length,
+                          itemBuilder: (context, index) {
+                            final game = filteredGames[index];
+                            final gameData = game.data() as Map<String, dynamic>? ?? {};
+                            final gameId = game.id;
+                            final title = gameData["title"]?.toString() ?? "Untitled";
+                            final description = gameData["description"]?.toString() ?? "";
+                            final difficulty = gameData["difficulty"]?.toString() ?? "easy";
+                            final prizeCoins = gameData["prizeCoins"]?.toString() ?? "0";
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16.0),
+                              child: _buildGameCard(
+                                gameId,
+                                title,
+                                description,
+                                difficulty,
+                                prizeCoins,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
     );
   }
 

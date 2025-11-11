@@ -10,7 +10,6 @@ import 'package:flutter/gestures.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
-import 'package:lexi_on_web/editor/game_check.dart';
 
 class MyManagement extends StatefulWidget {
   const MyManagement({super.key});
@@ -21,6 +20,7 @@ class MyManagement extends StatefulWidget {
 
 class _MyManagementState extends State<MyManagement> {
   final User? user = FirebaseAuth.instance.currentUser;
+  final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>>? completedUsers;
   List<Map<String, dynamic>>? allCompletedUsers; // Store all users
   List<String>? myStudentIds; // Store teacher's student IDs
@@ -32,34 +32,96 @@ class _MyManagementState extends State<MyManagement> {
   String? gameRule; // Store game rule to check if it's score mode
   String? userId;
   String _filterType = 'all'; // 'all' or 'my_students'
+  String _searchQuery = '';
   Set<String> _selectedStudentIds = {}; // Track selected students for printing
 
   @override
   void initState() {
     super.initState();
-    _getArguments();
+    // Use post frame callback to ensure URL is fully loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getArguments();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _getArguments() {
+    // Try to get from Get.arguments first
     final args = Get.arguments as Map<String, dynamic>?;
-    if (args != null) {
+    
+    // If no arguments, try to parse from URL parameters
+    final uri = Uri.base;
+    
+    debugPrint('🔍 game_manage: Checking data sources...');
+    debugPrint('  Get.arguments: $args');
+    debugPrint('  URL: ${uri.toString()}');
+    debugPrint('  URL query params: ${uri.queryParameters}');
+    
+    // Update state with parsed values, treating empty strings as null
+    setState(() {
+      gameId = args?['gameId'] as String? ?? uri.queryParameters['gameId'];
+      
+      // Handle title - empty string should be treated as null
+      final titleFromArgs = args?['title'] as String?;
+      final titleFromUrl = uri.queryParameters['title'];
+      title = (titleFromArgs != null && titleFromArgs.isNotEmpty) ? titleFromArgs : 
+              (titleFromUrl != null && titleFromUrl.isNotEmpty) ? titleFromUrl : null;
+      
+      // Handle gameSet - empty string should be treated as null
+      final gameSetFromArgs = args?['gameSet'] as String?;
+      final gameSetFromUrl = uri.queryParameters['gameSet'];
+      gameSet = (gameSetFromArgs != null && gameSetFromArgs.isNotEmpty) ? gameSetFromArgs : 
+                (gameSetFromUrl != null && gameSetFromUrl.isNotEmpty) ? gameSetFromUrl : null;
+      
+      // Handle gameCode - empty string should be treated as null
+      final gameCodeFromArgs = args?['gameCode'] as String?;
+      final gameCodeFromUrl = uri.queryParameters['gameCode'];
+      gameCode = (gameCodeFromArgs != null && gameCodeFromArgs.isNotEmpty) ? gameCodeFromArgs : 
+                 (gameCodeFromUrl != null && gameCodeFromUrl.isNotEmpty) ? gameCodeFromUrl : null;
+      
+      userId = args?['userId'] as String? ?? uri.queryParameters['userId'] ?? user?.uid;
+    });
+    
+    debugPrint('📥 game_manage arguments parsed:');
+    debugPrint('  gameId: $gameId');
+    debugPrint('  title: $title (${title == null ? "NULL - will fetch" : "OK"})');
+    debugPrint('  gameSet: $gameSet (${gameSet == null ? "NULL - will fetch" : "OK"})');
+    debugPrint('  gameCode: $gameCode (${gameCode == null ? "NULL - will fetch" : "OK"})');
+    debugPrint('  userId: $userId');
+    
+    if (gameId != null && userId != null) {
+      debugPrint('✅ Valid arguments, loading data...');
+      _loadData();
+    } else {
+      debugPrint('⚠️ Missing required arguments: gameId=$gameId, userId=$userId');
       setState(() {
-        gameId = args['gameId'] as String?;
-        title = args['title'] as String?;
-        gameSet = args['gameSet'] as String?;
-        gameCode = args['gameCode'] as String?;
-        userId = args['userId'] as String? ?? user?.uid;
+        isLoading = false;
       });
-      if (gameId != null) {
-        _loadData();
-      }
     }
   }
 
   Future<void> _loadData() async {
-    if (gameId == null || userId == null) return;
+    if (gameId == null || userId == null) {
+      debugPrint('❌ Cannot load data: gameId or userId is null');
+      return;
+    }
+    
+    debugPrint('🔄 Starting data load...');
+    setState(() {
+      isLoading = true;
+    });
+    
+    // ALWAYS fetch game details from Firestore to ensure we have the latest data
+    debugPrint('📦 Fetching game details from Firestore...');
+    await _fetchGameDetails();
     
     // Fetch completed users, teacher's students, and game rule in parallel
+    debugPrint('📦 Fetching users, students, and game rule...');
     final results = await Future.wait([
       _fetchCompletedUsers(gameId!),
       _fetchMyStudentIds(),
@@ -70,6 +132,8 @@ class _MyManagementState extends State<MyManagement> {
     final studentIds = results[1] as List<String>;
     final rule = results[2] as String?;
     
+    debugPrint('✅ Data fetched: ${users.length} users, ${studentIds.length} students');
+    
     if (mounted) {
       setState(() {
         allCompletedUsers = users;
@@ -78,6 +142,52 @@ class _MyManagementState extends State<MyManagement> {
         gameRule = rule;
         isLoading = false;
       });
+      debugPrint('✅ Data load complete and UI updated');
+    }
+  }
+  
+  /// Fetch game details from Firestore - ALWAYS updates with latest data
+  Future<void> _fetchGameDetails() async {
+    try {
+      if (gameId == null || userId == null) {
+        debugPrint('❌ Cannot fetch game details: gameId or userId is null');
+        return;
+      }
+      
+      debugPrint('🔄 Fetching game details from Firestore...');
+      debugPrint('  Path: users/$userId/created_games/$gameId');
+      
+      final gameDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId!)
+          .collection('created_games')
+          .doc(gameId!)
+          .get();
+      
+      if (gameDoc.exists) {
+        final data = gameDoc.data();
+        debugPrint('📄 Game document found in Firestore');
+        debugPrint('  Raw data: $data');
+        
+        if (mounted) {
+          setState(() {
+            // ALWAYS update with Firestore data (source of truth)
+            title = data?['title'] as String? ?? title;
+            gameSet = data?['gameSet'] as String? ?? gameSet;
+            gameCode = data?['gameCode'] as String? ?? gameCode;
+          });
+          debugPrint('✅ Game details updated from Firestore:');
+          debugPrint('  title: $title');
+          debugPrint('  gameSet: $gameSet');
+          debugPrint('  gameCode: $gameCode');
+        }
+      } else {
+        debugPrint('⚠️ Game document not found in Firestore!');
+        debugPrint('  Checked path: users/$userId/created_games/$gameId');
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching game details: $e');
+      debugPrint('  Stack trace: ${StackTrace.current}');
     }
   }
 
@@ -132,7 +242,7 @@ class _MyManagementState extends State<MyManagement> {
     }
   }
 
-  /// Filter completed users based on selected filter
+  /// Filter completed users based on selected filter and search query
   void _applyFilter(String filterType) {
     if (allCompletedUsers == null) return;
     
@@ -140,7 +250,7 @@ class _MyManagementState extends State<MyManagement> {
       _filterType = filterType;
       
       if (filterType == 'all') {
-        completedUsers = allCompletedUsers;
+        completedUsers = _applySearchFilter(allCompletedUsers!);
       } else if (filterType == 'my_students' && myStudentIds != null) {
         // Filter to show only students that belong to the teacher
         // We need to match by user ID - but we only have username and profileImage
@@ -148,6 +258,26 @@ class _MyManagementState extends State<MyManagement> {
         _filterMyStudents();
       }
     });
+  }
+
+  /// Apply search filter to a list of users
+  List<Map<String, dynamic>> _applySearchFilter(List<Map<String, dynamic>> users) {
+    if (_searchQuery.isEmpty) return users;
+    
+    return users.where((userData) {
+      final username = (userData['username'] as String? ?? '').toLowerCase();
+      final fullname = (userData['fullname'] as String? ?? '').toLowerCase();
+      final schoolId = (userData['schoolId'] as String? ?? '').toLowerCase();
+      final gradeLevel = (userData['gradeLevel'] as String? ?? '').toLowerCase();
+      final section = (userData['section'] as String? ?? '').toLowerCase();
+      final query = _searchQuery.toLowerCase();
+      
+      return username.contains(query) ||
+             fullname.contains(query) ||
+             schoolId.contains(query) ||
+             gradeLevel.contains(query) ||
+             section.contains(query);
+    }).toList();
   }
 
   /// Filter to show only teacher's students
@@ -161,7 +291,7 @@ class _MyManagementState extends State<MyManagement> {
     }).toList();
     
     setState(() {
-      completedUsers = filtered;
+      completedUsers = _applySearchFilter(filtered);
     });
   }
 
@@ -332,6 +462,10 @@ class _MyManagementState extends State<MyManagement> {
             'username': userData['username'] ?? 'Unknown User',
             'email': userData['email'] ?? '', // Add email for printing
             'profileImage': userData['profileImage'] ?? '',
+            'fullname': userData['fullname'] ?? 'Not set',
+            'schoolId': userData['schoolId'] ?? 'Not set',
+            'gradeLevel': userData['gradeLevel'] ?? 'Not set',
+            'section': userData['section'] ?? 'Not set',
             'completedAt': completedData?['completedAt'] ?? null,
             'startedAt': completedData?['startedAt'] ?? null,
             'totalScore': finalTotalScore,
@@ -369,7 +503,7 @@ class _MyManagementState extends State<MyManagement> {
       print('Note: Could not delete from published_games collection: $e');
     }
 
-    Get.back();
+    Get.offAllNamed('/game_published');
     Get.snackbar(
       'Success',
       'Game unpublished successfully',
@@ -506,475 +640,7 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
-  /// Show confirmation dialog before navigating to game check
-  Future<void> _showReviewConfirmation(Map<String, dynamic> player) async {
-    print('🔵 _showReviewConfirmation called for player: ${player['username']}');
-    
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext ctx) {
-        print('🔵 Dialog builder called');
-        return AlertDialog(
-          backgroundColor: const Color(0xFF2C2F33),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              const Icon(Icons.rate_review, color: Colors.orange, size: 28),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "Review Submission",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            "Do you want to review ${player['username']}'s submission?\n\nYou'll be able to check their answers and mark them as correct or incorrect.",
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                print('🔴 Cancel button pressed');
-                Navigator.of(ctx).pop(false);
-              },
-              child: Text(
-                "Cancel",
-                style: GoogleFonts.poppins(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () {
-                print('🟢 Continue button pressed');
-                Navigator.of(ctx).pop(true);
-              },
-              child: Text(
-                "Continue",
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-    
-    print('🔵 Dialog closed. confirmed value: $confirmed');
-    print('🔵 mounted state: $mounted');
-    
-    // Navigate after dialog closes if user confirmed
-    if (confirmed == true) {
-      print('📋 Navigating to game_check with:');
-      print('  gameId: $gameId');
-      print('  title: $title');
-      print('  userId: $userId');
-      print('  studentUserId: ${player['userId']}');
-      print('  studentUsername: ${player['username']}');
-      
-      try {
-        if (mounted) {
-          print('📋 Calling Get.toNamed...');
-          
-          // Try GetX navigation
-          final navigationArgs = {
-            "gameId": gameId,
-            "title": title,
-            "userId": userId,
-            "studentUserId": player['userId'],
-            "studentUsername": player['username'],
-          };
-          
-          print('📋 Calling Get.toNamed with arguments: $navigationArgs');
-          
-          try {
-            Get.toNamed(
-              "/game_check",
-              arguments: navigationArgs,
-            );
-            print('✅ Get.toNamed called successfully');
-          } catch (getError) {
-            print('⚠️ Get.toNamed failed: $getError');
-            print('📋 Trying Get.to() with direct page...');
-            
-            // Fallback: Use Get.to() directly
-            try {
-              Get.to(
-                () => const MyGameCheck(),
-                arguments: navigationArgs,
-              );
-              print('✅ Get.to() called successfully');
-            } catch (getToError) {
-              print('❌ Get.to() also failed: $getToError');
-              print('📋 Last resort: Using Navigator.push with MaterialPageRoute...');
-              
-              // Last resort: Use Navigator directly
-              if (mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const MyGameCheck(),
-                    settings: RouteSettings(arguments: navigationArgs),
-                  ),
-                );
-                print('✅ Navigator.push called successfully');
-              }
-            }
-          }
-        } else {
-          print('⚠️ Widget not mounted, cannot navigate');
-        }
-      } catch (e, stackTrace) {
-        print('❌ Error navigating to game_check: $e');
-        print('❌ Stack trace: $stackTrace');
-      }
-    } else {
-      print('⚠️ Navigation cancelled (confirmed: $confirmed)');
-    }
-  }
 
-  /// Show score details dialog for Score mode
-  Future<void> _showScoreDetails(Map<String, dynamic> player) async {
-    try {
-      final roundScoresRaw = player['roundScores'];
-      List<dynamic> roundScores = [];
-
-      // Handle different data formats from Firestore
-      if (roundScoresRaw != null) {
-        if (roundScoresRaw is List) {
-          roundScores = roundScoresRaw;
-        } else if (roundScoresRaw is Map) {
-          // If it's a map, convert values to list
-          roundScores = roundScoresRaw.values.toList();
-        } else {
-          // Single value - wrap in list
-          roundScores = [roundScoresRaw];
-        }
-      }
-
-      final totalScore = player['totalScore'] ?? 0; // Maximum possible total score
-      final username = player['username'] ?? 'Unknown User';
-
-      // Calculate awarded score (sum of pageScore from all rounds)
-      int awardedScore = 0;
-      for (var roundScore in roundScores) {
-        if (roundScore is Map) {
-          final score = roundScore['score'] as int? ?? 0;
-          awardedScore += score; // Sum of actual awarded pageScore values
-        }
-      }
-
-      if (roundScores.isEmpty) {
-        // Show a message if no score data available
-        Get.snackbar(
-          'No Score Data',
-          'Score data not available for this player',
-          backgroundColor: Colors.orange,
-          colorText: Colors.white,
-        );
-        return;
-      }
-
-      if (!mounted) return;
-
-      await showDialog(
-        context: context,
-        barrierDismissible: true,
-        builder: (BuildContext ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF2C2F33),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              const Icon(Icons.emoji_events, color: Colors.amber, size: 28),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "User Score",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                username,
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white70,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.9,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.6,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Round-by-round scores
-                    Text(
-                      'Round Details:',
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // List of rounds
-                    ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: roundScores.length,
-                      itemBuilder: (context, index) {
-                        final roundDataRaw = roundScores[index];
-
-                        if (roundDataRaw is! Map) {
-                          return const SizedBox.shrink();
-                        }
-
-                        final roundData = Map<String, dynamic>.from(
-                          roundDataRaw,
-                        );
-                        final round = roundData['round'] ?? (index + 1);
-                        final score = roundData['score'] ?? 0;
-                        final correct = roundData['correct'] ?? false;
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: correct
-                                ? Colors.green.withOpacity(0.2)
-                                : Colors.red.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: correct ? Colors.green : Colors.red,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: correct ? Colors.green : Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$round',
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Round $round',
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      correct
-                                          ? '✓ Correct (+$score)'
-                                          : '✗ Failed (0)',
-                                      style: GoogleFonts.poppins(
-                                        color: correct
-                                            ? Colors.green[300]
-                                            : Colors.red[300],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: correct
-                                      ? Colors.green
-                                      : Colors.red.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '$score',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Total Score Card at the bottom
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.amber[700]!, Colors.amber[500]!],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            'Total Score',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$awardedScore / $totalScore',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            AnimatedButton(
-              height: 40,
-              width: 120,
-              color: Colors.orange,
-              shadowDegree: ShadowDegree.dark,
-              onPressed: () {
-                Navigator.pop(ctx);
-                // Navigate to game_check with player data
-                final playerUserId = player['userId'] as String?;
-                if (playerUserId != null && gameId != null && userId != null) {
-                  final navigationArgs = {
-                    "gameId": gameId,
-                    "title": title,
-                    "userId": userId,
-                    "studentUserId": playerUserId,
-                    "studentUsername": username,
-                  };
-                  
-                  try {
-                    Get.toNamed(
-                      "/game_check",
-                      arguments: navigationArgs,
-                    );
-                  } catch (e) {
-                    try {
-                      Get.to(
-                        () => const MyGameCheck(),
-                        arguments: navigationArgs,
-                      );
-                    } catch (e2) {
-                      if (mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const MyGameCheck(),
-                            settings: RouteSettings(arguments: navigationArgs),
-                          ),
-                        );
-                      }
-                    }
-                  }
-                }
-              },
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.refresh, color: Colors.white, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    "Recheck",
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                "Close",
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      print('Error showing score details: $e');
-      if (mounted) {
-        Get.snackbar(
-          'Error',
-          'Failed to load score details: ${e.toString()}',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
-      }
-    }
-  }
 
   /// Show confirmation dialog for unpublishing
   Future<void> _showUnpublishDialog() async {
@@ -1030,6 +696,235 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
+  /// View student information dialog (read-only)
+  void _viewStudentInfo(String studentId, String studentName, String studentEmail) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: 500,
+            constraints: const BoxConstraints(maxHeight: 600),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').doc(studentId).snapshots(),
+              builder: (context, studentSnapshot) {
+                if (studentSnapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1E201E),
+                      ),
+                    ),
+                  );
+                }
+
+                if (!studentSnapshot.hasData || !studentSnapshot.data!.exists) {
+                  return SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: Text(
+                        'Student data not found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final studentData = studentSnapshot.data!.data() as Map<String, dynamic>;
+                final fullname = studentData['fullname'] ?? 'Not set';
+                final email = studentData['email'] ?? studentEmail;
+                final profileImageBase64 = studentData['profileImage'];
+                final schoolId = studentData['schoolId'] ?? 'Not set';
+                final gradeLevel = studentData['gradeLevel'] ?? 'Not set';
+                final section = studentData['section'] ?? 'Not set';
+
+                // Check if all important fields are set
+                bool hasCompleteInfo = fullname != 'Not set' &&
+                    schoolId != 'Not set' &&
+                    gradeLevel != 'Not set' &&
+                    section != 'Not set';
+
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Student Details',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Profile Image
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.blue[700],
+                        backgroundImage: profileImageBase64 != null
+                            ? MemoryImage(base64Decode(profileImageBase64))
+                            : null,
+                        child: profileImageBase64 == null
+                            ? Text(
+                                fullname.isNotEmpty && fullname != 'Not set'
+                                    ? fullname[0].toUpperCase()
+                                    : 'S',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Show warning if incomplete info
+                      if (!hasCompleteInfo)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange[300]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Student unknown information',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Information Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDetailRow('Full Name', fullname),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Email', email),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('School ID', schoolId),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Grade Level', gradeLevel),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Section', section),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Close button only (no edit)
+                      AnimatedButton(
+                        width: 120,
+                        height: 45,
+                        color: const Color(0xFF1E201E),
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text(
+                          'Close',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    bool isNotSet = value == 'Not set' || value.isEmpty;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isNotSet ? Colors.grey[400] : Colors.black87,
+              fontStyle: isNotSet ? FontStyle.italic : FontStyle.normal,
+            ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Format date helper
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return 'Unknown';
@@ -1048,20 +943,15 @@ class _MyManagementState extends State<MyManagement> {
     }
   }
 
-  /// Show print dialog for My Students section
+  /// Show print dialog for all players
   Future<void> _showPrintDialog() async {
-    // Get filtered my students
-    final myStudents =
-        allCompletedUsers?.where((userData) {
-          final userId = userData['userId'] as String?;
-          return userId != null && myStudentIds?.contains(userId) == true;
-        }).toList() ??
-        [];
+    // Get currently displayed players (filtered by search)
+    final players = completedUsers ?? [];
 
-    if (myStudents.isEmpty) {
+    if (players.isEmpty) {
       Get.snackbar(
-        'No Students',
-        'No students found to print',
+        'No Players',
+        'No players found to download',
         backgroundColor: Colors.orange,
         colorText: Colors.white,
       );
@@ -1071,7 +961,7 @@ class _MyManagementState extends State<MyManagement> {
     // Reset selection if needed
     if (_selectedStudentIds.isEmpty) {
       // Select all by default
-      _selectedStudentIds = myStudents
+      _selectedStudentIds = players
           .map((s) => s['userId'] as String?)
           .where((id) => id != null)
           .cast<String>()
@@ -1127,7 +1017,7 @@ class _MyManagementState extends State<MyManagement> {
                         ),
                         onPressed: () {
                           setDialogState(() {
-                            _selectedStudentIds = myStudents
+                            _selectedStudentIds = players
                                 .map((s) => s['userId'] as String?)
                                 .where((id) => id != null)
                                 .cast<String>()
@@ -1167,18 +1057,18 @@ class _MyManagementState extends State<MyManagement> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Select students to print (${_selectedStudentIds.length}/${myStudents.length} selected):',
+                    'Select players to download (${_selectedStudentIds.length}/${players.length} selected):',
                     style: GoogleFonts.poppins(
                       color: Colors.white70,
                       fontSize: 14,
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // List of students with checkboxes
+                  // List of players with checkboxes
                   Expanded(
                     child: SingleChildScrollView(
                       child: Column(
-                        children: myStudents.map((student) {
+                        children: players.map((student) {
                           final userId = student['userId'] as String? ?? '';
                           final username = student['username'] ?? 'Unknown';
                           final isSelected = _selectedStudentIds.contains(
@@ -1552,7 +1442,7 @@ class _MyManagementState extends State<MyManagement> {
           backgroundColor: Colors.white.withOpacity(0.05),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Get.back(),
+            onPressed: () => Get.offAllNamed('/game_published'),
           ),
           title: Text(
             "Game Management",
@@ -1578,7 +1468,7 @@ class _MyManagementState extends State<MyManagement> {
         backgroundColor: Colors.white.withOpacity(0.05),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Get.back(),
+          onPressed: () => Get.offAllNamed('/game_published'),
         ),
         title: Text(
           "Game Management",
@@ -1667,57 +1557,25 @@ class _MyManagementState extends State<MyManagement> {
                               children: [
                                 AnimatedButton(
                                   height: 50,
-                                  width: 150,
+                                  width: 50,
                                   color: Colors.orange,
                                   shadowDegree: ShadowDegree.light,
                                   onPressed: _showUnpublishDialog,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(width: 5),
-                                      const Icon(Icons.unpublished, color: Colors.white, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "Unpublish",
-                                        style: GoogleFonts.poppins(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                    ],
-                                  ),
+                                  child: const Icon(Icons.unpublished, color: Colors.white, size: 20),
                                 ),
                                 const SizedBox(width: 12),
                                 AnimatedButton(
                                   height: 50,
-                                  width: 200, // Increased width to fit "Change Game Code" text
+                                  width: 50,
                                   color: Colors.blue,
                                   shadowDegree: ShadowDegree.light,
                                   onPressed: _showChangeGameCodeDialog,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(width: 5),
-                                      const Icon(Icons.lock, color: Colors.white, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "Change Game Code",
-                                        style: GoogleFonts.poppins(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                    ],
-                                  ),
+                                  child: const Icon(Icons.lock, color: Colors.white, size: 20),
                                 ),
                                 const SizedBox(width: 12),
                                 AnimatedButton(
                                   height: 50,
-                                  width: 170,
+                                  width: 50,
                                   color: Colors.green,
                                   shadowDegree: ShadowDegree.light,
                                   onPressed: () {
@@ -1726,24 +1584,39 @@ class _MyManagementState extends State<MyManagement> {
                                       arguments: {"gameId": gameId},
                                     );
                                   },
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(width: 5),
-                                      const Icon(Icons.edit, color: Colors.white, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "Edit Game Set",
-                                        style: GoogleFonts.poppins(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                    ],
-                                  ),
+                                  child: const Icon(Icons.edit, color: Colors.white, size: 20),
                                 ),
+                                // Check button - only visible for score mode
+                                if (gameRule == 'score') ...[
+                                  const SizedBox(width: 12),
+                                  AnimatedButton(
+                                    height: 50,
+                                    width: 50,
+                                    color: Colors.purple,
+                                    shadowDegree: ShadowDegree.light,
+                                    onPressed: () {
+                                      // Navigate to first student for checking
+                                      if (completedUsers != null && completedUsers!.isNotEmpty) {
+                                        final firstStudent = completedUsers!.first;
+                                        final studentUserId = firstStudent['userId'] as String?;
+                                        final studentUsername = firstStudent['username'] as String?;
+                                        if (studentUserId != null && gameId != null) {
+                                          Get.toNamed(
+                                            '/game_check?gameId=$gameId&title=${Uri.encodeComponent(title ?? '')}&userId=${userId ?? ''}&studentUserId=$studentUserId&studentUsername=${Uri.encodeComponent(studentUsername ?? '')}',
+                                            arguments: {
+                                              "gameId": gameId,
+                                              "title": title,
+                                              "userId": userId,
+                                              "studentUserId": studentUserId,
+                                              "studentUsername": studentUsername,
+                                            },
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Icon(Icons.check, color: Colors.white, size: 20),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -1770,7 +1643,7 @@ class _MyManagementState extends State<MyManagement> {
 
                   // Status Cards - Scrollable row
                   SizedBox(
-                    height: 150,
+                    height: 140,
                     child: Scrollbar(
                       thumbVisibility: true,
                       child: ScrollConfiguration(
@@ -1788,7 +1661,7 @@ class _MyManagementState extends State<MyManagement> {
                               mainAxisAlignment: MainAxisAlignment.start,
                               children: [
                                 SizedBox(
-                                  width: 300,
+                                  width: 130,
                                   child: _buildStatusCard(
                                     "Total Players",
                                     isLoading
@@ -1800,7 +1673,7 @@ class _MyManagementState extends State<MyManagement> {
                                 ),
                                 const SizedBox(width: 12),
                                 SizedBox(
-                                  width: 300,
+                                  width: 130,
                                   child: _buildStatusCard(
                                     "Game Set",
                                     gameSet ?? "None",
@@ -1810,7 +1683,7 @@ class _MyManagementState extends State<MyManagement> {
                                 ),
                                 const SizedBox(width: 12),
                                 SizedBox(
-                                  width: 300,
+                                  width: 130,
                                   child: _buildStatusCard(
                                     "Game Code",
                                     gameCode ?? "None",
@@ -1829,106 +1702,78 @@ class _MyManagementState extends State<MyManagement> {
                   const SizedBox(height: 32),
 
                   // Players List Section
+                  Text(
+                    "PLAYERS",
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Search bar with Download button
                   Row(
                     children: [
-                      Text(
-                        "PLAYERS WHO COMPLETED",
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                              _applyFilter(_filterType);
+                            });
+                          },
+                          style: GoogleFonts.poppins(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'Search players...',
+                            hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.white54,
+                            ),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(
+                                      Icons.clear,
+                                      color: Colors.white54,
+                                    ),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                        _applyFilter(_filterType);
+                                      });
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.1),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 15,
+                            ),
+                          ),
                         ),
                       ),
-                      const Spacer(),
-                      // Filter Buttons and Print Button
-                      Row(
-                        children: [
-                          AnimatedButton(
-                            height: 36,
-                            width: 100,
-                            color: _filterType == 'all' ? Colors.blue : Colors.grey.shade700,
-                            shadowDegree: ShadowDegree.light,
-                            onPressed: () => _applyFilter('all'),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.people_outline,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  "All",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          AnimatedButton(
-                            height: 36,
-                            width: 120,
-                            color: _filterType == 'my_students' ? Colors.purple : Colors.grey.shade700,
-                            shadowDegree: ShadowDegree.light,
-                            onPressed: () => _applyFilter('my_students'),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.person_outline,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  "My Students",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Print button - only show when My Students filter is active
-                          if (_filterType == 'my_students')
-                            Padding(
-                              padding: const EdgeInsets.only(left: 12),
-                              child: AnimatedButton(
-                                height: 36,
-                                width: 100,
-                                color: Colors.green,
-                                shadowDegree: ShadowDegree.light,
-                                onPressed: _showPrintDialog,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.download,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      "Download",
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
+                      const SizedBox(width: 12),
+                      // Download button
+                      AnimatedButton(
+                        height: 50,
+                        width: 50,
+                        color: Colors.green,
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: _showPrintDialog,
+                        child: const Icon(
+                          Icons.download,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ],
                   ),
@@ -2105,6 +1950,26 @@ class _MyManagementState extends State<MyManagement> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    // Person info button
+                                    AnimatedButton(
+                                      height: 36,
+                                      width: 36,
+                                      color: Colors.blue,
+                                      shadowDegree: ShadowDegree.light,
+                                      onPressed: () {
+                                        _viewStudentInfo(
+                                          player['userId'] ?? '',
+                                          player['username'] ?? 'Unknown',
+                                          player['email'] ?? '',
+                                        );
+                                      },
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
                                     if (isPendingReview)
                                       Padding(
                                         padding: const EdgeInsets.only(right: 8),
@@ -2132,18 +1997,7 @@ class _MyManagementState extends State<MyManagement> {
                                     ),
                                   ],
                                 ),
-                                onTap: () async {
-                                    // Check if pending review first (priority)
-                                    final pendingReviewValue = player['pendingReview'];
-                                    final bool isActuallyPending = pendingReviewValue == true || 
-                                                                   (pendingReviewValue is String && pendingReviewValue.toLowerCase() == 'true');
-                                    
-                                    if (isActuallyPending) {
-                                      await _showReviewConfirmation(player);
-                                    } else if (isScoreMode) {
-                                      await _showScoreDetails(player);
-                                    }
-                                  },
+                                onTap: null,
                               );
                             },
                           ),

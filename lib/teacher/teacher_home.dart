@@ -12,6 +12,7 @@ import 'package:lexi_on_web/teacher/student_request.dart';
 import 'package:lexi_on_web/teacher/add_student.dart';
 import 'package:lexi_on_web/admin/settings_admin.dart';
 import 'package:lexi_on_web/start.dart';
+import 'package:lexi_on_web/teacher/teacher_profile.dart';
 
 class MyTeacherHome extends StatefulWidget {
   const MyTeacherHome({super.key});
@@ -220,6 +221,70 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                             },
                           ),
                         const Spacer(),
+                        
+                        // Teacher Name and Profile Avatar
+                        StreamBuilder<DocumentSnapshot>(
+                          stream: _firestore
+                              .collection('users')
+                              .doc(_auth.currentUser?.uid)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            String? profileImageUrl;
+                            String fullname = '';
+                            if (snapshot.hasData && snapshot.data!.exists) {
+                              final data = snapshot.data!.data() as Map<String, dynamic>?;
+                              profileImageUrl = data?['profileImageUrl'] as String?;
+                              fullname = data?['fullname'] ?? '';
+                            }
+
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const MyTeacherProfile(),
+                                  ),
+                                );
+                              },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Teacher's fullname
+                                  if (fullname.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 12),
+                                      child: Text(
+                                        fullname,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  // Profile Avatar
+                                  Container(
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.blue, width: 2),
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: Colors.blue,
+                                      backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+                                          ? NetworkImage(profileImageUrl)
+                                          : null,
+                                      child: profileImageUrl == null || profileImageUrl.isEmpty
+                                          ? const Icon(Icons.person, color: Colors.white, size: 24)
+                                          : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),

@@ -64,18 +64,30 @@ class _MyAddStudentState extends State<MyAddStudent> {
           if (status) {
             final userData = userDoc.data();
             final username = userData['username'] ?? 'Unknown';
+            final fullname = userData['fullname'] ?? 'Unknown';
             final email = userData['email'] ?? '';
             final profileImage = userData['profileImage'];
+            final schoolId = userData['schoolId'] ?? 'Not set';
+            final gradeLevel = userData['gradeLevel'] ?? 'Not set';
+            final section = userData['section'] ?? 'Not set';
 
-            // Apply search filter
+            // Apply search filter - now includes fullname, schoolId, gradeLevel, and section
             if (_searchQuery.isEmpty ||
                 username.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                email.toLowerCase().contains(_searchQuery.toLowerCase())) {
+                fullname.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                email.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                schoolId.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                gradeLevel.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                section.toLowerCase().contains(_searchQuery.toLowerCase())) {
               confirmedStudents.add({
                 'studentId': userDoc.id,
                 'username': username,
+                'fullname': fullname,
                 'email': email,
                 'profileImage': profileImage,
+                'schoolId': schoolId,
+                'gradeLevel': gradeLevel,
+                'section': section,
                 'acceptedAt': teacherData?['acceptedAt'],
               });
             }
@@ -272,6 +284,576 @@ class _MyAddStudentState extends State<MyAddStudent> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  // View detailed student information dialog
+  void _viewDetailedStudentInfo(String studentId, String studentName, String studentEmail) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: 500,
+            constraints: const BoxConstraints(maxHeight: 600),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: _firestore.collection('users').doc(studentId).snapshots(),
+              builder: (context, studentSnapshot) {
+                if (studentSnapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1E201E),
+                      ),
+                    ),
+                  );
+                }
+
+                if (!studentSnapshot.hasData || !studentSnapshot.data!.exists) {
+                  return SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: Text(
+                        'Student data not found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final studentData =
+                    studentSnapshot.data!.data() as Map<String, dynamic>;
+                final fullname = studentData['fullname'] ?? 'Not set';
+                final email = studentData['email'] ?? studentEmail;
+                final profileImageBase64 = studentData['profileImage'];
+                final schoolId = studentData['schoolId'] ?? 'Not set';
+                final gradeLevel = studentData['gradeLevel'] ?? 'Not set';
+                final section = studentData['section'] ?? 'Not set';
+
+                // Check if all important fields are set
+                bool hasCompleteInfo = fullname != 'Not set' &&
+                    schoolId != 'Not set' &&
+                    gradeLevel != 'Not set' &&
+                    section != 'Not set';
+
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Student Details',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Profile Image
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.blue[700],
+                        backgroundImage: profileImageBase64 != null
+                            ? MemoryImage(base64Decode(profileImageBase64))
+                            : null,
+                        child: profileImageBase64 == null
+                            ? Text(
+                                fullname.isNotEmpty && fullname != 'Not set'
+                                    ? fullname[0].toUpperCase()
+                                    : 'S',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Show warning if incomplete info
+                      if (!hasCompleteInfo)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange[300]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Student unknown information',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Information Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDetailRow('Full Name', fullname),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Email', email),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('School ID', schoolId),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Grade Level', gradeLevel),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Section', section),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Edit button
+                          AnimatedButton(
+                            width: 120,
+                            height: 45,
+                            color: Colors.blue,
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _showEditStudentDialog(studentId, fullname, schoolId, gradeLevel, section, profileImageBase64);
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.edit, color: Colors.white, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Edit',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Close button
+                          AnimatedButton(
+                            width: 120,
+                            height: 45,
+                            color: const Color(0xFF1E201E),
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            child: Text(
+                              'Close',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    bool isNotSet = value == 'Not set' || value.isEmpty;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isNotSet ? Colors.grey[400] : Colors.black87,
+              fontStyle: isNotSet ? FontStyle.italic : FontStyle.normal,
+            ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Edit student information dialog for teachers
+  void _showEditStudentDialog(String studentId, String currentFullname, String currentSchoolId, String currentGradeLevel, String currentSection, String? currentProfileImage) {
+    final TextEditingController fullnameController = TextEditingController(text: currentFullname == "Not set" ? "" : currentFullname);
+    final TextEditingController schoolIdController = TextEditingController(text: currentSchoolId == "Not set" ? "" : currentSchoolId);
+    final TextEditingController gradeLevelController = TextEditingController(text: currentGradeLevel == "Not set" ? "" : currentGradeLevel);
+    final TextEditingController sectionController = TextEditingController(text: currentSection == "Not set" ? "" : currentSection);
+    String? newProfileImageBase64 = currentProfileImage;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                width: 500,
+                constraints: const BoxConstraints(maxHeight: 650),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.edit,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Edit Student',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  'Update student information',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Profile Image (Read-only - cannot be edited by teacher)
+                      Center(
+                        child: CircleAvatar(
+                          radius: 50,
+                          backgroundColor: Colors.blue,
+                          backgroundImage: newProfileImageBase64 != null
+                              ? MemoryImage(base64Decode(newProfileImageBase64))
+                              : null,
+                          child: newProfileImageBase64 == null
+                              ? const Icon(Icons.person, size: 50, color: Colors.white)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Text(
+                          'Profile picture cannot be edited',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Full Name
+                      Text(
+                        'Full Name',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: fullnameController,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Enter full name',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.blue),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // School ID
+                      Text(
+                        'School ID',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: schoolIdController,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Enter school ID',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.blue),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Grade Level
+                      Text(
+                        'Grade Level',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: gradeLevelController,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Enter grade level',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.blue),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Section
+                      Text(
+                        'Section',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: sectionController,
+                        style: GoogleFonts.poppins(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Enter section',
+                          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.blue),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          AnimatedButton(
+                            width: 100,
+                            height: 45,
+                            color: Colors.grey[300]!,
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                            },
+                            child: Text(
+                              'Cancel',
+                              style: GoogleFonts.poppins(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          AnimatedButton(
+                            width: 120,
+                            height: 45,
+                            color: Colors.blue,
+                            shadowDegree: ShadowDegree.light,
+                            onPressed: () async {
+                              try {
+                                // Update student info (excluding profile image)
+                                await _firestore.collection('users').doc(studentId).update({
+                                  'fullname': fullnameController.text.trim().isEmpty ? "Not set" : fullnameController.text.trim(),
+                                  'schoolId': schoolIdController.text.trim().isEmpty ? "Not set" : schoolIdController.text.trim(),
+                                  'gradeLevel': gradeLevelController.text.trim().isEmpty ? "Not set" : gradeLevelController.text.trim(),
+                                  'section': sectionController.text.trim().isEmpty ? "Not set" : sectionController.text.trim(),
+                                  // Profile image cannot be edited by teachers
+                                });
+                                Navigator.of(dialogContext).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Student information updated successfully',
+                                      style: GoogleFonts.poppins(),
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Error updating student: $e',
+                                      style: GoogleFonts.poppins(),
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.save, color: Colors.white, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Save',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1251,6 +1833,23 @@ class _MyAddStudentState extends State<MyAddStudent> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                // Student detail button
+                                AnimatedButton(
+                                  width: 45,
+                                  height: 45,
+                                  color: Colors.purple.withOpacity(0.2),
+                                  shadowDegree: ShadowDegree.light,
+                                  onPressed: () {
+                                    _viewDetailedStudentInfo(studentId, username, email);
+                                  },
+                                  child: const Icon(
+                                    Icons.person,
+                                    color: Colors.purple,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+
                                 // Message button
                                 AnimatedButton(
                                   width: 45,

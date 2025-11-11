@@ -163,6 +163,235 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
     );
   }
 
+  // View detailed student information dialog (read-only)
+  void _viewStudentInfo(String studentId, String studentName, String studentEmail) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: 500,
+            constraints: const BoxConstraints(maxHeight: 600),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: _firestore.collection('users').doc(studentId).snapshots(),
+              builder: (context, studentSnapshot) {
+                if (studentSnapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1E201E),
+                      ),
+                    ),
+                  );
+                }
+
+                if (!studentSnapshot.hasData || !studentSnapshot.data!.exists) {
+                  return SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: Text(
+                        'Student data not found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final studentData = studentSnapshot.data!.data() as Map<String, dynamic>;
+                final fullname = studentData['fullname'] ?? 'Not set';
+                final email = studentData['email'] ?? studentEmail;
+                final profileImageBase64 = studentData['profileImage'];
+                final schoolId = studentData['schoolId'] ?? 'Not set';
+                final gradeLevel = studentData['gradeLevel'] ?? 'Not set';
+                final section = studentData['section'] ?? 'Not set';
+
+                // Check if all important fields are set
+                bool hasCompleteInfo = fullname != 'Not set' &&
+                    schoolId != 'Not set' &&
+                    gradeLevel != 'Not set' &&
+                    section != 'Not set';
+
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Student Details',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Profile Image
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.blue[700],
+                        backgroundImage: profileImageBase64 != null
+                            ? MemoryImage(base64Decode(profileImageBase64))
+                            : null,
+                        child: profileImageBase64 == null
+                            ? Text(
+                                fullname.isNotEmpty && fullname != 'Not set'
+                                    ? fullname[0].toUpperCase()
+                                    : 'S',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Show warning if incomplete info
+                      if (!hasCompleteInfo)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange[300]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Student unknown information',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Information Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDetailRow('Full Name', fullname),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Email', email),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('School ID', schoolId),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Grade Level', gradeLevel),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Section', section),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Close button only (no edit)
+                      AnimatedButton(
+                        width: 120,
+                        height: 45,
+                        color: const Color(0xFF1E201E),
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text(
+                          'Close',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    bool isNotSet = value == 'Not set' || value.isEmpty;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isNotSet ? Colors.grey[400] : Colors.black87,
+              fontStyle: isNotSet ? FontStyle.italic : FontStyle.normal,
+            ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   // Message student
   void _messageStudent(String studentId, String studentName, String studentEmail) {
     showDialog(
@@ -620,6 +849,27 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
+                              // View Info button
+                              AnimatedButton(
+                                width: 42,
+                                height: 42,
+                                color: Colors.blue.withOpacity(0.2),
+                                shadowDegree: ShadowDegree.light,
+                                onPressed: isProcessing
+                                    ? () {}
+                                    : () {
+                                        _viewStudentInfo(studentId, username, email);
+                                      },
+                                child: Icon(
+                                  Icons.person,
+                                  size: 20,
+                                  color: isProcessing
+                                      ? Colors.white.withOpacity(0.3)
+                                      : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+
                               // Message button
                               AnimatedButton(
                                 width: 110,

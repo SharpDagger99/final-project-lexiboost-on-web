@@ -55,6 +55,11 @@
     window.addEventListener('DOMContentLoaded', function() {
       // Prevent context menu on the entire Flutter app
       document.addEventListener('contextmenu', function(e) {
+        // Allow context menu for file input elements
+        if (e.target.tagName === 'INPUT' && e.target.type === 'file') {
+          return true;
+        }
+        
         // Check if the target is part of the Flutter app
         const flutterView = document.querySelector('flutter-view, flt-glass-pane');
         if (flutterView && (flutterView.contains(e.target) || e.target === flutterView)) {

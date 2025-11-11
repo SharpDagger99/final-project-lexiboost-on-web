@@ -1,6 +1,6 @@
 // ===== game_published.dart =====
 
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, dead_code
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,7 +20,9 @@ class MyGamePublished extends StatefulWidget {
 
 class _MyGamePublishedState extends State<MyGamePublished> {
   final User? user = FirebaseAuth.instance.currentUser;
+  final TextEditingController _searchController = TextEditingController();
   String _userRole = 'student'; // Default role
+  String _searchQuery = '';
 
   /// Get current user ID - returns null if user is not authenticated
   String? get _currentUserId => user?.uid;
@@ -29,6 +31,12 @@ class _MyGamePublishedState extends State<MyGamePublished> {
   void initState() {
     super.initState();
     _loadUserRole();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   /// Get current user's role from Firestore
@@ -64,9 +72,13 @@ class _MyGamePublishedState extends State<MyGamePublished> {
     }
   }
 
-  /// Navigate back with animation
+  /// Navigate back based on user role
   void _navigateBack() {
-    Navigator.of(context).pop();
+    if (_userRole == 'admin') {
+      Get.offAllNamed('/admin');
+    } else {
+      Get.offAllNamed('/teacher_home');
+    }
   }
 
   @override
@@ -116,7 +128,57 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                 ],
               ),
             )
-          : StreamBuilder<QuerySnapshot>(
+          : Column(
+              children: [
+                // Search bar - outside StreamBuilder to prevent rebuild
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                    style: GoogleFonts.poppins(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search by game name or mode (heart, time, score)...',
+                      hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: Colors.white54,
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.clear,
+                                color: Colors.white54,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                });
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.1),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Games list with StreamBuilder
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
               // Query only current user's published games from their created_games subcollection
               stream: FirebaseFirestore.instance
                   .collection("users")
@@ -227,11 +289,48 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                   );
                 }
 
+                // Filter games based on search query
+                final filteredGames = games.where((game) {
+                  if (_searchQuery.isEmpty) return true;
+                  
+                  final gameData = game.data() as Map<String, dynamic>?;
+                  final title = (gameData?["title"]?.toString() ?? "").toLowerCase();
+                  final gameRule = (gameData?["gameRule"]?.toString() ?? "").toLowerCase();
+                  final query = _searchQuery.toLowerCase();
+                  
+                  return title.contains(query) || gameRule.contains(query);
+                }).toList();
+
+                if (filteredGames.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 80,
+                          color: Colors.white30,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          _searchQuery.isEmpty
+                              ? "No published games yet."
+                              : "No games found matching \"$_searchQuery\"",
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 return ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: games.length,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: filteredGames.length,
                   itemBuilder: (context, index) {
-                    final game = games[index];
+                    final game = filteredGames[index];
                     final gameData = game.data() as Map<String, dynamic>?;
                     final title = gameData?["title"]?.toString() ?? "Untitled";
                     final gameId = game.id; // Document ID is the gameId
@@ -262,6 +361,9 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                 );
               },
             ),
+                  ),
+                ],
+              ),
     );
   }
 
@@ -576,8 +678,24 @@ class _MyGamePublishedState extends State<MyGamePublished> {
               color: Colors.blueAccent,
               shadowDegree: ShadowDegree.light,
               onPressed: () {
+                // Debug: Print values before navigation
+                print('🔍 Navigation Debug:');
+                print('  gameId: $gameId');
+                print('  title: $title');
+                print('  gameSet: $gameSet');
+                print('  gameCode: $gameCode');
+                print('  userId: $userId');
+                
+                // Build URL with proper null handling
+                final titleParam = title.isNotEmpty ? Uri.encodeComponent(title) : '';
+                final gameSetParam = gameSet != null && gameSet.isNotEmpty ? Uri.encodeComponent(gameSet) : '';
+                final gameCodeParam = gameCode != null && gameCode.isNotEmpty ? Uri.encodeComponent(gameCode) : '';
+                
+                final url = "/game_manage?gameId=$gameId&title=$titleParam&gameSet=$gameSetParam&gameCode=$gameCodeParam&userId=$userId";
+                print('  URL: $url');
+                
                 Get.toNamed(
-                  "/game_manage",
+                  url,
                   arguments: {
                     "gameId": gameId,
                     "title": title,
@@ -845,8 +963,13 @@ class _MyGamePublishedState extends State<MyGamePublished> {
                 color: Colors.blueAccent,
                 shadowDegree: ShadowDegree.light,
                 onPressed: () {
+                  // Build URL with proper null handling
+                  final titleParam = title.isNotEmpty ? Uri.encodeComponent(title) : '';
+                  final gameSetParam = gameSet != null && gameSet.isNotEmpty ? Uri.encodeComponent(gameSet) : '';
+                  final gameCodeParam = gameCode != null && gameCode.isNotEmpty ? Uri.encodeComponent(gameCode) : '';
+                  
                   Get.toNamed(
-                    "/game_manage",
+                    "/game_manage?gameId=$gameId&title=$titleParam&gameSet=$gameSetParam&gameCode=$gameCodeParam&userId=$userId",
                     arguments: {
                       "gameId": gameId,
                       "title": title,

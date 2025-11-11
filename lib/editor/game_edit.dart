@@ -28,7 +28,7 @@ import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
 import 'package:lexi_on_web/editor/game%20types/stroke.dart';
 import 'package:lexi_on_web/services/settings_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart'; 
 
 // Page data class to store page content
 class PageData {

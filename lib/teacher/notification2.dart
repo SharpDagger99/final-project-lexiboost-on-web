@@ -470,7 +470,9 @@ class _MyNotification2State extends State<MyNotification2> {
                                           ? Colors.blue.withOpacity(0.2)
                                           : type == 'teacher_accepted'
                                               ? Colors.green.withOpacity(0.2)
-                                              : Colors.orange.withOpacity(0.2),
+                                              : type == 'student_removed'
+                                                  ? Colors.red.withOpacity(0.2)
+                                                  : Colors.orange.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Icon(
@@ -478,20 +480,24 @@ class _MyNotification2State extends State<MyNotification2> {
                                           ? Icons.message
                                           : type == 'teacher_accepted'
                                               ? Icons.check_circle
-                                              : type == 'game_hidden' || type == 'game_removed'
-                                                  ? Icons.visibility_off
-                                                  : type == 'game_restored'
-                                                      ? Icons.restore
-                                                      : Icons.notifications,
+                                              : type == 'student_removed'
+                                                  ? Icons.person_remove
+                                                  : type == 'game_hidden' || type == 'game_removed'
+                                                      ? Icons.visibility_off
+                                                      : type == 'game_restored'
+                                                          ? Icons.restore
+                                                          : Icons.notifications,
                                       color: type == 'message'
                                           ? Colors.blue
                                           : type == 'teacher_accepted'
                                               ? Colors.green
-                                              : type == 'game_hidden' || type == 'game_removed'
-                                                  ? Colors.orange
-                                                  : type == 'game_restored'
-                                                      ? Colors.green
-                                                      : Colors.orange,
+                                              : type == 'student_removed'
+                                                  ? Colors.red
+                                                  : type == 'game_hidden' || type == 'game_removed'
+                                                      ? Colors.orange
+                                                      : type == 'game_restored'
+                                                          ? Colors.green
+                                                          : Colors.orange,
                                       size: 24,
                                     ),
                                   ),
