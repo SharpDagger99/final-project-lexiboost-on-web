@@ -157,6 +157,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   bool heartEnabled = false;
   int timerSeconds = 0;
   Map<int, int> pageScores = {}; // Map of page index to score
+  Timer? _pageScoreSaveTimer; // Debounce timer for auto-saving page scores
 
   List<bool> visibleLetters = [];
   Uint8List? selectedImageBytes;
@@ -733,7 +734,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                               children: [
                                 // Page button section
                                 Expanded(
-                                  flex: selectedGameRule == 'score' ? 3 : 1,
                                   child: Material(
                                     color: isCurrentPage
                                         ? Colors.green.withOpacity(0.3)
@@ -796,19 +796,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                 ),
                                               ),
                                             ],
-                                            if (selectedGameRule != 'score' &&
-                                                pages[index].title.isNotEmpty)
-                                              Flexible(
-                                                child: Text(
-                                                  pages[index].title,
-                                                  style: GoogleFonts.poppins(
-                                                    fontSize: 14,
-                                                    color: Colors.white70,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
+                                            const Spacer(),
                                             if (isCurrentPage)
                                               const Icon(
                                                 Icons.check_circle,
@@ -821,67 +809,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                     ),
                                   ),
                                 ),
-                                // Score text field section (separate from page button)
-                                if (selectedGameRule == 'score') ...[
-                                const SizedBox(width: 10),
-                                Expanded(
-                                    flex: 1,
-                                    child: Container(
-                                      height:
-                                          50, // Match page button height (12*2 + 24 for text)
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF3A3C3A),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.white.withOpacity(0.2),
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: TextField(
-                                          controller: TextEditingController(
-                                            text:
-                                                pageScores[index]?.toString() ??
-                                                '',
-                                          ),
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                            LengthLimitingTextInputFormatter(4),
-                                          ],
-                                          textAlign: TextAlign.center,
-                                          textAlignVertical:
-                                              TextAlignVertical.center,
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 14,
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: "Score",
-                                            hintStyle: GoogleFonts.poppins(
-                                              color: Colors.white54,
-                                              fontSize: 14,
-                                            ),
-                                            border: InputBorder.none,
-                                            contentPadding: EdgeInsets.zero,
-                                            isDense: true,
-                                          ),
-                                          onChanged: (value) {
-                                            setState(() {
-                                              if (value.isEmpty) {
-                                                pageScores.remove(index);
-                                              } else {
-                                                pageScores[index] =
-                                                    int.tryParse(value) ?? 0;
-                                              }
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                           );
@@ -2570,6 +2497,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     }
   }
 
+
   /// Save page scores to game_score subcollection
   Future<void> _savePageScores() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -2583,13 +2511,18 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           .doc(gameId)
           .collection('game_score');
 
-      // Delete all existing scores first
+      // Delete only template scores (ones without userId field)
+      // Keep student-specific scores (ones with userId field)
       final existingScores = await gameScoreRef.get();
       for (var doc in existingScores.docs) {
-        await doc.reference.delete();
+        final data = doc.data();
+        // Only delete if it's a template score (no userId field)
+        if (!data.containsKey('userId')) {
+          await doc.reference.delete();
+        }
       }
 
-      // Save new scores
+      // Save new template scores
       for (var entry in pageScores.entries) {
         await gameScoreRef.add({
           'page': entry.key + 1, // Store as 1-based page number
@@ -2597,7 +2530,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         });
       }
 
-      debugPrint('Page scores saved successfully');
+      debugPrint('Page scores saved successfully (${pageScores.length} template scores)');
     } catch (e) {
       debugPrint('Failed to save page scores: $e');
     }
@@ -2972,6 +2905,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     
     _debounceTimer?.cancel();
     _autoSaveTimer?.cancel();
+    _pageScoreSaveTimer?.cancel();
     titleController.removeListener(_onTitleChanged);
     titleController.dispose();
     descriptionController.removeListener(_triggerAutoSave);

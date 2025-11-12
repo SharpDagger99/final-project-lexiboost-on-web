@@ -1,12 +1,14 @@
-// ignore_for_file: avoid_print, use_build_context_synchronously, deprecated_member_use, sized_box_for_whitespace
+// ignore_for_file: avoid_print, use_build_context_synchronously, deprecated_member_use, sized_box_for_whitespace, unnecessary_to_list_in_spreads, unused_element, avoid_web_libraries_in_flutter
 
+import 'dart:convert';
+import 'dart:html' as html;
 import 'package:animated_button/animated_button.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart'; 
 import 'package:google_fonts/google_fonts.dart';
 
 class MyGameCheck extends StatefulWidget {
@@ -25,14 +27,24 @@ class _MyGameCheckState extends State<MyGameCheck> {
   String? userId; // Teacher's user ID
   String? studentUserId;
   String? studentUsername;
+  String? gameRule; // Game rule (e.g., 'score', 'timer')
+  String? studentScoreDocId; // Document ID for student's score in game_score collection
 
   // Loading state
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isLoadingPlayerData = false; // Loading state for player switching
 
   // Page data
   List<ReviewPageData> pages = [];
   int currentPageIndex = 0;
+
+  // Player list
+  List<PlayerData> players = [];
+  List<PlayerData> allPlayers = []; // Store all players for filtering
+  bool _isLoadingPlayers = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   // Responsive design state
   bool _isSmallScreen = false;
@@ -44,6 +56,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
   final ScrollController _column2ScrollController = ScrollController();
   final ScrollController _sidebarScrollController = ScrollController();
   final ScrollController _column3ScrollController = ScrollController();
+  final ScrollController _pageSelectorScrollController = ScrollController();
 
   // Page score controllers (map of page index to controller)
   final Map<int, TextEditingController> _pageScoreControllers = {};
@@ -58,6 +71,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
   void initState() {
     super.initState();
     _getArguments();
+    // Don't fetch players here - wait for arguments to be validated
   }
 
   @override
@@ -65,8 +79,9 @@ class _MyGameCheckState extends State<MyGameCheck> {
     _column2ScrollController.dispose();
     _sidebarScrollController.dispose();
     _column3ScrollController.dispose();
+    _pageSelectorScrollController.dispose();
     _totalScoreController.dispose();
-    // Dispose all page score controllers
+    _searchController.dispose();
     for (var controller in _pageScoreControllers.values) {
       controller.dispose();
     }
@@ -123,6 +138,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _checkScreenSize();
         _loadSubmissionData();
+        _fetchPlayers(); // Fetch players after arguments are validated
       });
     } else {
       debugPrint(
@@ -139,9 +155,9 @@ class _MyGameCheckState extends State<MyGameCheck> {
     try {
       debugPrint('🔄 Fetching missing details from Firestore...');
       
-      // Fetch game title if missing
-      if (title == null && gameId != null && userId != null) {
-        debugPrint('  Fetching game title...');
+      // Fetch game title and gameRule if missing
+      if ((title == null || gameRule == null) && gameId != null && userId != null) {
+        debugPrint('  Fetching game details...');
         final gameDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(userId!)
@@ -154,8 +170,9 @@ class _MyGameCheckState extends State<MyGameCheck> {
           if (mounted) {
             setState(() {
               title = data?['title'] as String?;
+              gameRule = data?['gameRule'] as String?;
             });
-            debugPrint('  ✅ Game title fetched and updated: $title');
+            debugPrint('  ✅ Game details fetched - title: $title, gameRule: $gameRule');
           }
         } else {
           debugPrint('  ⚠️ Game document not found');
@@ -187,6 +204,166 @@ class _MyGameCheckState extends State<MyGameCheck> {
     } catch (e) {
       debugPrint('❌ Error fetching missing details: $e');
     }
+  }
+
+  /// Fetch all players who played this game
+  Future<void> _fetchPlayers() async {
+    if (gameId == null || userId == null) {
+      debugPrint('⚠️ Cannot fetch players: gameId or userId is null');
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingPlayers = true;
+    });
+
+    try {
+      debugPrint('🔄 Fetching players for game: $gameId');
+
+      // Get all completed games for this game
+      final scoresSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId!)
+          .collection('created_games')
+          .doc(gameId!)
+          .collection('game_score')
+          .get();
+
+      if (!mounted) return;
+
+      // Extract unique user IDs
+      final Set<String> uniqueUserIds = {};
+      for (var doc in scoresSnapshot.docs) {
+        try {
+          final data = doc.data();
+          final playerId = data['userId'] as String?;
+          if (playerId != null && playerId.isNotEmpty) {
+            uniqueUserIds.add(playerId);
+          }
+        } catch (e) {
+          debugPrint('  ⚠️ Error parsing score doc: $e');
+        }
+      }
+
+      debugPrint('  Found ${uniqueUserIds.length} unique players');
+
+      if (uniqueUserIds.isEmpty) {
+        if (mounted) {
+          setState(() {
+            players = [];
+            _isLoadingPlayers = false;
+          });
+        }
+        debugPrint('⚠️ No players found for this game');
+        return;
+      }
+
+      // Fetch user details for each player
+      List<PlayerData> fetchedPlayers = [];
+      for (var playerId in uniqueUserIds) {
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(playerId)
+              .get();
+
+          if (!mounted) return;
+
+          if (userDoc.exists) {
+            final userData = userDoc.data();
+            if (userData != null) {
+              fetchedPlayers.add(
+                PlayerData(
+                  userId: playerId,
+                  username: userData['username'] as String? ?? 'Unknown User',
+                  email: userData['email'] as String? ?? 'No email',
+                  profileImage: userData['profileImage'] as String?,
+                  fullname: userData['fullname'] as String?,
+                  schoolId: userData['schoolId'] as String?,
+                  gradeLevel: userData['gradeLevel'] as String?,
+                  section: userData['section'] as String?,
+                  isSelected: playerId == studentUserId,
+                ),
+              );
+            }
+          } else {
+            // Add placeholder for user that doesn't exist
+            fetchedPlayers.add(
+              PlayerData(
+                userId: playerId,
+                username: 'Unknown User',
+                email: 'User not found',
+                isSelected: playerId == studentUserId,
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('  ⚠️ Error fetching user $playerId: $e');
+          // Add placeholder for errored user
+          fetchedPlayers.add(
+            PlayerData(
+              userId: playerId,
+              username: 'Error loading user',
+              email: 'Failed to load',
+              isSelected: playerId == studentUserId,
+            ),
+          );
+        }
+      }
+
+      if (!mounted) return;
+
+      // Sort players by username
+      try {
+        fetchedPlayers.sort((a, b) => a.username.compareTo(b.username));
+      } catch (e) {
+        debugPrint('  ⚠️ Error sorting players: $e');
+      }
+
+      if (mounted) {
+        setState(() {
+          allPlayers = fetchedPlayers;
+          players = _applySearchFilter(fetchedPlayers);
+          _isLoadingPlayers = false;
+        });
+      }
+
+      debugPrint('✅ Loaded ${fetchedPlayers.length} players');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error fetching players: $e');
+      debugPrint('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          allPlayers = [];
+          players = [];
+          _isLoadingPlayers = false;
+        });
+      }
+    }
+  }
+
+  /// Apply search filter to player list
+  List<PlayerData> _applySearchFilter(List<PlayerData> playerList) {
+    if (_searchQuery.isEmpty) return playerList;
+    
+    final query = _searchQuery.toLowerCase();
+    return playerList.where((player) {
+      final username = player.username.toLowerCase();
+      final email = player.email.toLowerCase();
+      final fullname = (player.fullname ?? '').toLowerCase();
+      final schoolId = (player.schoolId ?? '').toLowerCase();
+      final gradeLevel = (player.gradeLevel ?? '').toLowerCase();
+      final section = (player.section ?? '').toLowerCase();
+      
+      return username.contains(query) ||
+             email.contains(query) ||
+             fullname.contains(query) ||
+             schoolId.contains(query) ||
+             gradeLevel.contains(query) ||
+             section.contains(query);
+    }).toList();
   }
 
   /// Navigate back to game_manage with proper parameters
@@ -232,7 +409,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
       );
 
       // Fetch missing game and student details if needed
-      if (title == null || studentUsername == null) {
+      if (title == null || studentUsername == null || gameRule == null) {
         await _fetchMissingDetails();
       }
 
@@ -256,28 +433,52 @@ class _MyGameCheckState extends State<MyGameCheck> {
         gameRoundsSnapshot = await gameRoundsRef.get();
       }
 
-      // Load student's score data
-      final scoresRef = FirebaseFirestore.instance
+      // Load student's score data using new structure
+      final gameScoreRef = FirebaseFirestore.instance
           .collection('users')
           .doc(userId!)
           .collection('created_games')
           .doc(gameId!)
-          .collection('game_score')
-          .where('userId', isEqualTo: studentUserId);
+          .collection('game_score');
 
-      final scoresSnapshot = await scoresRef.get();
+      // Query for this student's score document
+      final studentScoreQuery = await gameScoreRef
+          .where('userId', isEqualTo: studentUserId)
+          .limit(1)
+          .get();
 
-      // Create a map of page -> score
       Map<int, Map<String, dynamic>> scoresMap = {};
-      for (var scoreDoc in scoresSnapshot.docs) {
-        final scoreData = scoreDoc.data();
-        final page = scoreData['page'] as int? ?? 0;
-        scoresMap[page] = {
-          'score': scoreData['score'] ?? 0, // 0/1 for correct/wrong
-          'pageScore':
-              scoreData['pageScore'] as int? ?? 0, // Numeric score for the page
-          'docId': scoreDoc.id,
-        };
+      String? studentScoreDocId;
+
+      if (studentScoreQuery.docs.isNotEmpty) {
+        // Student has a score document
+        final studentScoreDoc = studentScoreQuery.docs.first;
+        studentScoreDocId = studentScoreDoc.id;
+        
+        // Store in state variable
+        this.studentScoreDocId = studentScoreDocId;
+        
+        debugPrint('📊 Found student score document: $studentScoreDocId');
+
+        // Load page scores from subcollection
+        final pageScoresRef = studentScoreDoc.reference.collection('page_score');
+        final pageScoresSnapshot = await pageScoresRef.get();
+        
+        debugPrint('📊 Loading ${pageScoresSnapshot.docs.length} page score documents...');
+        
+        for (var pageDoc in pageScoresSnapshot.docs) {
+          final pageData = pageDoc.data();
+          final page = pageData['page'] as int? ?? 0;
+          final pageScore = pageData['pageScore'] as int? ?? 0;
+          scoresMap[page] = {
+            'pageScore': pageScore, // Numeric score for the page
+            'docId': pageDoc.id,
+            'studentDocId': studentScoreDocId,
+          };
+          debugPrint('  Page $page: pageScore=$pageScore, docId=${pageDoc.id}');
+        }
+      } else {
+        debugPrint('⚠️ No score document found for student, will create on first save');
       }
 
       // Load Stroke drawings if available
@@ -322,7 +523,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
         // Get score for this page
         final scoreData = scoresMap[pageNumber];
-        final currentScore = scoreData?['score'] ?? 0;
+        final currentScore = 0; // No longer using correct/wrong score
 
         // Load Stroke drawing URL and image hint if it's a Stroke game type
         String? strokeImageUrl;
@@ -339,6 +540,8 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
         // Get page score (separate from currentScore which is 0/1 for correct/wrong)
         final pageScore = scoreData?['pageScore'] as int? ?? 0;
+        
+        debugPrint('  ✅ Page $pageNumber loaded: gameType=$gameType, pageScore=$pageScore');
 
         loadedPages.add(
           ReviewPageData(
@@ -368,11 +571,12 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
         if (pages.isNotEmpty) {
           // Initialize page score controllers
+          debugPrint('🎮 Initializing page score controllers...');
           for (int i = 0; i < pages.length; i++) {
             if (!_pageScoreControllers.containsKey(i)) {
-              _pageScoreControllers[i] = TextEditingController(
-                text: pages[i].pageScore.toString(),
-              );
+              final scoreText = pages[i].pageScore.toString();
+              _pageScoreControllers[i] = TextEditingController(text: scoreText);
+              debugPrint('  Controller for page $i initialized with value: $scoreText');
             }
           }
           _loadPageData(0);
@@ -397,6 +601,70 @@ class _MyGameCheckState extends State<MyGameCheck> {
   }
 
   // Student fetching removed
+
+  /// Switch to a different player (instant, no loading screen)
+  Future<void> _switchToPlayer(PlayerData player) async {
+    if (player.userId == studentUserId) {
+      debugPrint('⚠️ Already viewing player: ${player.username}');
+      return; // Already viewing this player
+    }
+
+    debugPrint('🔄 Switching to player: ${player.username} (${player.userId})');
+
+    try {
+      if (!mounted) return;
+
+      // Update selection immediately and show loading in center/right sections only
+      setState(() {
+        _isLoadingPlayerData = true;
+        studentUserId = player.userId;
+        studentUsername = player.username;
+        studentScoreDocId = null; // Clear student score doc ID
+        currentPageIndex = 0;
+        // Update player selection in both lists
+        allPlayers = allPlayers.map((p) => p.copyWith(isSelected: p.userId == player.userId)).toList();
+        players = _applySearchFilter(allPlayers);
+      });
+
+      // Clear page score controllers
+      try {
+        for (var controller in _pageScoreControllers.values) {
+          controller.dispose();
+        }
+        _pageScoreControllers.clear();
+      } catch (e) {
+        debugPrint('⚠️ Error clearing controllers: $e');
+      }
+
+      // Reload submission data in background
+      await _loadSubmissionData();
+
+      if (mounted) {
+        setState(() {
+          _isLoadingPlayerData = false;
+        });
+      }
+
+      debugPrint('✅ Successfully switched to player: ${player.username}');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error switching player: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      if (mounted) {
+        setState(() {
+          _isLoadingPlayerData = false;
+        });
+        
+        Get.snackbar(
+          'Error',
+          'Failed to load player data: ${e.toString()}',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    }
+  }
 
   /// Load a specific page
   void _loadPageData(int pageIndex) {
@@ -464,7 +732,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
     }
   }
 
-  /// Update total score in Firestore
+  /// Update total score in Firestore using new structure
   Future<void> _updateTotalScore(int newScore) async {
     if (gameId == null || studentUserId == null || userId == null) return;
 
@@ -479,6 +747,21 @@ class _MyGameCheckState extends State<MyGameCheck> {
             'totalScore': newScore,
             'updatedAt': FieldValue.serverTimestamp(),
           });
+
+      // Also update in game_score document if it exists
+      if (studentScoreDocId != null) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId!)
+            .collection('created_games')
+            .doc(gameId!)
+            .collection('game_score')
+            .doc(studentScoreDocId!)
+            .update({
+              'totalScore': newScore,
+            });
+        debugPrint('✅ Updated totalScore in game_score document');
+      }
 
       setState(() {
         _totalScore = newScore;
@@ -496,7 +779,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
     }
   }
 
-  /// Update page score for a specific page
+  /// Update page score for a specific page using new structure
   Future<void> _updatePageScore(int pageIndex, int newScore) async {
     if (gameId == null || userId == null || studentUserId == null) return;
     if (pageIndex < 0 || pageIndex >= pages.length) return;
@@ -504,33 +787,51 @@ class _MyGameCheckState extends State<MyGameCheck> {
     final pageData = pages[pageIndex];
 
     try {
-      final scoresRef = FirebaseFirestore.instance
+      final gameScoreRef = FirebaseFirestore.instance
           .collection('users')
           .doc(userId!)
           .collection('created_games')
           .doc(gameId!)
           .collection('game_score');
 
+      // Ensure student score document exists
+      if (studentScoreDocId == null) {
+        // Create student score document
+        final studentDocRef = await gameScoreRef.add({
+          'username': studentUsername ?? '',
+          'email': '', // Can be fetched if needed
+          'userId': studentUserId!,
+          'totalScore': _totalScore,
+        });
+        studentScoreDocId = studentDocRef.id;
+        debugPrint('✅ Created student score document: $studentScoreDocId');
+      }
+
+      // Reference to page_score subcollection
+      final pageScoreRef = gameScoreRef
+          .doc(studentScoreDocId!)
+          .collection('page_score');
+
       if (pageData.scoreDocId != null) {
-        // Update existing score
-        await scoresRef.doc(pageData.scoreDocId!).update({
+        // Update existing page score
+        await pageScoreRef.doc(pageData.scoreDocId!).update({
           'pageScore': newScore,
         });
+        debugPrint('✅ Updated page score document: ${pageData.scoreDocId}');
       } else {
-        // Create new score entry
-        final docRef = await scoresRef.add({
-          'userId': studentUserId!,
+        // Create new page score entry
+        final pageDocRef = await pageScoreRef.add({
           'page': pageData.pageNumber,
-          'score': pageData.currentScore, // Keep correct/wrong score
           'pageScore': newScore,
         });
         // Update local state with new docId
         setState(() {
           pages[pageIndex] = pageData.copyWith(
-            scoreDocId: docRef.id,
+            scoreDocId: pageDocRef.id,
             pageScore: newScore,
           );
         });
+        debugPrint('✅ Created page score document: ${pageDocRef.id}');
         _checkAndUpdateTotalScore(); // Check if total score needs updating
         return; // Early return since we already updated state
       }
@@ -542,6 +843,9 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
       // Check if sum of page scores exceeds total score
       _checkAndUpdateTotalScore();
+
+      // Also update the game_edit.dart compatible structure
+      await _updateGameEditPageScore(pageIndex, newScore);
 
       debugPrint(
         '✅ Page score updated: page ${pageData.pageNumber}, score: $newScore',
@@ -557,125 +861,89 @@ class _MyGameCheckState extends State<MyGameCheck> {
     }
   }
 
-  /// Check if sum of page scores exceeds total score and update if needed
-  void _checkAndUpdateTotalScore() {
-    int sumOfPageScores = 0;
-    for (var page in pages) {
-      sumOfPageScores += page.pageScore;
-    }
-
-    // If sum of page scores is greater than total score, update total score
-    if (sumOfPageScores > _totalScore) {
-      _totalScore = sumOfPageScores;
-      _totalScoreController.text = sumOfPageScores.toString();
-      _updateTotalScore(sumOfPageScores);
-      debugPrint('✅ Total score auto-updated to sum of page scores: $sumOfPageScores');
-    }
-  }
-
-  // Search filter removed
-
-  /// Mark answer as correct
-  Future<void> _markAsCorrect() async {
-    if (currentPageIndex >= pages.length || _isSaving) return;
-
-    setState(() {
-      _isSaving = true;
-    });
-
-    // Update score to 1 (correct)
-    await _updateScore(1);
-
-    setState(() {
-      _isSaving = false;
-    });
-
-    // Show success message
-    Get.snackbar(
-      'Marked as Correct  ✓',
-      'Score updated successfully',
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 2),
-    );
-  }
-
-  /// Mark answer as wrong
-  Future<void> _markAsWrong() async {
-    if (currentPageIndex >= pages.length || _isSaving) return;
-
-    setState(() {
-      _isSaving = true;
-    });
-
-    // Update score to 0 (wrong)
-    await _updateScore(0);
-
-    setState(() {
-      _isSaving = false;
-    });
-
-    // Show info message
-    Get.snackbar(
-      'Marked as Wrong  ✗',
-      'Score updated successfully',
-      backgroundColor: Colors.orange,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 2),
-    );
-  }
-
-  /// Update the score in Firestore
-  Future<void> _updateScore(int newScore) async {
-    if (gameId == null || userId == null || studentUserId == null) return;
-    if (currentPageIndex >= pages.length) return;
-
-    final pageData = pages[currentPageIndex];
+  /// Update page score in game_edit.dart compatible format
+  Future<void> _updateGameEditPageScore(int pageIndex, int newScore) async {
+    if (gameId == null || userId == null) return;
 
     try {
-      final scoresRef = FirebaseFirestore.instance
+      final gameScoreRef = FirebaseFirestore.instance
           .collection('users')
           .doc(userId!)
           .collection('created_games')
           .doc(gameId!)
           .collection('game_score');
 
-      if (pageData.scoreDocId != null) {
-        // Update existing score
-        await scoresRef.doc(pageData.scoreDocId!).update({'score': newScore});
-      } else {
-        // Create new score entry
-        await scoresRef.add({
-          'userId': studentUserId!,
-          'page': pageData.pageNumber,
-          'score': newScore,
-        });
+      // Query for existing page score document (game_edit format)
+      // game_edit stores: { page: 1, score: 10 } (no userId field)
+      final querySnapshot = await gameScoreRef
+          .where('page', isEqualTo: pageIndex + 1) // 1-based page number
+          .get();
+
+      // Find the game_edit format document (one without userId field)
+      DocumentSnapshot? gameEditDoc;
+      for (var doc in querySnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data != null && !data.containsKey('userId')) {
+          gameEditDoc = doc;
+          break;
+        }
       }
 
-      // Update local state
-      setState(() {
-        pages[currentPageIndex] = pageData.copyWith(currentScore: newScore);
-      });
-
-      debugPrint(
-        '✅ Score updated: page ${pageData.pageNumber}, score: $newScore',
-      );
+      if (gameEditDoc != null) {
+        // Update existing document
+        await gameEditDoc.reference.update({
+          'score': newScore,
+        });
+        debugPrint('✅ Updated game_edit page score: page ${pageIndex + 1}, score: $newScore');
+      } else {
+        // Create new document in game_edit format
+        await gameScoreRef.add({
+          'page': pageIndex + 1, // 1-based page number
+          'score': newScore,
+        });
+        debugPrint('✅ Created game_edit page score: page ${pageIndex + 1}, score: $newScore');
+      }
     } catch (e) {
-      debugPrint('Error updating score: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to update score: $e',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      debugPrint('⚠️ Failed to update game_edit page score: $e');
+      // Don't show error to user as this is a background sync
     }
   }
+
+  // Search filter removed
+
+
 
   /// Finish review and update review status
   Future<void> _finishReview() async {
     if (gameId == null || studentUserId == null || userId == null) return;
 
     try {
+      debugPrint('🏁 Finishing review - saving all changes first...');
+      
+      // First, save all page scores and total score
+      for (int i = 0; i < pages.length; i++) {
+        if (_pageScoreControllers.containsKey(i)) {
+          final controller = _pageScoreControllers[i]!;
+          final score = int.tryParse(controller.text) ?? 0;
+          
+          if (pages[i].pageScore != score) {
+            debugPrint('  📝 Saving page $i score: ${pages[i].pageScore} → $score');
+            // Save to database (this also updates local state)
+            await _updatePageScore(i, score);
+          }
+        }
+      }
+
+      // Save total score if changed
+      final totalScore = int.tryParse(_totalScoreController.text) ?? 0;
+      if (totalScore != _totalScore) {
+        debugPrint('  📝 Saving total score: $_totalScore → $totalScore');
+        _totalScore = totalScore;
+        await _updateTotalScore(totalScore);
+      }
+      
+      debugPrint('✅ All scores saved, marking review as complete...');
+
       // Calculate awarded score from page scores (sum of pageScore values)
       int awardedScore = _calculateTotalScore();
 
@@ -870,21 +1138,37 @@ class _MyGameCheckState extends State<MyGameCheck> {
     });
 
     try {
-      final scoresRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId!)
-          .collection('created_games')
-          .doc(gameId!)
-          .collection('game_score');
+      // Reset all scores to 0 (unmarked) using new structure
+      if (studentScoreDocId != null) {
+        final pageScoreRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId!)
+            .collection('created_games')
+            .doc(gameId!)
+            .collection('game_score')
+            .doc(studentScoreDocId!)
+            .collection('page_score');
 
-      // Reset all scores to 0 (unmarked) - both currentScore and pageScore
-      for (var page in pages) {
-        if (page.scoreDocId != null) {
-          await scoresRef.doc(page.scoreDocId!).update({
-            'score': 0,
-            'pageScore': 0,
-          });
+        // Reset all page scores to 0
+        for (var page in pages) {
+          if (page.scoreDocId != null) {
+            await pageScoreRef.doc(page.scoreDocId!).update({
+              'pageScore': 0,
+            });
+          }
         }
+
+        // Reset total score to 0
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId!)
+            .collection('created_games')
+            .doc(gameId!)
+            .collection('game_score')
+            .doc(studentScoreDocId!)
+            .update({
+              'totalScore': 0,
+            });
       }
 
       // Update local state
@@ -922,55 +1206,793 @@ class _MyGameCheckState extends State<MyGameCheck> {
     }
   }
 
-  /// Build Column 1 content (Empty for now)
+  /// View student information dialog (read-only)
+  void _viewStudentInfo(String studentId, String studentName, String studentEmail) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: 500,
+            constraints: const BoxConstraints(maxHeight: 600),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').doc(studentId).snapshots(),
+              builder: (context, studentSnapshot) {
+                if (studentSnapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1E201E),
+                      ),
+                    ),
+                  );
+                }
+
+                if (!studentSnapshot.hasData || !studentSnapshot.data!.exists) {
+                  return SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: Text(
+                        'Student data not found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final studentData = studentSnapshot.data!.data() as Map<String, dynamic>;
+                final fullname = studentData['fullname'] ?? 'Not set';
+                final email = studentData['email'] ?? studentEmail;
+                final profileImageBase64 = studentData['profileImage'];
+                final schoolId = studentData['schoolId'] ?? 'Not set';
+                final gradeLevel = studentData['gradeLevel'] ?? 'Not set';
+                final section = studentData['section'] ?? 'Not set';
+
+                // Check if all important fields are set
+                bool hasCompleteInfo = fullname != 'Not set' &&
+                    schoolId != 'Not set' &&
+                    gradeLevel != 'Not set' &&
+                    section != 'Not set';
+
+                return SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Colors.blue,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Student Details',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Profile Image
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.blue[700],
+                        backgroundImage: profileImageBase64 != null
+                            ? MemoryImage(base64Decode(profileImageBase64))
+                            : null,
+                        child: profileImageBase64 == null
+                            ? Text(
+                                fullname.isNotEmpty && fullname != 'Not set'
+                                    ? fullname[0].toUpperCase()
+                                    : 'S',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Show warning if incomplete info
+                      if (!hasCompleteInfo)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange[300]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Student unknown information',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.orange[900],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Information Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDetailRow('Full Name', fullname),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Email', email),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('School ID', schoolId),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Grade Level', gradeLevel),
+                            const SizedBox(height: 12),
+                            _buildDetailRow('Section', section),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Close button only (no edit)
+                      AnimatedButton(
+                        width: 120,
+                        height: 45,
+                        color: const Color(0xFF1E201E),
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text(
+                          'Close',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    bool isNotSet = value == 'Not set' || value.isEmpty;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: isNotSet ? Colors.grey[400] : Colors.black87,
+              fontStyle: isNotSet ? FontStyle.italic : FontStyle.normal,
+            ),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Save all changes (scores and total score)
+  Future<void> _saveAllChanges() async {
+    if (_isSaving) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      debugPrint('💾 Starting save all changes...');
+      
+      // Save all page scores
+      for (int i = 0; i < pages.length; i++) {
+        if (_pageScoreControllers.containsKey(i)) {
+          final controller = _pageScoreControllers[i]!;
+          final score = int.tryParse(controller.text) ?? 0;
+          
+          debugPrint('  Page $i: Current=${pages[i].pageScore}, TextField=$score');
+          
+          if (pages[i].pageScore != score) {
+            debugPrint('  📝 Updating page $i score from ${pages[i].pageScore} to $score');
+            
+            // Update the score in database
+            await _updatePageScore(i, score);
+            
+            // _updatePageScore already updates local state, but ensure controller is synced
+            if (_pageScoreControllers.containsKey(i)) {
+              _pageScoreControllers[i]!.text = score.toString();
+            }
+          }
+        }
+      }
+
+      // Save total score
+      final totalScore = int.tryParse(_totalScoreController.text) ?? 0;
+      if (totalScore != _totalScore) {
+        debugPrint('  📝 Updating total score from $_totalScore to $totalScore');
+        _totalScore = totalScore;
+        await _updateTotalScore(totalScore);
+      }
+      
+      debugPrint('✅ All changes saved successfully');
+
+      if (mounted) {
+        Get.snackbar(
+          'Success',
+          'All changes saved successfully',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 2),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error saving changes: $e');
+      if (mounted) {
+        Get.snackbar(
+          'Error',
+          'Failed to save changes: $e',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  /// Download student report as CSV
+  Future<void> _downloadStudentCSV() async {
+    if (studentUserId == null || studentUsername == null) return;
+
+    try {
+      // Build CSV content
+      final StringBuffer csvBuffer = StringBuffer();
+      final generatedDate = DateTime.now().toString().split('.')[0];
+
+      // Add header
+      csvBuffer.writeln('Game: ${_escapeCsvField(title ?? 'Unknown Game')}');
+      csvBuffer.writeln('Student: ${_escapeCsvField(studentUsername!)}');
+      csvBuffer.writeln('Generated on: $generatedDate');
+      csvBuffer.writeln(''); // Empty line
+
+      // Main data headers
+      csvBuffer.writeln('Page,Game Type,Sentence,Page Score');
+
+      // Add each page's data
+      for (int i = 0; i < pages.length; i++) {
+        final page = pages[i];
+        
+        csvBuffer.writeln([
+          (i + 1).toString(),
+          _escapeCsvField(page.gameType),
+          _escapeCsvField(page.sentence),
+          page.pageScore.toString(),
+        ].join(','));
+      }
+
+      // Add summary
+      csvBuffer.writeln(''); // Empty line
+      csvBuffer.writeln('Total Score,$_totalScore');
+
+      // Create and download CSV file
+      final csvContent = csvBuffer.toString();
+      final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      
+      // Create download link
+      final fileName = 'Student_Report_${studentUsername}_${DateTime.now().millisecondsSinceEpoch}.csv';
+      html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      
+      // Clean up
+      Future.delayed(const Duration(seconds: 1), () {
+        html.Url.revokeObjectUrl(url);
+      });
+
+      Get.snackbar(
+        'Success',
+        'CSV file downloaded for $studentUsername',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      debugPrint('❌ Error downloading CSV: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to download CSV: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  /// Helper function to escape CSV fields
+  String _escapeCsvField(String field) {
+    // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+    if (field.contains(',') || field.contains('"') || field.contains('\n')) {
+      return '"${field.replaceAll('"', '""')}"';
+    }
+    return field;
+  }
+
+  /// Check if sum of page scores exceeds total score and update if needed
+  void _checkAndUpdateTotalScore() {
+    // Calculate sum of all page scores
+    int sumOfPageScores = 0;
+    for (var page in pages) {
+      sumOfPageScores += page.pageScore;
+    }
+    
+    // If sum of page scores is greater than total score, update total score
+    if (sumOfPageScores > _totalScore) {
+      _totalScore = sumOfPageScores;
+      _totalScoreController.text = _totalScore.toString();
+      
+      debugPrint('📊 Total score updated: $sumOfPageScores (sum of page scores exceeded previous total)');
+      
+      // Update total score in Firestore
+      _updateTotalScore(_totalScore);
+    }
+    // If sum is not greater, total score remains unchanged
+  }
+
+  /// Get or create a TextEditingController for a page score
+  TextEditingController _getOrCreatePageScoreController(int pageIndex) {
+    if (!_pageScoreControllers.containsKey(pageIndex)) {
+      final controller = TextEditingController(
+        text: pageIndex < pages.length ? pages[pageIndex].pageScore.toString() : '0',
+      );
+      _pageScoreControllers[pageIndex] = controller;
+    } else {
+      // Ensure controller text is in sync with the current page score
+      final currentController = _pageScoreControllers[pageIndex]!;
+      if (pageIndex < pages.length) {
+        final expectedText = pages[pageIndex].pageScore.toString();
+        if (currentController.text != expectedText) {
+          currentController.text = expectedText;
+        }
+      }
+    }
+    return _pageScoreControllers[pageIndex]!;
+  }
+
+  /// Show page selector dialog for quick navigation
+  void _showPageSelector() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Select Page',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: Scrollbar(
+                    controller: _pageSelectorScrollController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    thickness: 8,
+                    radius: const Radius.circular(10),
+                    child: GestureDetector(
+                      onPanUpdate: (details) {
+                        // Drag to scroll functionality
+                        _pageSelectorScrollController.position.moveTo(
+                          _pageSelectorScrollController.offset -
+                              details.delta.dy,
+                        );
+                      },
+                      child: ListView.builder(
+                        controller: _pageSelectorScrollController,
+                        shrinkWrap: true,
+                        itemCount: pages.length,
+                        itemBuilder: (context, index) {
+                          final isCurrentPage = index == currentPageIndex;
+                          
+                          return Container(
+                            margin: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 4,
+                            ),
+                            child: Row(
+                              children: [
+                                // Page button section
+                                Expanded(
+                                  child: Material(
+                                    color: isCurrentPage
+                                        ? Colors.green.withOpacity(0.3)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: InkWell(
+                                      onTap: () {
+                                        if (!isCurrentPage) {
+                                          setState(() {
+                                            currentPageIndex = index;
+                                          });
+                                        }
+                                        Navigator.of(context).pop();
+                                      },
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: isCurrentPage
+                                                ? Colors.green
+                                                : Colors.white.withOpacity(0.3),
+                                            width: isCurrentPage ? 2 : 1,
+                                          ),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              'Page ${index + 1}',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 16,
+                                                color: Colors.white,
+                                                fontWeight: isCurrentPage
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            if (isCurrentPage)
+                                              const Icon(
+                                                Icons.check_circle,
+                                                color: Colors.green,
+                                                size: 20,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                AnimatedButton(
+                  width: 100,
+                  height: 40,
+                  color: Colors.grey,
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Close',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Build Column 1 content (Player List)
   Widget _buildColumn1Content() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Title
-        Text(
-          "Student Review",
-          style: GoogleFonts.poppins(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+        // Search bar
+        TextField(
+          controller: _searchController,
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+              players = _applySearchFilter(allPlayers);
+            });
+          },
+          style: GoogleFonts.poppins(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Search players...',
+            hintStyle: GoogleFonts.poppins(color: Colors.white54),
+            prefixIcon: const Icon(
+              Icons.search,
+              color: Colors.white54,
+            ),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(
+                      Icons.clear,
+                      color: Colors.white54,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        players = _applySearchFilter(allPlayers);
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.white.withOpacity(0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(30),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 15,
+            ),
           ),
         ),
         const SizedBox(height: 16),
         
-        // Student info card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.blue.withOpacity(0.3),
-              width: 1,
+        // Player list
+        if (_isLoadingPlayers)
+          const Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Current Student:",
+          )
+        else if (players.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                "No players found",
                 style: GoogleFonts.poppins(
+                  color: Colors.white54,
                   fontSize: 14,
-                  color: Colors.white70,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                studentUsername ?? 'Unknown Student',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+            ),
+          )
+        else
+          // Player list with fixed container sizes
+          ...players.map((player) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: InkWell(
+                onTap: () => _switchToPlayer(player),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 100,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: player.isSelected
+                        ? Colors.blue.withOpacity(0.2)
+                        : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: player.isSelected
+                          ? Colors.blue
+                          : Colors.white.withOpacity(0.1),
+                      width: player.isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Circle Avatar with profile image
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.blue,
+                        backgroundImage: player.profileImage != null && player.profileImage!.isNotEmpty
+                            ? MemoryImage(base64Decode(player.profileImage!))
+                            : null,
+                        child: player.profileImage == null || player.profileImage!.isEmpty
+                            ? Text(
+                                player.username.isNotEmpty
+                                    ? player.username[0].toUpperCase()
+                                    : '?',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      // Username and Email
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              player.username,
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              player.email,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.white60,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Download CSV button (only show for selected player)
+                      if (player.isSelected) ...[
+                        AnimatedButton(
+                          height: 36,
+                          width: 36,
+                          color: Colors.purple,
+                          shadowDegree: ShadowDegree.light,
+                          onPressed: _downloadStudentCSV,
+                          child: const Icon(
+                            Icons.download,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Save button (only show for selected player)
+                        AnimatedButton(
+                          height: 36,
+                          width: 36,
+                          color: Colors.blue,
+                          shadowDegree: ShadowDegree.light,
+                          onPressed: _isSaving ? () {} : _saveAllChanges,
+                          child: _isSaving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.save,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      // View button
+                      AnimatedButton(
+                        height: 36,
+                        width: 36,
+                        color: Colors.green,
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          _viewStudentInfo(
+                            player.userId,
+                            player.username,
+                            player.email,
+                          );
+                        },
+                        child: const Icon(
+                          Icons.person,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Selected indicator
+                      if (player.isSelected)
+                        const Icon(
+                          Icons.check_circle,
+                          color: Colors.blue,
+                          size: 24,
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
+            );
+          }).toList(),
       ],
     );
   }
@@ -979,6 +2001,27 @@ class _MyGameCheckState extends State<MyGameCheck> {
 
   /// Build Column 3 content (Review Controls)
   Widget _buildColumn3Content() {
+    if (_isLoadingPlayerData) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Loading player data...',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.all(20.0),
       child: Column(
@@ -1023,17 +2066,17 @@ class _MyGameCheckState extends State<MyGameCheck> {
         const Divider(color: Colors.white24),
         const SizedBox(height: 20),
 
-        // Correct/Wrong buttons in Row
+        // Reset button
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Correct button
+            // Restart button
             AnimatedButton(
               height: 50,
-              width: 150,
-              color: Colors.green,
+              width: 50,
+              color: Colors.orange,
               shadowDegree: ShadowDegree.dark,
-              onPressed: _isSaving ? () {} : _markAsCorrect,
+              onPressed: _isSaving ? () {} : _resetChecking,
               child: _isSaving
                   ? const SizedBox(
                       width: 20,
@@ -1043,71 +2086,10 @@ class _MyGameCheckState extends State<MyGameCheck> {
                         strokeWidth: 2,
                       ),
                     )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.check_circle,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              "Correct",
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-
-            const SizedBox(width: 16),
-
-            // Wrong button
-            AnimatedButton(
-              height: 50,
-              width: 150,
-              color: Colors.red,
-              shadowDegree: ShadowDegree.dark,
-              onPressed: _isSaving ? () {} : _markAsWrong,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.cancel, color: Colors.white, size: 28),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              "Wrong",
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  : const Icon(
+                      Icons.refresh,
+                      color: Colors.white,
+                      size: 24,
                     ),
             ),
           ],
@@ -1142,9 +2124,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: TextField(
-                controller: _pageScoreControllers.containsKey(currentPageIndex)
-                    ? _pageScoreControllers[currentPageIndex]!
-                    : TextEditingController(text: '0'),
+                controller: _getOrCreatePageScoreController(currentPageIndex),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 style: GoogleFonts.poppins(
@@ -1162,16 +2142,15 @@ class _MyGameCheckState extends State<MyGameCheck> {
                 ),
                 textAlign: TextAlign.center,
                 onChanged: (value) {
-                  // Debounce the update to avoid too many Firestore calls
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    if (value.isNotEmpty) {
-                      final score = int.tryParse(value) ?? 0;
-                      if (pages.isNotEmpty &&
-                          pages[currentPageIndex].pageScore != score) {
-                        _updatePageScore(currentPageIndex, score);
-                      }
-                    }
-                  });
+                  // Update the page score in the pages list immediately for sync
+                  if (currentPageIndex < pages.length) {
+                    final newScore = int.tryParse(value) ?? 0;
+                    setState(() {
+                      pages[currentPageIndex] = pages[currentPageIndex].copyWith(pageScore: newScore);
+                      _checkAndUpdateTotalScore();
+                    });
+                  }
+                  // Note: Changes are saved when user clicks the Save button
                 },
               ),
             ),
@@ -1311,8 +2290,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
           ),
         ),
 
-        const SizedBox(height: 40),
-
+        const SizedBox(height: 20),
         const Divider(color: Colors.white24),
         const SizedBox(height: 20),
 
@@ -1342,9 +2320,7 @@ class _MyGameCheckState extends State<MyGameCheck> {
               height: 50,
               width: 100,
               color: Colors.green,
-              onPressed: () {
-                // Show page selector dialog (similar to game_edit)
-              },
+              onPressed: _showPageSelector,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -1385,29 +2361,6 @@ class _MyGameCheckState extends State<MyGameCheck> {
                 color: Colors.white,
                 size: 24,
               ),
-            ),
-            const SizedBox(width: 8),
-            // Reset button
-            AnimatedButton(
-              height: 50,
-              width: 50,
-              color: Colors.orange,
-              shadowDegree: ShadowDegree.dark,
-              onPressed: _isSaving ? () {} : _resetChecking,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.refresh,
-                      color: Colors.white,
-                      size: 24,
-                    ),
             ),
           ],
         ),
@@ -1670,33 +2623,52 @@ class _MyGameCheckState extends State<MyGameCheck> {
                               decoration: const BoxDecoration(
                                 color: Colors.white,
                               ),
-                              child: GestureDetector(
-                                onPanUpdate: (details) {
-                                  if (details.delta.dy != 0) {
-                                    final newOffset =
-                                        _column2ScrollController.offset -
-                                        (details.delta.dy * 2);
-                                    final maxScroll = _column2ScrollController
-                                        .position
-                                        .maxScrollExtent;
-                                    final clampedOffset = newOffset.clamp(
-                                      0.0,
-                                      maxScroll,
-                                    );
-                                    _column2ScrollController.jumpTo(
-                                      clampedOffset,
-                                    );
-                                  }
-                                },
-                                child: SingleChildScrollView(
-                                  controller: _column2ScrollController,
-                                  physics: const BouncingScrollPhysics(),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: _buildReviewContent(),
-                                  ),
-                                ),
-                              ),
+                              child: _isLoadingPlayerData
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const CircularProgressIndicator(
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          Text(
+                                            'Loading player data...',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : GestureDetector(
+                                      onPanUpdate: (details) {
+                                        if (details.delta.dy != 0) {
+                                          final newOffset =
+                                              _column2ScrollController.offset -
+                                              (details.delta.dy * 2);
+                                          final maxScroll = _column2ScrollController
+                                              .position
+                                              .maxScrollExtent;
+                                          final clampedOffset = newOffset.clamp(
+                                            0.0,
+                                            maxScroll,
+                                          );
+                                          _column2ScrollController.jumpTo(
+                                            clampedOffset,
+                                          );
+                                        }
+                                      },
+                                      child: SingleChildScrollView(
+                                        controller: _column2ScrollController,
+                                        physics: const BouncingScrollPhysics(),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16.0),
+                                          child: _buildReviewContent(),
+                                        ),
+                                      ),
+                                    ),
                             ),
                           ),
                         ),
@@ -2001,6 +2973,55 @@ class _MyGameCheckState extends State<MyGameCheck> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// Data class for player information
+class PlayerData {
+  final String userId;
+  final String username;
+  final String email;
+  final String? profileImage; // Base64 encoded image
+  final String? fullname;
+  final String? schoolId;
+  final String? gradeLevel;
+  final String? section;
+  final bool isSelected;
+
+  PlayerData({
+    required this.userId,
+    required this.username,
+    required this.email,
+    this.profileImage,
+    this.fullname,
+    this.schoolId,
+    this.gradeLevel,
+    this.section,
+    this.isSelected = false,
+  });
+
+  PlayerData copyWith({
+    String? userId,
+    String? username,
+    String? email,
+    String? profileImage,
+    String? fullname,
+    String? schoolId,
+    String? gradeLevel,
+    String? section,
+    bool? isSelected,
+  }) {
+    return PlayerData(
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      email: email ?? this.email,
+      profileImage: profileImage ?? this.profileImage,
+      fullname: fullname ?? this.fullname,
+      schoolId: schoolId ?? this.schoolId,
+      gradeLevel: gradeLevel ?? this.gradeLevel,
+      section: section ?? this.section,
+      isSelected: isSelected ?? this.isSelected,
     );
   }
 }

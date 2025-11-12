@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, avoid_web_libraries_in_flutter
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, avoid_web_libraries_in_flutter, unnecessary_to_list_in_spreads
 
 import 'dart:convert';
 import 'dart:html' as html;
@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
+import 'package:intl/intl.dart';
 
 class MyManagement extends StatefulWidget {
   const MyManagement({super.key});
@@ -925,6 +926,793 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
+  /// Show beautiful score card dialog
+  void _showScoreCard(String studentId, String studentName, String studentEmail, dynamic totalScore) async {
+    // Fetch page scores from Firestore
+    final pageScores = await _fetchPageScores(studentId);
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final dialogWidth = screenWidth > 600 ? 500.0 : screenWidth * 0.9;
+        
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: dialogWidth,
+            constraints: BoxConstraints(
+              maxHeight: screenHeight * 0.8,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF1a237e),
+                  const Color(0xFF0d47a1),
+                  const Color(0xFF01579b),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header with trophy icon
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.amber.withOpacity(0.5),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.emoji_events,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Score Report',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              studentName,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Content - Scrollable with drag support
+                Flexible(
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                      },
+                      scrollbars: true,
+                    ),
+                    child: Scrollbar(
+                      thumbVisibility: true,
+                      thickness: 6,
+                      radius: const Radius.circular(10),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                        // Total Score Card
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.amber.shade400,
+                                Colors.orange.shade600,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withOpacity(0.3),
+                                blurRadius: 15,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Total Score',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                totalScore?.toString() ?? '0',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  'Points',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Page Scores Section
+                        if (pageScores.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.list_alt,
+                                      color: Colors.white70,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Page Breakdown',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                ...pageScores.map((pageScore) {
+                                  final pageNum = pageScore['page'] ?? 0;
+                                  final score = pageScore['pageScore'] ?? 0;
+                                  
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.1),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '$pageNum',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Text(
+                                            'Page $pageNum',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            '$score pts',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+
+                        // Action Buttons Row
+                        Row(
+                          children: [
+                            // Download CSV Button
+                            Expanded(
+                              child: AnimatedButton(
+                                height: 50,
+                                color: Colors.purple.withOpacity(0.8),
+                                shadowDegree: ShadowDegree.light,
+                                onPressed: () {
+                                  _downloadScoreCSV(
+                                    studentName,
+                                    totalScore,
+                                    pageScores,
+                                  );
+                                },
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.download,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Download',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Share Button
+                            Expanded(
+                              child: AnimatedButton(
+                                height: 50,
+                                color: Colors.blue.withOpacity(0.8),
+                                shadowDegree: ShadowDegree.light,
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _showShareConfirmation(
+                                    studentId,
+                                    studentName,
+                                    studentEmail,
+                                    totalScore,
+                                    pageScores,
+                                  );
+                                },
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.share,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Share',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        
+                        // Close Button
+                        AnimatedButton(
+                          width: double.infinity,
+                          height: 50,
+                          color: Colors.white.withOpacity(0.2),
+                          shadowDegree: ShadowDegree.light,
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'Close',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Download score report as CSV
+  Future<void> _downloadScoreCSV(String studentName, dynamic totalScore, List<Map<String, dynamic>> pageScores) async {
+    try {
+      // Fetch student information
+      final studentData = completedUsers?.firstWhere(
+        (user) => user['username'] == studentName,
+        orElse: () => {},
+      );
+      
+      final StringBuffer csvBuffer = StringBuffer();
+      final generatedDate = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+
+      // Header: Game information
+      csvBuffer.writeln(_escapeCsvField('Game: ${title ?? 'Unknown Game'}'));
+      csvBuffer.writeln(_escapeCsvField('Generated on: $generatedDate'));
+      csvBuffer.writeln(''); // Empty line
+      
+      // Student information (only show available data)
+      if (studentData != null && studentData.isNotEmpty) {
+        if (studentData['username'] != null && studentData['username'].toString().isNotEmpty) {
+          csvBuffer.writeln('username:,${_escapeCsvField(studentData['username'].toString())}');
+        }
+        if (studentData['email'] != null && studentData['email'].toString().isNotEmpty) {
+          csvBuffer.writeln('email:,${_escapeCsvField(studentData['email'].toString())}');
+        }
+        if (studentData['fullname'] != null && studentData['fullname'].toString().isNotEmpty) {
+          csvBuffer.writeln('fullname:,${_escapeCsvField(studentData['fullname'].toString())}');
+        }
+        if (studentData['grade'] != null && studentData['grade'].toString().isNotEmpty) {
+          csvBuffer.writeln('grade:,${_escapeCsvField(studentData['grade'].toString())}');
+        }
+        if (studentData['section'] != null && studentData['section'].toString().isNotEmpty) {
+          csvBuffer.writeln('section:,${_escapeCsvField(studentData['section'].toString())}');
+        }
+      }
+      csvBuffer.writeln(''); // Empty line
+
+      // Score table header
+      csvBuffer.writeln('Page,Score');
+
+      // Add page scores (only if available)
+      if (pageScores.isNotEmpty) {
+        for (var pageScore in pageScores) {
+          final page = pageScore['page']?.toString() ?? '';
+          final score = pageScore['pageScore']?.toString() ?? '0';
+          if (page.isNotEmpty) {
+            csvBuffer.writeln('$page,$score');
+          }
+        }
+      }
+
+      // Total score footer
+      csvBuffer.writeln(''); // Empty line
+      csvBuffer.writeln('Total Score,${totalScore?.toString() ?? '0'}');
+
+      // Create and download CSV file
+      final csvContent = csvBuffer.toString();
+      debugPrint('📄 CSV Content:\n$csvContent');
+      final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      
+      // Create download link
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'Student_Reports_$timestamp.csv';
+      html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      
+      // Clean up
+      Future.delayed(const Duration(seconds: 1), () {
+        html.Url.revokeObjectUrl(url);
+      });
+
+      Get.snackbar(
+        'Success',
+        'Score report downloaded for $studentName',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      debugPrint('❌ Error downloading CSV: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to download score report: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  /// Show share confirmation dialog with message
+  void _showShareConfirmation(
+    String studentId,
+    String studentName,
+    String studentEmail,
+    dynamic totalScore,
+    List<Map<String, dynamic>> pageScores,
+  ) {
+    final TextEditingController messageController = TextEditingController(
+      text: 'Hi $studentName! Your score report for "${title ?? 'the game'}" is ready. Check your notifications to view your results!',
+    );
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final dialogWidth = screenWidth > 600 ? 500.0 : screenWidth * 0.9;
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: dialogWidth,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2C2F33),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.share,
+                        color: Colors.blue,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Share Score Report',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Send to $studentName',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.white60,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        messageController.dispose();
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // Message TextField
+                Text(
+                  'Message',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: messageController,
+                  maxLines: 4,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 14,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Enter a message...',
+                    hintStyle: GoogleFonts.poppins(
+                      color: Colors.white30,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.05),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.white.withOpacity(0.1),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.white.withOpacity(0.1),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.blue,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: AnimatedButton(
+                        height: 50,
+                        color: Colors.white.withOpacity(0.1),
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          messageController.dispose();
+                          Navigator.pop(context);
+                        },
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AnimatedButton(
+                        height: 50,
+                        color: Colors.blue,
+                        shadowDegree: ShadowDegree.light,
+                        onPressed: () {
+                          final message = messageController.text.trim();
+                          messageController.dispose();
+                          Navigator.pop(context);
+                          _sendScoreNotification(
+                            studentId,
+                            studentName,
+                            studentEmail,
+                            message,
+                            totalScore,
+                            pageScores,
+                          );
+                        },
+                        child: Text(
+                          'Send',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Send score notification to student
+  Future<void> _sendScoreNotification(
+    String studentId,
+    String studentName,
+    String studentEmail,
+    String message,
+    dynamic totalScore,
+    List<Map<String, dynamic>> pageScores,
+  ) async {
+    try {
+      // Create notification in student's notifications collection
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentId)
+          .collection('notifications')
+          .add({
+        'type': 'score_report',
+        'title': 'Score Report Available',
+        'message': message,
+        'gameId': gameId,
+        'gameTitle': title ?? 'Unknown Game',
+        'totalScore': totalScore ?? 0,
+        'pageScores': pageScores,
+        'from': user?.uid ?? '',
+        'fromName': user?.displayName ?? 'Teacher',
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      Get.snackbar(
+        'Success',
+        'Score report sent to $studentName',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+        icon: const Icon(Icons.check_circle, color: Colors.white),
+      );
+    } catch (e) {
+      debugPrint('❌ Error sending notification: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to send score report: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  /// Fetch page scores for a student
+  Future<List<Map<String, dynamic>>> _fetchPageScores(String studentId) async {
+    try {
+      if (gameId == null || user == null) return [];
+
+      final gameScoreRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user!.uid)
+          .collection('created_games')
+          .doc(gameId!)
+          .collection('game_score');
+
+      // Query for student's score document
+      final studentScoreQuery = await gameScoreRef
+          .where('userId', isEqualTo: studentId)
+          .limit(1)
+          .get();
+
+      if (studentScoreQuery.docs.isEmpty) return [];
+
+      // Get page scores from subcollection
+      final pageScoresRef = studentScoreQuery.docs.first.reference
+          .collection('page_score');
+      final pageScoresSnapshot = await pageScoresRef.orderBy('page').get();
+
+      return pageScoresSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'page': data['page'] ?? 0,
+          'pageScore': data['pageScore'] ?? 0,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching page scores: $e');
+      return [];
+    }
+  }
+
   /// Format date helper
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return 'Unknown';
@@ -1663,12 +2451,12 @@ class _MyManagementState extends State<MyManagement> {
                                 SizedBox(
                                   width: 130,
                                   child: _buildStatusCard(
-                                    "Total Players",
-                                    isLoading
-                                        ? "..."
-                                        : "${completedUsers?.length ?? 0}",
-                                    Icons.people,
-                                    Colors.purple,
+                                    "Game Rule",
+                                    gameRule != null 
+                                        ? (gameRule == 'score' ? 'Score' : gameRule == 'timer' ? 'Timer' : gameRule!)
+                                        : "None",
+                                    Icons.rule,
+                                    Colors.orange,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -1950,6 +2738,28 @@ class _MyManagementState extends State<MyManagement> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    // Check/Review button - Shows score card (only for score mode)
+                                    if (isScoreMode)
+                                      AnimatedButton(
+                                        height: 36,
+                                        width: 36,
+                                        color: Colors.green,
+                                        shadowDegree: ShadowDegree.light,
+                                        onPressed: () {
+                                          _showScoreCard(
+                                            player['userId'] ?? '',
+                                            player['username'] ?? 'Unknown',
+                                            player['email'] ?? '',
+                                            player['totalScore'],
+                                          );
+                                        },
+                                        child: const Icon(
+                                          Icons.fact_check,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    if (isScoreMode) const SizedBox(width: 8),
                                     // Person info button
                                     AnimatedButton(
                                       height: 36,
