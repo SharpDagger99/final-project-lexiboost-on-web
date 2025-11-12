@@ -1,9 +1,11 @@
-// ignore_for_file: avoid_print, deprecated_member_use, curly_braces_in_flow_control_structures, unnecessary_to_list_in_spreads
+// ignore_for_file: avoid_print, deprecated_member_use, curly_braces_in_flow_control_structures, unnecessary_to_list_in_spreads, unused_local_variable
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 
 class CallScreen extends StatefulWidget {
   final String channelName;
@@ -28,9 +30,11 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   bool _muted = false;
   bool _cameraOff = false;
+  bool _cameraAvailable = true;
   final Set<int> _remoteUsers = {}; // Track multiple remote users
   final Map<int, Map<String, dynamic>> _userProfiles = {}; // Cache user profile data
-  int? _focusedUid; // Track which video is focused/selected
+  final Set<int> _speakingUsers = {}; // Track currently speaking users
+  String? _teacherProfileImage;
   bool _callEnded = false;
   bool _showChat = false;
   int _participantCount = 1; // Start with 1 (self)
@@ -47,6 +51,7 @@ class _CallScreenState extends State<CallScreen> {
     _listenForCallStatusChanges();
     _listenForRaisedHands();
     _checkCameraAvailability();
+    _loadTeacherProfile();
 
     // Initialize with provided remote UID if exists
     if (widget.remoteUid != null) {
@@ -58,6 +63,27 @@ class _CallScreenState extends State<CallScreen> {
     _updateParticipantCount(_participantCount);
 
     print("CallScreen initialized with ${_remoteUsers.length} remote user(s)");
+  }
+
+  // Load teacher profile
+  Future<void> _loadTeacherProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.exists) {
+        setState(() {
+          _teacherProfileImage = userDoc.data()?['profileImage'];
+        });
+      }
+    } catch (e) {
+      print('Error loading teacher profile: $e');
+    }
   }
 
   // Load user profile from Firestore (for students)
@@ -212,10 +238,17 @@ class _CallScreenState extends State<CallScreen> {
     try {
       // Try to enable video to check if camera exists
       await widget.engine.enableVideo();
+      setState(() {
+        _cameraAvailable = true;
+      });
     } catch (e) {
       if (e.toString().contains('NotFound') || 
           e.toString().contains('no camera') ||
           e.toString().contains('device not found')) {
+        setState(() {
+          _cameraAvailable = false;
+          _cameraOff = true;
+        });
         // Show dialog but allow continuation
         if (mounted) {
           _showNoCameraDialog();
@@ -279,12 +312,39 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _setupAgoraEventHandlers() {
+    // Enable audio volume indication to detect speaking
+    widget.engine.enableAudioVolumeIndication(
+      interval: 200,
+      smooth: 3,
+      reportVad: true,
+    );
+
     widget.engine.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           print(
             "CallScreen: Local user ${connection.localUid} joined successfully",
           );
+        },
+        onAudioVolumeIndication: (
+          RtcConnection connection,
+          List<AudioVolumeInfo> speakers,
+          int speakerNumber,
+          int totalVolume,
+        ) {
+          // Track speaking users
+          final newSpeakingUsers = <int>{};
+          for (var speaker in speakers) {
+            if (speaker.volume != null && speaker.volume! > 10) {
+              newSpeakingUsers.add(speaker.uid ?? 0);
+            }
+          }
+          if (mounted) {
+            setState(() {
+              _speakingUsers.clear();
+              _speakingUsers.addAll(newSpeakingUsers);
+            });
+          }
         },
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           print("CallScreen: Remote user $remoteUid joined");
@@ -524,9 +584,16 @@ class _CallScreenState extends State<CallScreen> {
         body: Stack(
           children: [
             // Video grid view (full screen, includes local + remote users)
-            // Hide video when chat is open
-            if (!_showChat)
-              Positioned.fill(child: _remoteVideo()),
+            // Keep video rendering even when chat is open (just hide visually)
+            Positioned.fill(
+              child: Visibility(
+                visible: !_showChat,
+                maintainState: true,
+                maintainAnimation: true,
+                maintainSize: false,
+                child: _remoteVideo(),
+              ),
+            ),
 
             // Participant count (top-left) - only show when chat is closed
             if (!_showChat)
@@ -721,12 +788,12 @@ class _CallScreenState extends State<CallScreen> {
                       const SizedBox(width: 16),
                       _controlButton(
                         icon: _cameraOff ? Icons.videocam_off : Icons.videocam,
-                        color: Colors.white,
-                        bgColor: _cameraOff ? Colors.red : Colors.grey.shade700,
-                        onTap: () {
+                        color: _cameraAvailable ? Colors.white : Colors.grey,
+                        bgColor: _cameraOff ? Colors.red : (_cameraAvailable ? Colors.grey.shade700 : Colors.grey.shade900),
+                        onTap: _cameraAvailable ? () {
                           setState(() => _cameraOff = !_cameraOff);
                           widget.engine.enableLocalVideo(!_cameraOff);
-                        },
+                        } : null,
                       ),
                       const SizedBox(width: 16),
                       _controlButton(
@@ -945,7 +1012,7 @@ class _CallScreenState extends State<CallScreen> {
     required IconData icon,
     required Color color,
     required Color bgColor,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -957,27 +1024,16 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  /// Remote Video View - Grid layout for multiple users (Web: responsive with 200x200 boxes)
+  /// Remote Video View - Minimized grid layout (300x300 boxes)
   Widget _remoteVideo() {
-    // Get all users: focused first, then local (0), then remote users
+    // Get all users: local (0), then remote users
     List<int> allUsers = [];
     
-    // Add focused user first if exists
-    if (_focusedUid != null && (_focusedUid == 0 || _remoteUsers.contains(_focusedUid))) {
-      allUsers.add(_focusedUid!);
-    }
+    // Add local user
+    allUsers.add(0);
     
-    // Add local user if not already added
-    if (!allUsers.contains(0)) {
-      allUsers.add(0);
-    }
-    
-    // Add remaining remote users
-    for (var uid in _remoteUsers) {
-      if (!allUsers.contains(uid)) {
-        allUsers.add(uid);
-      }
-    }
+    // Add remote users
+    allUsers.addAll(_remoteUsers);
     
     if (allUsers.isEmpty) {
       return Center(
@@ -997,151 +1053,49 @@ class _CallScreenState extends State<CallScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calculate responsive grid based on screen width - max 200px per box
-        final double boxSize = 200.0; // Fixed 200px for all video boxes
-        final double focusedBoxSize = 200.0; // Same size (200px) for focused video
-        final double spacing = 8.0;
+        // Fixed 300x300 container size for minimized view
+        final double boxSize = 300.0;
+        final double spacing = 12.0;
         
-        // If there's a focused video, show it larger in center, others in grid below
-        if (_focusedUid != null) {
-          final focusedIndex = allUsers.indexOf(_focusedUid!);
-          if (focusedIndex != -1) {
-            // Move focused to first
-            allUsers.removeAt(focusedIndex);
-            allUsers.insert(0, _focusedUid!);
-          }
-          
-          // Calculate grid for remaining users
-          final remainingUsers = allUsers.length > 1 ? allUsers.length - 1 : 1;
-          final int crossAxisCount = ((constraints.maxWidth - spacing) / (boxSize + spacing)).floor().clamp(1, remainingUsers);
-          
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                // Focused video (larger, centered) - tap to unfocus
-                Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _focusedUid = null; // Unfocus by tapping again
-                      });
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.all(16),
-                      width: focusedBoxSize,
-                      height: focusedBoxSize,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue, width: 4),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            _buildVideoView(_focusedUid!),
-                            _buildVideoOverlay(_focusedUid!, true),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // Other users in grid
-                if (allUsers.length > 1)
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(8),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: spacing,
-                      mainAxisSpacing: spacing,
-                      childAspectRatio: 1.0,
-                    ),
-                    itemCount: allUsers.length - 1,
-                    itemBuilder: (context, index) {
-                      final uid = allUsers[index + 1];
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _focusedUid = uid;
-                          });
-                        },
-                        child: Container(
-                          width: boxSize,
-                          height: boxSize,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: uid == 0 ? Colors.blue : Colors.grey.shade700,
-                              width: 2,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                _buildVideoView(uid),
-                                _buildVideoOverlay(uid, false),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-          );
-        }
+        // Calculate grid columns based on screen width
+        final int crossAxisCount = ((constraints.maxWidth - spacing) / (boxSize + spacing)).floor().clamp(1, 10);
         
-        // No focused video - show all in grid
-        final int crossAxisCount = ((constraints.maxWidth - spacing) / (boxSize + spacing)).floor().clamp(1, allUsers.length);
-        
+        // Show all users in minimized grid (300x300 each) - centered
         return Center(
           child: GridView.builder(
             shrinkWrap: true,
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(16),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: crossAxisCount,
               crossAxisSpacing: spacing,
               mainAxisSpacing: spacing,
-              childAspectRatio: 1.0, // Square boxes (200x200 max)
+              childAspectRatio: 1.0, // Square boxes (300x300)
             ),
             itemCount: allUsers.length,
             itemBuilder: (context, index) {
               final uid = allUsers[index];
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _focusedUid = uid;
-                  });
-                },
-                child: Container(
-                  width: boxSize,
-                  height: boxSize,
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: uid == 0 ? Colors.blue : Colors.grey.shade700,
-                      width: 2,
-                    ),
+              final isSpeaking = _speakingUsers.contains(uid);
+              return Container(
+                width: boxSize,
+                height: boxSize,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSpeaking
+                        ? Colors.green
+                        : (uid == 0 ? Colors.blue.shade400 : Colors.grey.shade700),
+                    width: isSpeaking ? 3 : 2,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildVideoView(uid),
-                        _buildVideoOverlay(uid, false),
-                      ],
-                    ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildVideoView(uid),
+                      _buildVideoOverlay(uid),
+                    ],
                   ),
                 ),
               );
@@ -1155,6 +1109,12 @@ class _CallScreenState extends State<CallScreen> {
   // Build video view widget
   Widget _buildVideoView(int uid) {
     final isLocalUser = uid == 0;
+    final userProfile = _userProfiles[uid];
+    
+    // Show avatar if camera is off or not available
+    if (isLocalUser && (_cameraOff || !_cameraAvailable)) {
+      return _buildAvatarView(_teacherProfileImage, 'Teacher');
+    }
     
     if (isLocalUser) {
       // Local user camera
@@ -1168,7 +1128,8 @@ class _CallScreenState extends State<CallScreen> {
         ),
       );
     } else {
-      // Remote users
+      // Remote users - check if they have camera on
+      // For now, show video view (we can't detect if remote user has camera off from here)
       return AgoraVideoView(
         controller: VideoViewController.remote(
           rtcEngine: widget.engine,
@@ -1185,8 +1146,34 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
   
+  // Build avatar view when camera is off
+  Widget _buildAvatarView(String? profileImageBase64, String fallbackText) {
+    return Container(
+      color: Colors.grey.shade900,
+      child: Center(
+        child: profileImageBase64 != null
+            ? CircleAvatar(
+                radius: 80,
+                backgroundImage: MemoryImage(base64Decode(profileImageBase64)),
+              )
+            : CircleAvatar(
+                radius: 80,
+                backgroundColor: Colors.blue.shade700,
+                child: Text(
+                  fallbackText.substring(0, 1).toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+  
   // Build video overlay (username, indicators)
-  Widget _buildVideoOverlay(int uid, bool isFocused) {
+  Widget _buildVideoOverlay(int uid) {
     final userProfile = _userProfiles[uid];
     final isLocalUser = uid == 0;
     
@@ -1218,25 +1205,6 @@ class _CallScreenState extends State<CallScreen> {
             ),
           ),
         ),
-        
-        // Focus indicator
-        if (isFocused)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.center_focus_strong,
-                color: Colors.white,
-                size: 16,
-              ),
-            ),
-          ),
       ],
     );
   }

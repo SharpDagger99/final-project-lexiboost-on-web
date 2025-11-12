@@ -11,6 +11,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import '../services/agora_config.dart';
 import '../services/permission_service.dart';
 import 'call_screen.dart';
@@ -344,40 +348,8 @@ class _MyClassRoomState extends State<MyClassRoom> {
       }
 
       // Initialize Agora with permissions - this will trigger browser prompt on web
-      bool agoraInitialized =
-          await PermissionService.initializeAgoraWithPermissions(_engine);
-
-      if (!agoraInitialized) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Row(
-              children: const [
-                Icon(Icons.error, color: Colors.red, size: 28),
-                SizedBox(width: 12),
-                Text('Camera/Microphone Error'),
-              ],
-            ),
-            content: Text(
-              'Failed to access camera/microphone.\n\n'
-              '${PermissionService.getPermissionErrorMessage()}',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-        setState(() {
-          _isInitiatingCall = false;
-        });
-        return;
-      }
+      // Continue even if camera/microphone initialization fails
+      await PermissionService.initializeAgoraWithPermissions(_engine);
       // Get teacher name
       final teacherName = await _getUsername(user!.uid);
 
@@ -543,6 +515,91 @@ class _MyClassRoomState extends State<MyClassRoom> {
     }
   }
 
+  // ✅ Download file
+  Future<void> _downloadFile(String url, String fileName) async {
+    try {
+      // For web, just open the URL in a new tab (browser will handle download)
+      if (kIsWeb) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Opening file in new tab...'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        // Note: In web, files will open in browser. User can right-click to save.
+        // To force download, you would need dart:html which requires conditional imports
+        return;
+      }
+      
+      // Mobile download
+      var status = await Permission.storage.status;
+      if (!status.isGranted) {
+        status = await Permission.storage.request();
+        if (!status.isGranted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Storage permission denied'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⬇️ Downloading...'),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      
+      // Download file
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        // Get downloads directory
+        Directory? directory;
+        if (Platform.isAndroid) {
+          directory = Directory('/storage/emulated/0/Download');
+          if (!await directory.exists()) {
+            directory = await getExternalStorageDirectory();
+          }
+        } else {
+          directory = await getApplicationDocumentsDirectory();
+        }
+        
+        if (directory != null) {
+          final filePath = '${directory.path}/$fileName';
+          final file = File(filePath);
+          await file.writeAsBytes(response.bodyBytes);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Downloaded to: ${directory.path}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Download failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error downloading file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Error downloading file'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   // ✅ Show message options popup
   void _showMessageOptions(
     BuildContext context,
@@ -551,6 +608,8 @@ class _MyClassRoomState extends State<MyClassRoom> {
     List<String> likes,
     List<String> dislikes,
     bool isHidden,
+    String messageType,
+    Map<String, dynamic> data,
   ) {
     showDialog(
       context: context,
@@ -585,6 +644,24 @@ class _MyClassRoomState extends State<MyClassRoom> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // Download button (only for files)
+                if (messageType == 'image' || messageType == 'video' || messageType == 'file') ...[
+                  _buildOptionButton(
+                    icon: Icons.download_rounded,
+                    label: 'Download',
+                    color: Colors.green,
+                    onTap: () {
+                      Navigator.pop(context);
+                      final fileUrl = data['fileUrl'];
+                      final fileName = data['fileName'] ?? 'file';
+                      if (fileUrl != null) {
+                        _downloadFile(fileUrl, fileName);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Like button
                 _buildOptionButton(
@@ -1012,6 +1089,8 @@ class _MyClassRoomState extends State<MyClassRoom> {
                                   likes,
                                   dislikes,
                                   isHidden,
+                                  messageType,
+                                  data,
                                 ),
                                 child: Column(
                                   crossAxisAlignment: isMe
