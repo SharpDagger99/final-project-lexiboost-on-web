@@ -83,7 +83,16 @@ class TestPageData {
 }
 
 class MyTesting extends StatefulWidget {
-  const MyTesting({super.key});
+  final Map<String, dynamic>? gameData;
+  final String? gameTitle;
+  final String? teacherName;
+  
+  const MyTesting({
+    super.key,
+    this.gameData,
+    this.gameTitle,
+    this.teacherName,
+  });
 
   @override
   State<MyTesting> createState() => _MyTestingState();
@@ -200,7 +209,11 @@ class _MyTestingState extends State<MyTesting> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeTesting();
+      if (widget.gameData != null) {
+        _loadProvidedGameData();
+      } else {
+        _initializeTesting();
+      }
     });
   }
 
@@ -262,6 +275,68 @@ class _MyTestingState extends State<MyTesting> {
       }
     } catch (e) {
       debugPrint('Error loading game data: $e');
+    }
+  }
+
+  // Load game data provided from game report
+  Future<void> _loadProvidedGameData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      if (widget.gameData != null) {
+        final data = widget.gameData!;
+        
+        // Set game properties
+        selectedGameRule = (data['gameRule'] as String?) ?? 'none';
+        heartEnabled = (data['heart'] as bool?) ?? false;
+        timerSeconds = (data['timer'] as int?) ?? 0;
+        
+        // Reset hearts when viewing a game
+        if (heartEnabled) {
+          remainingHearts = 5;
+        }
+
+        // Load game rounds from the provided data
+        if (data['game_rounds'] != null) {
+          final gameRounds = data['game_rounds'] as List<dynamic>;
+          pages.clear();
+          
+          for (int i = 0; i < gameRounds.length; i++) {
+            final roundData = gameRounds[i] as Map<String, dynamic>;
+            pages.add(TestPageData(
+              gameType: roundData['game_type'] ?? 'fill_the_blank',
+              answer: roundData['answer'] ?? '',
+              descriptionField: roundData['description'] ?? '',
+              readSentence: roundData['read_sentence'] ?? '',
+              listenAndRepeat: roundData['listen_and_repeat'] ?? '',
+              visibleLetters: List<bool>.filled((roundData['answer'] ?? '').length, true),
+              multipleChoices: List<String>.from(roundData['multiple_choices'] ?? []),
+              hint: roundData['hint'] ?? '',
+              correctAnswerIndex: roundData['correct_answer_index'] ?? 0,
+              mathTotalBoxes: roundData['math_total_boxes'] ?? 1,
+              mathBoxValues: List<String>.from(roundData['math_box_values'] ?? []),
+              mathOperators: List<String>.from(roundData['math_operators'] ?? []),
+              mathAnswer: roundData['math_answer'] ?? '0',
+            ));
+          }
+        }
+
+        // Load first page if available
+        if (pages.isNotEmpty) {
+          _loadPageData(0);
+        }
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading provided game data: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -1086,6 +1161,64 @@ class _MyTestingState extends State<MyTesting> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Game info header when viewing from game report
+                      if (widget.gameTitle != null && widget.teacherName != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(12),
+                              topRight: Radius.circular(12),
+                            ),
+                            border: Border(
+                              bottom: BorderSide(color: Colors.blue.shade200),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.videogame_asset, 
+                                       color: Colors.blue.shade700, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      widget.gameTitle!,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.close, color: Colors.grey.shade600),
+                                    onPressed: () => Navigator.pop(context),
+                                    tooltip: 'Close',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.person, 
+                                       color: Colors.grey.shade600, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Created by: ${widget.teacherName}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.all(10.0),
                         child: ClipRRect(

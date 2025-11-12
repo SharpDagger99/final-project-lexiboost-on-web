@@ -13,6 +13,7 @@ import 'package:lexi_on_web/teacher/add_student.dart';
 import 'package:lexi_on_web/admin/settings_admin.dart';
 import 'package:lexi_on_web/start.dart';
 import 'package:lexi_on_web/teacher/teacher_profile.dart';
+import 'package:lexi_on_web/utils/ban_check.dart';
 
 class MyTeacherHome extends StatefulWidget {
   const MyTeacherHome({super.key});
@@ -26,6 +27,21 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
   bool isSidebarOpen = false;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start ban monitoring
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      BanCheckService().startBanMonitoring(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    BanCheckService().stopBanMonitoring();
+    super.dispose();
+  }
 
   // Get pending student requests count
   Stream<int> _getPendingRequestsCount() async* {

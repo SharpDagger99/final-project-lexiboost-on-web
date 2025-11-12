@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:get/get.dart';
 import 'package:animated_button/animated_button.dart';
+import 'package:lexi_on_web/teacher/game_rate.dart';
 
 class MyGameReports extends StatefulWidget {
   const MyGameReports({super.key});
@@ -45,11 +46,12 @@ class _MyGameReportsState extends State<MyGameReports> {
         final teacherData = teacherDoc.data() as Map<String, dynamic>;
         final teacherName = teacherData['fullname'] ?? teacherData['username'] ?? 'Unknown Teacher';
 
-        // Get all games created by this teacher
+        // Get only published games created by this teacher
         QuerySnapshot gamesSnapshot = await FirebaseFirestore.instance
             .collection('users')
             .doc(teacherId)
             .collection('created_games')
+            .where('publish', isEqualTo: true)
             .get();
 
         for (var gameDoc in gamesSnapshot.docs) {
@@ -61,10 +63,9 @@ class _MyGameReportsState extends State<MyGameReports> {
             'title': gameData['title'] ?? 'Untitled',
             'createdAt': gameData['created_at'],
             'isHidden': gameData['isHidden'] ?? false,
-            'isRemoved': gameData['isRemoved'] ?? false,
             'hiddenAt': gameData['hiddenAt'],
-            'removedAt': gameData['removedAt'],
-            'publish': gameData['publish'] ?? false,
+            'publish': true, // All games are published now
+            'gameData': gameData, // Store full game data for viewing
           });
         }
       }
@@ -109,14 +110,12 @@ class _MyGameReportsState extends State<MyGameReports> {
         case 'active':
           _filteredGames = _allGames
               .where((game) =>
-                  (game['isHidden'] == false || game['isHidden'] == null) &&
-                  (game['isRemoved'] == false || game['isRemoved'] == null))
+                  (game['isHidden'] == false || game['isHidden'] == null))
               .toList();
           break;
         case 'hidden':
           _filteredGames = _allGames
-              .where((game) =>
-                  game['isHidden'] == true || game['isRemoved'] == true)
+              .where((game) => game['isHidden'] == true)
               .toList();
           break;
         default: // 'all'
@@ -220,95 +219,28 @@ class _MyGameReportsState extends State<MyGameReports> {
     }
   }
 
-  Future<void> _removeGame(String teacherId, String gameId, bool remove, {String? reason}) async {
-    try {
-      // Get game title for notification
-      final gameDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(teacherId)
-          .collection('created_games')
-          .doc(gameId)
-          .get();
-      final gameTitle = gameDoc.data()?['title'] ?? 'Unknown Game';
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(teacherId)
-          .collection('created_games')
-          .doc(gameId)
-          .update({
-        'isRemoved': remove,
-        'removedAt': remove ? FieldValue.serverTimestamp() : null,
-        'removedReason': remove ? (reason ?? '') : null,
-      });
-
-      // Also remove from published games if published
-      if (remove) {
-        try {
-          await FirebaseFirestore.instance
-              .collection('published_games')
-              .doc(gameId)
-              .delete();
-        } catch (e) {
-          // Game might not be published, ignore error
-        }
-      }
-
-      // Send notification to teacher
-      if (remove && reason != null && reason.isNotEmpty) {
-        try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(teacherId)
-              .collection('notifications')
-              .add({
-            'title': 'Game Removed by Admin',
-            'message': 'Your game "$gameTitle" has been removed. Reason: $reason',
-            'type': 'game_removed',
-            'timestamp': FieldValue.serverTimestamp(),
-            'read': false,
-            'pinned': false,
-            'hidden': false,
-            'fromName': 'Admin',
-          });
-        } catch (e) {
-          print('Error sending notification: $e');
-        }
-      } else if (!remove) {
-        // Notification when game is restored
-        try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(teacherId)
-              .collection('notifications')
-              .add({
-            'title': 'Game Restored',
-            'message': 'Your game "$gameTitle" has been restored and is now available again.',
-            'type': 'game_restored',
-            'timestamp': FieldValue.serverTimestamp(),
-            'read': false,
-            'pinned': false,
-            'hidden': false,
-            'fromName': 'Admin',
-          });
-        } catch (e) {
-          print('Error sending notification: $e');
-        }
-      }
-
-      Get.snackbar(
-        'Success',
-        remove ? 'Game removed successfully' : 'Game restored successfully',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
+  // Navigate to game rating page to view reviews
+  void _viewGameReviews(Map<String, dynamic> game) {
+    final gameId = game['gameId'] as String?;
+    final gameTitle = game['title'] as String?;
+    
+    if (gameId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MyGameRate(),
+          settings: RouteSettings(
+            arguments: {
+              'gameId': gameId,
+              'title': gameTitle ?? 'Game Reviews',
+            },
+          ),
+        ),
       );
-
-      _loadGames();
-    } catch (e) {
-      print('Error ${remove ? 'removing' : 'restoring'} game: $e');
+    } else {
       Get.snackbar(
         'Error',
-        'Failed to ${remove ? 'remove' : 'restore'} game',
+        'Game ID not found',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
@@ -436,126 +368,6 @@ class _MyGameReportsState extends State<MyGameReports> {
     );
   }
 
-  Future<void> _showRemoveConfirmDialog(
-      String gameTitle, String teacherId, String gameId, bool currentlyRemoved) async {
-    final TextEditingController reasonController = TextEditingController();
-
-    return showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF2C2F33),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Icon(
-                currentlyRemoved ? Icons.restore : Icons.delete,
-                color: Colors.red,
-                size: 28,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  currentlyRemoved ? "Restore Game" : "Remove Game",
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.6,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  currentlyRemoved
-                      ? "Do you want to restore \"$gameTitle\"? It will be available again."
-                      : "Do you want to remove \"$gameTitle\"? This action can be undone later.",
-                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
-                ),
-                if (!currentlyRemoved) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    "Reason (Required):",
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: reasonController,
-                    style: GoogleFonts.poppins(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Enter reason for removing this game...",
-                      hintStyle: GoogleFonts.poppins(color: Colors.white54),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.1),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Colors.red, width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.all(12),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                "Cancel",
-                style: GoogleFonts.poppins(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onPressed: () {
-                if (!currentlyRemoved && reasonController.text.trim().isEmpty) {
-                  Get.snackbar(
-                    'Reason Required',
-                    'Please provide a reason for removing this game',
-                    backgroundColor: Colors.orange,
-                    colorText: Colors.white,
-                  );
-                  return;
-                }
-                Navigator.pop(ctx);
-                _removeGame(
-                  teacherId,
-                  gameId,
-                  !currentlyRemoved,
-                  reason: reasonController.text.trim(),
-                );
-              },
-              child: Text(
-                currentlyRemoved ? "Restore" : "Remove",
-                style: GoogleFonts.poppins(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return 'Unknown';
@@ -718,7 +530,6 @@ class _MyGameReportsState extends State<MyGameReports> {
                         itemBuilder: (context, index) {
                           final game = _filteredGames[index];
                           final isHidden = game['isHidden'] == true;
-                          final isRemoved = game['isRemoved'] == true;
                           final isPublished = game['publish'] == true;
 
                           return Container(
@@ -727,30 +538,26 @@ class _MyGameReportsState extends State<MyGameReports> {
                               color: Colors.white.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isRemoved
-                                    ? Colors.red.withOpacity(0.5)
-                                    : isHidden
-                                        ? Colors.orange.withOpacity(0.5)
-                                        : Colors.transparent,
+                                color: isHidden
+                                    ? Colors.orange.withOpacity(0.5)
+                                    : Colors.transparent,
                                 width: 2,
                               ),
                             ),
                             child: ListTile(
                               contentPadding: const EdgeInsets.all(16),
                               leading: CircleAvatar(
-                                backgroundColor: isRemoved
-                                    ? Colors.red
-                                    : isHidden
-                                        ? Colors.orange
-                                        : isPublished
-                                            ? Colors.green
-                                            : Colors.blue,
+                                backgroundColor: isHidden
+                                    ? Colors.orange
+                                    : isPublished
+                                        ? Colors.green
+                                        : Colors.blue,
                                 child: Icon(
-                                  isRemoved
-                                      ? Icons.delete
-                                      : isHidden
-                                          ? Icons.visibility_off
-                                          : Icons.games,
+                                  isHidden
+                                      ? Icons.visibility_off
+                                      : isPublished
+                                          ? Icons.public
+                                          : Icons.videogame_asset,
                                   color: Colors.white,
                                 ),
                               ),
@@ -802,7 +609,7 @@ class _MyGameReportsState extends State<MyGameReports> {
                                         ),
                                       ),
                                     ),
-                                  if (isHidden || isRemoved)
+                                  if (isHidden)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 4),
                                       child: Container(
@@ -811,16 +618,13 @@ class _MyGameReportsState extends State<MyGameReports> {
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: (isRemoved ? Colors.red : Colors.orange)
-                                              .withOpacity(0.2),
+                                          color: Colors.orange.withOpacity(0.2),
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
-                                          isRemoved ? 'Removed' : 'Hidden',
+                                          'Hidden',
                                           style: GoogleFonts.poppins(
-                                            color: isRemoved
-                                                ? Colors.red[300]
-                                                : Colors.orange[300],
+                                            color: Colors.orange[300],
                                             fontSize: 10,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -832,33 +636,59 @@ class _MyGameReportsState extends State<MyGameReports> {
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  // Hide/Show button
-                                  IconButton(
-                                    icon: Icon(
-                                      isHidden ? Icons.visibility : Icons.visibility_off,
-                                      color: isHidden ? Colors.green : Colors.orange,
+                                  // Review button
+                                  AnimatedButton(
+                                    onPressed: () => _viewGameReviews(game),
+                                    color: Colors.blue,
+                                    height: 35,
+                                    width: 80,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.star, color: Colors.white, size: 16),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Review',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
                                     ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Hide/Show button
+                                  AnimatedButton(
                                     onPressed: () => _showHideConfirmDialog(
                                       game['title'],
                                       game['teacherId'],
                                       game['gameId'],
                                       isHidden,
                                     ),
-                                    tooltip: isHidden ? 'Restore' : 'Hide',
-                                  ),
-                                  // Remove/Restore button
-                                  IconButton(
-                                    icon: Icon(
-                                      isRemoved ? Icons.restore : Icons.delete,
-                                      color: isRemoved ? Colors.green : Colors.red,
+                                    color: isHidden ? Colors.green : Colors.orange,
+                                    height: 35,
+                                    width: 80,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          isHidden ? Icons.visibility : Icons.visibility_off,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          isHidden ? 'Show' : 'Hide',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    onPressed: () => _showRemoveConfirmDialog(
-                                      game['title'],
-                                      game['teacherId'],
-                                      game['gameId'],
-                                      isRemoved,
-                                    ),
-                                    tooltip: isRemoved ? 'Restore' : 'Remove',
                                   ),
                                 ],
                               ),

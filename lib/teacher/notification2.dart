@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:animated_button/animated_button.dart';
+import 'package:lexi_on_web/utils/ban_check.dart';
 
 class MyNotification2 extends StatefulWidget {
   const MyNotification2({super.key});
@@ -18,6 +19,21 @@ class _MyNotification2State extends State<MyNotification2> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   bool _showHidden = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start ban monitoring
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      BanCheckService().startBanMonitoring(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    BanCheckService().stopBanMonitoring();
+    super.dispose();
+  }
 
   // Mark notification as read
   Future<void> _markAsRead(String notificationId) async {
