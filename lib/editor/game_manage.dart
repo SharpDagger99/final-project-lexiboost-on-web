@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, avoid_web_libraries_in_flutter, unnecessary_to_list_in_spreads
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, avoid_print, unnecessary_null_in_if_null_operators, avoid_web_libraries_in_flutter, unnecessary_to_list_in_spreads, unnecessary_string_interpolations
 
 import 'dart:convert';
 import 'dart:html' as html;
@@ -11,6 +11,8 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:animated_button/animated_button.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 class MyManagement extends StatefulWidget {
   const MyManagement({super.key});
@@ -1227,14 +1229,14 @@ class _MyManagementState extends State<MyManagement> {
                         // Action Buttons Row
                         Row(
                           children: [
-                            // Download CSV Button
+                            // Download PDF Button
                             Expanded(
                               child: AnimatedButton(
                                 height: 50,
                                 color: Colors.purple.withOpacity(0.8),
                                 shadowDegree: ShadowDegree.light,
                                 onPressed: () {
-                                  _downloadScoreCSV(
+                                  _downloadScorePDF(
                                     studentName,
                                     totalScore,
                                     pageScores,
@@ -1334,8 +1336,8 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
-  /// Download score report as CSV
-  Future<void> _downloadScoreCSV(String studentName, dynamic totalScore, List<Map<String, dynamic>> pageScores) async {
+  /// Download score report as PDF
+  Future<void> _downloadScorePDF(String studentName, dynamic totalScore, List<Map<String, dynamic>> pageScores) async {
     try {
       // Fetch student information
       final studentData = completedUsers?.firstWhere(
@@ -1343,61 +1345,340 @@ class _MyManagementState extends State<MyManagement> {
         orElse: () => {},
       );
       
-      final StringBuffer csvBuffer = StringBuffer();
       final generatedDate = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-
-      // Header: Game information
-      csvBuffer.writeln(_escapeCsvField('Game: ${title ?? 'Unknown Game'}'));
-      csvBuffer.writeln(_escapeCsvField('Generated on: $generatedDate'));
-      csvBuffer.writeln(''); // Empty line
       
-      // Student information (only show available data)
-      if (studentData != null && studentData.isNotEmpty) {
-        if (studentData['username'] != null && studentData['username'].toString().isNotEmpty) {
-          csvBuffer.writeln('username:,${_escapeCsvField(studentData['username'].toString())}');
-        }
-        if (studentData['email'] != null && studentData['email'].toString().isNotEmpty) {
-          csvBuffer.writeln('email:,${_escapeCsvField(studentData['email'].toString())}');
-        }
-        if (studentData['fullname'] != null && studentData['fullname'].toString().isNotEmpty) {
-          csvBuffer.writeln('fullname:,${_escapeCsvField(studentData['fullname'].toString())}');
-        }
-        if (studentData['grade'] != null && studentData['grade'].toString().isNotEmpty) {
-          csvBuffer.writeln('grade:,${_escapeCsvField(studentData['grade'].toString())}');
-        }
-        if (studentData['section'] != null && studentData['section'].toString().isNotEmpty) {
-          csvBuffer.writeln('section:,${_escapeCsvField(studentData['section'].toString())}');
-        }
-      }
-      csvBuffer.writeln(''); // Empty line
+      debugPrint('📄 Generating PDF for $studentName with ${pageScores.length} pages');
+      debugPrint('📊 Page scores data: $pageScores');
+      
+      // Create PDF document
+      final pdf = pw.Document();
+      
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+                // Header Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.blue50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'STUDENT SCORE REPORT',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      pw.Text(
+                        'Game: ${title ?? 'Unknown Game'}',
+                        style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Generated on: $generatedDate',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Student Information Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(15),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey400),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Student Information',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      if (studentData != null && studentData.isNotEmpty) ...[
+                        if (studentData['username'] != null && studentData['username'].toString().isNotEmpty)
+                          _buildInfoRow('Username', studentData['username'].toString()),
+                        if (studentData['fullname'] != null && studentData['fullname'].toString().isNotEmpty)
+                          _buildInfoRow('Full Name', studentData['fullname'].toString()),
+                        if (studentData['email'] != null && studentData['email'].toString().isNotEmpty)
+                          _buildInfoRow('Email', studentData['email'].toString()),
+                        if (studentData['gradeLevel'] != null && studentData['gradeLevel'].toString().isNotEmpty)
+                          _buildInfoRow('Grade', studentData['gradeLevel'].toString()),
+                        if (studentData['section'] != null && studentData['section'].toString().isNotEmpty)
+                          _buildInfoRow('Section', studentData['section'].toString()),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Game Rule Information
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(15),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.amber50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Text(
+                        'Game Rule: ',
+                        style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.Text(
+                        gameRule ?? 'Standard',
+                        style: const pw.TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 20),
+                
+                // Score Summary Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.green50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Center(
+                    child: pw.Column(
+                      children: [
+                        pw.Text(
+                          'Total Score',
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.green900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 10),
+                        pw.Text(
+                          '${totalScore?.toString() ?? '0'}',
+                          style: pw.TextStyle(
+                            fontSize: 48,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.green900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          'Points',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.normal,
+                            color: PdfColors.green800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ];
+          },
+          footer: (pw.Context context) {
+            return pw.Column(
+              children: [
+                pw.Divider(color: PdfColors.grey400),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'This is an automatically generated report from LexiBoost. Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                  textAlign: pw.TextAlign.center,
+                ),
+              ],
+            );
+          },
+        ),
+      );
 
-      // Score table header
-      csvBuffer.writeln('Page,Score');
-
-      // Add page scores (only if available)
+      // Add separate page for Page Breakdown
       if (pageScores.isNotEmpty) {
-        for (var pageScore in pageScores) {
-          final page = pageScore['page']?.toString() ?? '';
-          final score = pageScore['pageScore']?.toString() ?? '0';
-          if (page.isNotEmpty) {
-            csvBuffer.writeln('$page,$score');
-          }
-        }
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                // Page Breakdown Header
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.blue50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'PAGE BREAKDOWN',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      pw.Text(
+                        'Student: ${studentData?['fullname'] ?? studentName}',
+                        style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Game: ${title ?? 'Unknown Game'}',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Page count badge
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'All Pages',
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.blue100,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(12)),
+                      ),
+                      child: pw.Text(
+                        '${pageScores.length} pages',
+                        style: pw.TextStyle(
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                pw.SizedBox(height: 20),
+                
+                // All page scores
+                ...pageScores.map((pageScore) {
+                  final pageNum = pageScore['page'] ?? 0;
+                  final score = pageScore['pageScore'] ?? 0;
+                  
+                  return pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 10),
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                      border: pw.Border.all(color: PdfColors.grey300),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Row(
+                          children: [
+                            pw.Container(
+                              width: 35,
+                              height: 35,
+                              decoration: pw.BoxDecoration(
+                                color: PdfColors.blue200,
+                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                              ),
+                              child: pw.Center(
+                                child: pw.Text(
+                                  '$pageNum',
+                                  style: pw.TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColors.blue900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            pw.SizedBox(width: 12),
+                            pw.Text(
+                              'Page $pageNum',
+                              style: pw.TextStyle(
+                                fontSize: 13,
+                                color: PdfColors.grey800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.green200,
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+                          ),
+                          child: pw.Text(
+                            '$score pts',
+                            style: pw.TextStyle(
+                              fontSize: 13,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.green900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ];
+            },
+            footer: (pw.Context context) {
+              return pw.Column(
+                children: [
+                  pw.Divider(color: PdfColors.grey400),
+                  pw.SizedBox(height: 10),
+                  pw.Text(
+                    'This is an automatically generated report from LexiBoost. Page ${context.pageNumber} of ${context.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                    textAlign: pw.TextAlign.center,
+                  ),
+                ],
+              );
+            },
+          ),
+        );
       }
 
-      // Total score footer
-      csvBuffer.writeln(''); // Empty line
-      csvBuffer.writeln('Total Score,${totalScore?.toString() ?? '0'}');
-
-      // Create and download CSV file
-      final csvContent = csvBuffer.toString();
-      debugPrint('📄 CSV Content:\n$csvContent');
-      final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
+      // Convert PDF to bytes
+      final bytes = await pdf.save();
+      
+      // Create and download PDF file
+      final blob = html.Blob([bytes], 'application/pdf');
       final url = html.Url.createObjectUrlFromBlob(blob);
       
       // Create download link
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'Student_Reports_$timestamp.csv';
+      final fileName = 'Student_Report_${studentName}_$timestamp.pdf';
       html.AnchorElement(href: url)
         ..setAttribute('download', fileName)
         ..click();
@@ -1409,22 +1690,47 @@ class _MyManagementState extends State<MyManagement> {
 
       Get.snackbar(
         'Success',
-        'Score report downloaded for $studentName',
+        'PDF report downloaded for $studentName',
         backgroundColor: Colors.green,
         colorText: Colors.white,
         duration: const Duration(seconds: 2),
       );
     } catch (e) {
-      debugPrint('❌ Error downloading CSV: $e');
+      debugPrint('❌ Error downloading PDF: $e');
       Get.snackbar(
         'Error',
-        'Failed to download score report: $e',
+        'Failed to download PDF report: $e',
         backgroundColor: Colors.red,
         colorText: Colors.white,
         duration: const Duration(seconds: 3),
       );
     }
   }
+  
+  /// Helper to build info row for PDF
+  pw.Widget _buildInfoRow(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 3),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            width: 120,
+            child: pw.Text(
+              '$label:',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12),
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Text(
+              value,
+              style: const pw.TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
 
   /// Show share confirmation dialog with message
   void _showShareConfirmation(
@@ -1675,10 +1981,16 @@ class _MyManagementState extends State<MyManagement> {
     }
   }
 
-  /// Fetch page scores for a student
+  /// Fetch page scores for a student from Firestore
+  /// Path: users/{teacherId}/created_games/{gameId}/game_score/{scoreDoc}/page_score/{pageDoc}
   Future<List<Map<String, dynamic>>> _fetchPageScores(String studentId) async {
     try {
-      if (gameId == null || user == null) return [];
+      if (gameId == null || user == null) {
+        debugPrint('⚠️ Cannot fetch page scores: gameId or user is null');
+        return [];
+      }
+
+      debugPrint('🔍 Fetching page scores for student: $studentId from game: $gameId');
 
       final gameScoreRef = FirebaseFirestore.instance
           .collection('users')
@@ -1693,22 +2005,34 @@ class _MyManagementState extends State<MyManagement> {
           .limit(1)
           .get();
 
-      if (studentScoreQuery.docs.isEmpty) return [];
+      if (studentScoreQuery.docs.isEmpty) {
+        debugPrint('⚠️ No score document found for student: $studentId');
+        return [];
+      }
+
+      debugPrint('✅ Found score document: ${studentScoreQuery.docs.first.id}');
 
       // Get page scores from subcollection
       final pageScoresRef = studentScoreQuery.docs.first.reference
           .collection('page_score');
       final pageScoresSnapshot = await pageScoresRef.orderBy('page').get();
 
-      return pageScoresSnapshot.docs.map((doc) {
+      debugPrint('📊 Found ${pageScoresSnapshot.docs.length} page scores');
+
+      final pageScores = pageScoresSnapshot.docs.map((doc) {
         final data = doc.data();
+        final page = data['page'] ?? 0;
+        final pageScore = data['pageScore'] ?? 0;
+        debugPrint('   Page $page: $pageScore points');
         return {
-          'page': data['page'] ?? 0,
-          'pageScore': data['pageScore'] ?? 0,
+          'page': page,
+          'pageScore': pageScore,
         };
       }).toList();
+
+      return pageScores;
     } catch (e) {
-      debugPrint('Error fetching page scores: $e');
+      debugPrint('❌ Error fetching page scores: $e');
       return [];
     }
   }
@@ -1931,14 +2255,6 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
-  /// Helper function to escape CSV fields
-  String _escapeCsvField(String field) {
-    // If field contains comma, quote, or newline, wrap in quotes and escape quotes
-    if (field.contains(',') || field.contains('"') || field.contains('\n')) {
-      return '"${field.replaceAll('"', '""')}"';
-    }
-    return field;
-  }
 
   /// Show confirmation dialog before downloading student reports
   Future<void> _showDownloadConfirmation() async {
@@ -1986,7 +2302,7 @@ class _MyManagementState extends State<MyManagement> {
           ],
         ),
         content: Text(
-          "Do you want to download CSV file for ${selectedStudents.length} selected student(s)?",
+          "Do you want to download PDF file for ${selectedStudents.length} selected student(s)?",
           style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
         ),
         actions: [
@@ -2018,7 +2334,7 @@ class _MyManagementState extends State<MyManagement> {
     );
   }
 
-  /// Export student reports as CSV/Excel
+  /// Export student reports as PDF
   Future<void> _printStudentReports() async {
     if (gameId == null || title == null) return;
 
@@ -2034,93 +2350,360 @@ class _MyManagementState extends State<MyManagement> {
       return;
     }
 
-    // Build CSV content
-    final StringBuffer csvBuffer = StringBuffer();
-    final generatedDate = DateTime.now().toString().split('.')[0];
+    // Create PDF document
+    final pdf = pw.Document();
+    final generatedDate = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
-    // Add header
-    csvBuffer.writeln('Game: ${_escapeCsvField(title!)}');
-    csvBuffer.writeln('Generated on: $generatedDate');
-    csvBuffer.writeln(''); // Empty line
-
-    // Main data headers
-    csvBuffer.writeln(
-      'Username,Email,Completed Date,Time Taken,Total Score,Total Rounds,'
-      'Round 1 Status,Round 1 Score,Round 2 Status,Round 2 Score,'
-      'Round 3 Status,Round 3 Score,Round 4 Status,Round 4 Score,'
-      'Round 5 Status,Round 5 Score,Round 6 Status,Round 6 Score,'
-      'Round 7 Status,Round 7 Score,Round 8 Status,Round 8 Score,'
-      'Round 9 Status,Round 9 Score,Round 10 Status,Round 10 Score',
-    );
-
-    // Add each student's data
+    // Add a page for each student
     for (var student in selectedStudents) {
       final username = student['username']?.toString() ?? 'Unknown User';
+      final userId = student['userId']?.toString() ?? '';
+      final fullname = student['fullname']?.toString() ?? 'Not set';
       final email = student['email']?.toString() ?? 'N/A';
+      final gradeLevel = student['gradeLevel']?.toString() ?? 'Not set';
+      final section = student['section']?.toString() ?? 'Not set';
       final completedAt = student['completedAt'];
       final startedAt = student['startedAt'];
       final completedDate = _formatDate(completedAt);
       final duration = _formatDuration(startedAt, completedAt);
       final totalScore = student['totalScore'] ?? 0;
-      final roundScoresRaw = student['roundScores'];
 
-      // Parse round scores
-      List<dynamic> roundScores = [];
-      if (roundScoresRaw != null) {
-        if (roundScoresRaw is List) {
-          roundScores = roundScoresRaw;
-        } else if (roundScoresRaw is Map) {
-          roundScores = roundScoresRaw.values.toList();
-        } else {
-          roundScores = [roundScoresRaw];
-        }
+      // Fetch page scores from Firestore database
+      List<Map<String, dynamic>> pageScores = [];
+      if (userId.isNotEmpty) {
+        pageScores = await _fetchPageScores(userId);
       }
+      
+      debugPrint('📄 Adding PDF page for $username with ${pageScores.length} page scores from database');
 
-      // Build CSV row
-      final List<String> row = [
-        _escapeCsvField(username),
-        _escapeCsvField(email),
-        _escapeCsvField(completedDate),
-        _escapeCsvField(duration),
-        totalScore.toString(),
-        roundScores.isNotEmpty ? roundScores.length.toString() : '0',
-      ];
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return [
+                // Header Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.blue50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'STUDENT SCORE REPORT',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      pw.Text(
+                        'Game: ${title ?? 'Unknown Game'}',
+                        style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Generated on: $generatedDate',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Student Information Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(15),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey400),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Student Information',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      _buildInfoRow('Username', username),
+                      _buildInfoRow('Full Name', fullname),
+                      _buildInfoRow('Email', email),
+                      _buildInfoRow('Grade', gradeLevel),
+                      _buildInfoRow('Section', section),
+                      pw.SizedBox(height: 5),
+                      pw.Divider(color: PdfColors.grey300),
+                      pw.SizedBox(height: 5),
+                      _buildInfoRow('Completed Date', completedDate),
+                      _buildInfoRow('Time Taken', duration),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Game Rule Information
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(15),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.amber50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Text(
+                        'Game Rule: ',
+                        style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.Text(
+                        gameRule ?? 'Standard',
+                        style: const pw.TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 20),
+                
+                // Score Summary Section
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.green50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Center(
+                    child: pw.Column(
+                      children: [
+                        pw.Text(
+                          'Total Score',
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.green900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 10),
+                        pw.Text(
+                          '$totalScore',
+                          style: pw.TextStyle(
+                            fontSize: 48,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.green900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          'Points',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.normal,
+                            color: PdfColors.green800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ];
+          },
+          footer: (pw.Context context) {
+            return pw.Column(
+              children: [
+                pw.Divider(color: PdfColors.grey400),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'This is an automatically generated report from LexiBoost. Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                  textAlign: pw.TextAlign.center,
+                ),
+              ],
+            );
+          },
+        ),
+      );
 
-      // Add round data (up to 10 rounds)
-      for (int i = 1; i <= 10; i++) {
-        bool found = false;
-        for (var roundDataRaw in roundScores) {
-          if (roundDataRaw is! Map) continue;
-          final roundData = Map<String, dynamic>.from(roundDataRaw);
-          final round = roundData['round'] ?? 0;
-          if (round == i) {
-            final score = roundData['score'] ?? 0;
-            final correct = roundData['correct'] ?? false;
-            row.add(correct ? 'Correct' : 'Failed');
-            row.add(score.toString());
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          row.add('');
-          row.add('');
-        }
+      // Add separate page for Page Breakdown
+      if (pageScores.isNotEmpty) {
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                // Page Breakdown Header
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(20),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.blue50,
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'PAGE BREAKDOWN',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                      pw.SizedBox(height: 10),
+                      pw.Text(
+                        'Student: $fullname',
+                        style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Game: ${title ?? 'Unknown Game'}',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                pw.SizedBox(height: 30),
+                
+                // Page count badge
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'All Pages',
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                    ),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColors.blue100,
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(12)),
+                      ),
+                      child: pw.Text(
+                        '${pageScores.length} pages',
+                        style: pw.TextStyle(
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                pw.SizedBox(height: 20),
+                
+                // All page scores
+                ...pageScores.map((pageScore) {
+                  final pageNum = pageScore['page'] ?? 0;
+                  final score = pageScore['pageScore'] ?? 0;
+                  
+                  return pw.Container(
+                    margin: const pw.EdgeInsets.only(bottom: 10),
+                    padding: const pw.EdgeInsets.all(15),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                      border: pw.Border.all(color: PdfColors.grey300),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Row(
+                          children: [
+                            pw.Container(
+                              width: 35,
+                              height: 35,
+                              decoration: pw.BoxDecoration(
+                                color: PdfColors.blue200,
+                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                              ),
+                              child: pw.Center(
+                                child: pw.Text(
+                                  '$pageNum',
+                                  style: pw.TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColors.blue900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            pw.SizedBox(width: 12),
+                            pw.Text(
+                              'Page $pageNum',
+                              style: pw.TextStyle(
+                                fontSize: 13,
+                                color: PdfColors.grey800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.green200,
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+                          ),
+                          child: pw.Text(
+                            '$score pts',
+                            style: pw.TextStyle(
+                              fontSize: 13,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.green900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ];
+            },
+            footer: (pw.Context context) {
+              return pw.Column(
+                children: [
+                  pw.Divider(color: PdfColors.grey400),
+                  pw.SizedBox(height: 10),
+                  pw.Text(
+                    'This is an automatically generated report from LexiBoost. Page ${context.pageNumber} of ${context.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                    textAlign: pw.TextAlign.center,
+                  ),
+                ],
+              );
+            },
+          ),
+        );
       }
-
-      csvBuffer.writeln(row.join(','));
     }
 
-    // Create and download CSV file
-    final csvContent = csvBuffer.toString();
-    final blob = html.Blob([csvContent], 'text/csv;charset=utf-8');
+    // Convert PDF to bytes
+    final bytes = await pdf.save();
+    
+    // Create and download PDF file
+    final blob = html.Blob([bytes], 'application/pdf');
     final url = html.Url.createObjectUrlFromBlob(blob);
     
     // Create download link
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
     html.AnchorElement(href: url)
       ..setAttribute(
         'download',
-        'Student_Reports_${DateTime.now().millisecondsSinceEpoch}.csv',
+        'Student_Reports_$timestamp.pdf',
       )
       ..click();
     
@@ -2131,7 +2714,7 @@ class _MyManagementState extends State<MyManagement> {
 
     Get.snackbar(
       'Success',
-      'CSV file downloaded for ${selectedStudents.length} student(s)',
+      'PDF file downloaded for ${selectedStudents.length} student(s)',
       backgroundColor: Colors.green,
       colorText: Colors.white,
     );
