@@ -28,7 +28,8 @@ import 'package:lexi_on_web/editor/game%20types/math.dart';
 import 'package:lexi_on_web/editor/game%20types/image_match.dart';
 import 'package:lexi_on_web/editor/game%20types/stroke.dart';
 import 'package:lexi_on_web/services/settings_service.dart';
-import 'package:shared_preferences/shared_preferences.dart'; 
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:lexi_on_web/editor/game_quick.dart';
 
 // Page data class to store page content
 class PageData {
@@ -63,13 +64,13 @@ class PageData {
   List<String?>
   imageMatchImageUrls; // Firebase Storage URLs for imageMatchImages
   int correctAnswerIndex; // Index of correct answer for Guess the answer
-  
+
   // Audio data for Listen and Repeat
   String? listenAndRepeatAudioPath; // Local audio file path
   String listenAndRepeatAudioSource; // "uploaded" or "recorded"
   String? listenAndRepeatAudioUrl; // Firebase Storage URL for audio
   Uint8List? listenAndRepeatAudioBytes; // Audio file bytes
-  
+
   // Math data
   int mathTotalBoxes; // Total number of boxes
   List<String> mathBoxValues; // Values in each box
@@ -143,7 +144,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   final TextEditingController hintController = TextEditingController();
   final TextEditingController timerMinutesController = TextEditingController();
   final TextEditingController timerSecondsController = TextEditingController();
-  
+
   // Scroll controller for page selector
   final ScrollController _pageSelectorScrollController = ScrollController();
 
@@ -152,7 +153,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   String selectedDifficulty = 'easy';
   String selectedGameRule = 'none';
   String selectedGameSet = 'public';
-  
+
   // Game Rules Configuration
   bool heartEnabled = false;
   int timerSeconds = 0;
@@ -171,7 +172,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   Map<int, int> imageMatchMappings =
       {}; // Track which odd image matches to which even image
   int correctAnswerIndex = -1; // Track correct answer for Guess the answer
-  
+
   // Audio state for Listen and Repeat
   String? listenAndRepeatAudioPath;
   String listenAndRepeatAudioSource = "";
@@ -458,7 +459,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     } else if (selectedGameType == 'Stroke' && strokeImageBytes != null) {
       preservedImageUrl = null;
     }
-    
+
     pages[currentPageIndex] = PageData(
       title: '',
       description: '',
@@ -471,7 +472,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       readSentence: readSentenceController.text,
       listenAndRepeat: listenAndRepeatController.text,
       visibleLetters: List.from(visibleLetters),
-      selectedImageBytes: selectedGameType == 'Stroke' ? strokeImageBytes : selectedImageBytes,
+      selectedImageBytes: selectedGameType == 'Stroke'
+          ? strokeImageBytes
+          : selectedImageBytes,
       whatCalledImageBytes: whatCalledImageBytes,
       multipleChoices: List.from(pages[currentPageIndex].multipleChoices),
       guessAnswerImages: List.from(guessAnswerImages),
@@ -546,7 +549,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       imageMatchImages = List.from(pageData.imageMatchImages);
       imageMatchCount = pageData.imageMatchCount;
       imageMatchMappings = Map.from(pageData.imageMatchMappings);
-      
+
       // Debug Image Match loading
       if (pageData.gameType == 'Image Match') {
         debugPrint('Loading Image Match page with count: $imageMatchCount');
@@ -559,11 +562,11 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           }
         }
       }
-      
+
       listenAndRepeatAudioPath = pageData.listenAndRepeatAudioPath;
       listenAndRepeatAudioSource = pageData.listenAndRepeatAudioSource;
       listenAndRepeatAudioBytes = pageData.listenAndRepeatAudioBytes;
-      
+
       // Load Listen and Repeat specific data
       if (pageData.gameType == 'Listen and Repeat') {
         debugPrint(
@@ -573,7 +576,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           'Loaded Listen and Repeat audioBytes: ${listenAndRepeatAudioBytes != null ? '${listenAndRepeatAudioBytes!.length} bytes' : 'null'}',
         );
       }
-      
+
       // Load correct answer index for Guess the answer and Guess the answer 2
       if (pageData.gameType == 'Guess the answer' ||
           pageData.gameType == 'Guess the answer 2') {
@@ -592,7 +595,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           'Loaded What is it called imageBytes: ${whatCalledImageBytes != null ? '${whatCalledImageBytes!.length} bytes' : 'null'}',
         );
       }
-      
+
       // Load Math specific data
       if (pageData.gameType == 'Math') {
         debugPrint(
@@ -632,7 +635,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
 
       progressValue = (pageIndex + 1) / pages.length;
-      
+
       // Ensure gameRule is set to 'score' if Stroke is used in any page
       if (_hasStrokeGameType() && selectedGameRule != 'score') {
         selectedGameRule = 'score';
@@ -641,7 +644,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         timerSecondsController.clear();
         timerSeconds = 0;
       }
-      
+
       debugPrint(
         'After setState, selectedImageBytes is null: ${selectedImageBytes == null}',
       );
@@ -677,7 +680,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   void _showPageSelector() {
     // Get validation errors for all pages
     final validationErrors = _validatePages();
-    
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -722,14 +725,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                         shrinkWrap: true,
                         itemCount: pages.length,
                         itemBuilder: (context, index) {
-                        final isCurrentPage = index == currentPageIndex;
-                        final hasError = validationErrors.containsKey(index);
-                        
-                        return Container(
-                          margin: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 4,
-                          ),
+                          final isCurrentPage = index == currentPageIndex;
+                          final hasError = validationErrors.containsKey(index);
+
+                          return Container(
+                            margin: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 4,
+                            ),
                             child: Row(
                               children: [
                                 // Page button section
@@ -872,10 +875,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             TextButton(
               onPressed: () async {
                 Navigator.of(context).pop();
-                
+
                 // Delete the round document from Firestore and update page numbers
                 await _deletePageFromFirestore(currentPageIndex);
-                
+
                 setState(() {
                   pages.removeAt(currentPageIndex);
 
@@ -883,7 +886,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                     currentPageIndex = pages.length - 1;
                   }
                 });
-                 
+
                 _loadPageData(currentPageIndex);
                 // Reset test status when deleting page
                 _resetGameTestStatus();
@@ -1121,16 +1124,16 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           .collection('created_games')
           .doc(gameId)
           .collection('game_rounds');
-      
+
       final roundsSnapshot = await gameRoundsRef.get();
       debugPrint('Found ${roundsSnapshot.docs.length} game rounds');
-      
+
       for (var roundDoc in roundsSnapshot.docs) {
         final roundData = roundDoc.data();
         debugPrint(
           'Round ${roundDoc.id}: gameType=${roundData['gameType']}, page=${roundData['page']}',
         );
-        
+
         // Check game_type subcollection
         final gameTypeRef = gameRoundsRef
             .doc(roundDoc.id)
@@ -1139,7 +1142,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         debugPrint(
           '  └─ Found ${gameTypeSnapshot.docs.length} game_type documents',
         );
-        
+
         for (var gameTypeDoc in gameTypeSnapshot.docs) {
           final gameTypeData = gameTypeDoc.data();
           debugPrint(
@@ -1218,7 +1221,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
       // Save all pages to game_rounds subcollection
       await _saveGameRounds();
-      
+
       debugPrint('Auto-save completed successfully');
     } catch (e) {
       debugPrint('Failed to auto-save game: $e');
@@ -1250,7 +1253,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       if (doc.exists) {
         final data = doc.data()!;
         debugPrint('Game metadata loaded successfully');
-        
+
         setState(() {
           titleController.text = (data['title'] as String?) ?? '';
           descriptionController.text = (data['description'] as String?) ?? '';
@@ -1259,14 +1262,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           selectedGameRule = (data['gameRule'] as String?) ?? 'none';
           selectedGameSet = (data['gameSet'] as String?) ?? 'public';
           gameCodeController.text = (data['gameCode'] as String?) ?? '';
-          
+
           // Load game rules configuration
           heartEnabled = (data['heart'] as bool?) ?? false;
           timerSeconds = (data['timer'] as int?) ?? 0;
-          
+
           // Load game_test status
           _gameTest = (data['game_test'] as bool?) ?? false;
-          
+
           // Load publish status
           _isPublished = (data['publish'] as bool?) ?? false;
 
@@ -1276,15 +1279,15 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           timerMinutesController.text = minutes > 0 ? minutes.toString() : '';
           timerSecondsController.text = seconds > 0 ? seconds.toString() : '';
         });
-        
+
         // Load game rounds data
         await _loadGameRounds();
-        
+
         // Load page scores if score rule is selected
         if (selectedGameRule == 'score') {
           await _loadPageScores();
         }
-        
+
         // Game loaded successfully
         debugPrint('Game loaded successfully ✓');
       } else {
@@ -1306,7 +1309,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
     try {
       debugPrint('Loading game rounds for gameId: $gameId');
-      
+
       final gameRoundsRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -1331,7 +1334,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         debugPrint(
           'Loading round ${doc.id} with gameType: $gameType, gameTypeDocId: $gameTypeDocId',
         );
-        
+
         // Load game type specific data from game_type subcollection using stored document ID
         final gameTypeData = await _loadGameTypeData(
           doc.id,
@@ -1349,7 +1352,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         String listenAndRepeat = '';
         List<bool> visibleLetters = [];
         int correctAnswerIndex = -1;
-        
+
         if (gameType == 'Fill in the blank') {
           answer = gameTypeData['answerText'] ?? '';
           hint = gameTypeData['gameHint'] ?? '';
@@ -1465,7 +1468,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           debugPrint('  - image3: ${gameTypeData['image3']}');
         }
         debugPrint('================================');
-        
+
         loadedPages.add(
           PageData(
             gameType: gameType,
@@ -1584,7 +1587,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         pages = loadedPages;
         // Start at the last page instead of the first
         currentPageIndex = pages.length - 1;
-        
+
         // Ensure gameRule is set to 'score' if Stroke is used in any page
         if (_hasStrokeGameType() && selectedGameRule != 'score') {
           selectedGameRule = 'score';
@@ -1593,7 +1596,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           timerSecondsController.clear();
           timerSeconds = 0;
         }
-        
+
         if (pages.isNotEmpty) {
           _loadPageData(currentPageIndex);
         }
@@ -1620,7 +1623,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       debugPrint(
         'Loading game type data for round: $roundDocId, type: $gameType, gameTypeDocId: $gameTypeDocId',
       );
-      
+
       final gameTypeRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -1648,13 +1651,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         debugPrint(
           '⚠️ No stored gameTypeDocId found, trying fallback approaches',
         );
-        
+
         // Fallback: Try to find any document in the game_type subcollection
         final snapshot = await gameTypeRef.get();
         debugPrint(
           'Found ${snapshot.docs.length} documents in game_type subcollection',
         );
-        
+
         if (snapshot.docs.isNotEmpty) {
           data = snapshot.docs.first.data();
           debugPrint(
@@ -2032,6 +2035,28 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     }
   }
 
+  /// Navigate to Game Quick page with PageView-like slide animation
+  void _navigateToGameQuick() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const MyGameQuick(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
   /// Show close confirmation dialog
   Future<void> _showCloseConfirmationDialog() async {
     await showDialog(
@@ -2336,7 +2361,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
 
       // Save all pages to game_rounds subcollection
       await _saveGameRounds();
-      
+
       // Save page scores if score rule is selected
       if (selectedGameRule == 'score') {
         await _savePageScores();
@@ -2361,7 +2386,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Failed to save game: $e');
       debugPrint('Failed to save: ${e.toString()}');
-      
+
       if (mounted) {
         setState(() {
           _isSaving = false;
@@ -2497,7 +2522,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     }
   }
 
-
   /// Save page scores to game_score subcollection
   Future<void> _savePageScores() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -2530,7 +2554,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         });
       }
 
-      debugPrint('Page scores saved successfully (${pageScores.length} template scores)');
+      debugPrint(
+        'Page scores saved successfully (${pageScores.length} template scores)',
+      );
     } catch (e) {
       debugPrint('Failed to save page scores: $e');
     }
@@ -2632,7 +2658,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         } else {
           debugPrint('Using existing imageUrl: $imageUrl');
         }
-        
+
         gameTypeData.addAll({
           'answer': pageData.visibleLetters,
           'gameHint': pageData.hint,
@@ -2653,7 +2679,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             debugPrint('Failed to upload image for Guess the answer: $e');
           }
         }
-         
+
         gameTypeData.addAll({
           'question': pageData.descriptionField,
           'gameHint': pageData.hint,
@@ -2690,7 +2716,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           }
         }
         pageData.guessAnswerImageUrls = imageUrls;
-        
+
         gameTypeData.addAll({
           'question': pageData.descriptionField,
           'hint': pageData.hint,
@@ -2727,7 +2753,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             debugPrint('Failed to upload image for What is it called: $e');
           }
         }
-        
+
         gameTypeData.addAll({
           'answer': pageData.readSentence, // The answer text
           'imageUrl': imageUrl ?? '', // Firebase Storage path/URL
@@ -2795,8 +2821,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             } catch (e) {
               debugPrint('Failed to upload image ${i + 1} for Image Match: $e');
               // Use existing URL if available, otherwise use placeholder
-              imageMatchData['image${i + 1}'] = 
-                  pageData.imageMatchImageUrls[i] ?? 
+              imageMatchData['image${i + 1}'] =
+                  pageData.imageMatchImageUrls[i] ??
                   'gs://lexiboost-36801.firebasestorage.app/game image';
             }
           } else if (pageData.imageMatchImageUrls[i] != null &&
@@ -2877,7 +2903,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         } else {
           debugPrint('Using existing imageUrl: $imageUrl');
         }
-        
+
         gameTypeData.addAll({
           'sentence': pageData.readSentence,
           'imageUrl': imageUrl ?? '',
@@ -2889,7 +2915,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       await gameTypeRef
           .doc(gameTypeDocId)
           .set(gameTypeData, SetOptions(merge: true));
-      
+
       debugPrint('Game type data saved with document ID: $gameTypeDocId');
       return gameTypeDocId;
     } catch (e) {
@@ -2902,7 +2928,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   void dispose() {
     // Remove observer
     WidgetsBinding.instance.removeObserver(this);
-    
+
     _debounceTimer?.cancel();
     _autoSaveTimer?.cancel();
     _pageScoreSaveTimer?.cancel();
@@ -2928,10 +2954,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     _sidebarScrollController.dispose();
     _column3ScrollController.dispose();
     _column2ScrollController.dispose();
-    
+
     // Clear image cache to free memory
     clearImageCache();
-    
+
     super.dispose();
   }
 
@@ -2951,79 +2977,97 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Container(
-          width: 210,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: DropdownButton<String>(
-            value: selectedGameType,
-            dropdownColor: Colors.white,
-            underline: const SizedBox(),
-            icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: Colors.black,
-              fontWeight: FontWeight.w500,
-            ),
-            isExpanded: true,
-            items: const [
-              DropdownMenuItem(
-                value: 'Fill in the blank',
-                child: Text('Fill in the blank'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Container(
+              width: 210,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
               ),
-              DropdownMenuItem(
-                value: 'Fill in the blank 2',
-                child: Text('Fill in the blank 2'),
-              ),
-              DropdownMenuItem(
-                value: 'Guess the answer',
-                child: Text('Guess the answer'),
-              ),
-              DropdownMenuItem(
-                value: 'Guess the answer 2',
-                child: Text('Guess the answer 2'),
-              ),
-              DropdownMenuItem(
-                value: 'Read the sentence',
-                child: Text('Read the sentence'),
-              ),
-              DropdownMenuItem(
-                value: 'What is it called',
-                child: Text('What is it called'),
-              ),
-              DropdownMenuItem(
-                value: 'Listen and Repeat',
-                child: Text('Listen and Repeat'),
-              ),
-              DropdownMenuItem(
-                value: 'Image Match',
-                child: Text('Image Match'),
-              ),
-              DropdownMenuItem(value: 'Math', child: Text('Math')),
-              DropdownMenuItem(value: 'Stroke', child: Text('Stroke')),
-            ],
-            onChanged: (String? newValue) {
-              if (newValue != null) {
-                setState(() {
-                  selectedGameType = newValue;
-                  // Automatically set gameRule to 'score' if Stroke is selected
-                  if (newValue == 'Stroke') {
-                    selectedGameRule = 'score';
-                    heartEnabled = false;
-                    timerMinutesController.clear();
-                    timerSecondsController.clear();
-                    timerSeconds = 0;
+              child: DropdownButton<String>(
+                value: selectedGameType,
+                dropdownColor: Colors.white,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w500,
+                ),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Fill in the blank',
+                    child: Text('Fill in the blank'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Fill in the blank 2',
+                    child: Text('Fill in the blank 2'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Guess the answer',
+                    child: Text('Guess the answer'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Guess the answer 2',
+                    child: Text('Guess the answer 2'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Read the sentence',
+                    child: Text('Read the sentence'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'What is it called',
+                    child: Text('What is it called'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Listen and Repeat',
+                    child: Text('Listen and Repeat'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Image Match',
+                    child: Text('Image Match'),
+                  ),
+                  DropdownMenuItem(value: 'Math', child: Text('Math')),
+                  DropdownMenuItem(value: 'Stroke', child: Text('Stroke')),
+                ],
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedGameType = newValue;
+                      // Automatically set gameRule to 'score' if Stroke is selected
+                      if (newValue == 'Stroke') {
+                        selectedGameRule = 'score';
+                        heartEnabled = false;
+                        timerMinutesController.clear();
+                        timerSecondsController.clear();
+                        timerSeconds = 0;
+                      }
+                    });
+                    // Reset test status when game type is changed
+                    _resetGameTestStatus();
                   }
-                });
-                // Reset test status when game type is changed
-                _resetGameTestStatus();
-              }
-            },
-          ),
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            AnimatedButton(
+              width: 50,
+              height: 50,
+              color: Colors.deepPurple,
+              onPressed: () {
+                _navigateToGameQuick();
+              },
+              child: const Icon(
+                Icons.psychology,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+          ],
         ),
 
         Padding(
@@ -3560,7 +3604,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
               height: 50,
               decoration: BoxDecoration(
-                color: _hasStrokeGameType() 
+                color: _hasStrokeGameType()
                     ? Colors.grey.withOpacity(0.5)
                     : Colors.white,
                 borderRadius: BorderRadius.circular(10),
@@ -3572,15 +3616,11 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 underline: const SizedBox(),
                 icon: Icon(
                   Icons.arrow_drop_down,
-                  color: _hasStrokeGameType() 
-                      ? Colors.grey
-                      : Colors.black,
+                  color: _hasStrokeGameType() ? Colors.grey : Colors.black,
                 ),
                 style: GoogleFonts.poppins(
                   fontSize: 16,
-                  color: _hasStrokeGameType() 
-                      ? Colors.grey
-                      : Colors.black,
+                  color: _hasStrokeGameType() ? Colors.grey : Colors.black,
                   fontWeight: FontWeight.w500,
                 ),
                 isExpanded: true,
@@ -3620,11 +3660,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             padding: const EdgeInsets.only(top: 8),
             child: Row(
               children: [
-                const Icon(
-                  Icons.info_outline,
-                  color: Colors.red,
-                  size: 16,
-                ),
+                const Icon(Icons.info_outline, color: Colors.red, size: 16),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -3989,7 +4025,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         }
       });
     }
-    
+
     // Show loading indicator while initializing
     if (_isLoading) {
       return Scaffold(
@@ -4069,372 +4105,382 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        "Title:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Title:",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Container(
+                                        const SizedBox(height: 8),
+                                        Container(
                                           width:
                                               (MediaQuery.of(
                                                         context,
                                                       ).size.width *
                                                       0.6)
                                                   .clamp(0, 400),
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: TextField(
-                                          controller: titleController,
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            color: Colors.black,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: "Enter title",
-                                            hintStyle: GoogleFonts.poppins(
-                                              color: Colors.black54,
-                                              fontSize: 14,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
-                                            border: InputBorder.none,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: TextField(
+                                            controller: titleController,
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              color: Colors.black,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: "Enter title",
+                                              hintStyle: GoogleFonts.poppins(
+                                                color: Colors.black54,
+                                                fontSize: 14,
+                                              ),
+                                              border: InputBorder.none,
+                                            ),
                                           ),
                                         ),
-                                      ),
 
-                                      const SizedBox(height: 20),
+                                        const SizedBox(height: 20),
 
-                                      Text(
-                                        "Description:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                        Text(
+                                          "Description:",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Container(
+                                        const SizedBox(height: 8),
+                                        Container(
                                           width:
                                               (MediaQuery.of(
                                                         context,
                                                       ).size.width *
                                                       0.6)
                                                   .clamp(0, 400),
-                                        height: 120,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: TextField(
-                                          maxLines: 4,
-                                          controller: descriptionController,
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            color: Colors.black,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText:
-                                                "Enter description here...",
-                                            hintStyle: GoogleFonts.poppins(
-                                              color: Colors.black54,
-                                              fontSize: 14,
+                                          height: 120,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
-                                            border: InputBorder.none,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: TextField(
+                                            maxLines: 4,
+                                            controller: descriptionController,
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              color: Colors.black,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText:
+                                                  "Enter description here...",
+                                              hintStyle: GoogleFonts.poppins(
+                                                color: Colors.black54,
+                                                fontSize: 14,
+                                              ),
+                                              border: InputBorder.none,
+                                            ),
                                           ),
                                         ),
-                                      ),
 
-                                      const SizedBox(height: 20),
+                                        const SizedBox(height: 20),
 
-                                      Text(
-                                        "Difficulty:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Container(
-                                        width: 300,
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
+                                        Text(
+                                          "Difficulty:",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
                                           ),
                                         ),
-                                        padding: const EdgeInsets.symmetric(
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          width: 300,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
                                             horizontal: 6,
-                                        ),
-                                        child: DropdownButton<String>(
-                                          value: selectedDifficulty,
-                                          dropdownColor: Colors.white,
-                                          underline: const SizedBox(),
-                                          icon: const Icon(
-                                            Icons.arrow_drop_down,
-                                            color: Colors.black,
                                           ),
+                                          child: DropdownButton<String>(
+                                            value: selectedDifficulty,
+                                            dropdownColor: Colors.white,
+                                            underline: const SizedBox(),
+                                            icon: const Icon(
+                                              Icons.arrow_drop_down,
+                                              color: Colors.black,
+                                            ),
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              color: Colors.black,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            isExpanded: true,
+                                            items: const [
+                                              DropdownMenuItem(
+                                                value: 'easy',
+                                                child: Text('Easy'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'easy-normal',
+                                                child: Text('Easy-Normal'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'normal',
+                                                child: Text('Normal'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'hard',
+                                                child: Text('Hard'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'insane',
+                                                child: Text('Insane'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'brainstorm',
+                                                child: Text('Brainstorm'),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'hard-brainstorm',
+                                                child: Text('Hard Brainstorm'),
+                                              ),
+                                            ],
+                                            onChanged: (String? newValue) {
+                                              if (newValue != null) {
+                                                setState(() {
+                                                  selectedDifficulty = newValue;
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 20),
+
+                                        Text(
+                                          "Prize Coin:",
                                           style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.w500,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
                                           ),
-                                          isExpanded: true,
-                                          items: const [
-                                            DropdownMenuItem(
-                                              value: 'easy',
-                                              child: Text('Easy'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'easy-normal',
-                                              child: Text('Easy-Normal'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'normal',
-                                              child: Text('Normal'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'hard',
-                                              child: Text('Hard'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'insane',
-                                              child: Text('Insane'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'brainstorm',
-                                              child: Text('Brainstorm'),
-                                            ),
-                                            DropdownMenuItem(
-                                              value: 'hard-brainstorm',
-                                              child: Text('Hard Brainstorm'),
-                                            ),
-                                          ],
-                                          onChanged: (String? newValue) {
-                                            if (newValue != null) {
-                                              setState(() {
-                                                selectedDifficulty = newValue;
-                                              });
-                                            }
-                                          },
                                         ),
-                                      ),
-
-                                      const SizedBox(height: 20),
-
-                                      Text(
-                                        "Prize Coin:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Container(
+                                        const SizedBox(height: 8),
+                                        Container(
                                           width:
                                               (MediaQuery.of(
                                                         context,
                                                       ).size.width *
                                                       0.6)
                                                   .clamp(0, 300),
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                        child: TextField(
-                                          controller: prizeCoinsController,
-                                          keyboardType:
-                                              TextInputType.numberWithOptions(
-                                                signed: false,
-                                                decimal: false,
-                                              ),
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                          ],
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            color: Colors.black,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: "Enter prize amount",
-                                            hintStyle: GoogleFonts.poppins(
-                                              color: Colors.black54,
-                                              fontSize: 14,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
-                                            border: InputBorder.none,
                                           ),
-                                          onChanged: (value) {
-                                            if (value.isNotEmpty) {
-                                              String cleanValue = value
-                                                  .replaceAll(',', '');
-                                              int? coins = int.tryParse(
-                                                cleanValue,
-                                              );
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          child: TextField(
+                                            controller: prizeCoinsController,
+                                            keyboardType:
+                                                TextInputType.numberWithOptions(
+                                                  signed: false,
+                                                  decimal: false,
+                                                ),
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                            ],
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              color: Colors.black,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: "Enter prize amount",
+                                              hintStyle: GoogleFonts.poppins(
+                                                color: Colors.black54,
+                                                fontSize: 14,
+                                              ),
+                                              border: InputBorder.none,
+                                            ),
+                                            onChanged: (value) {
+                                              if (value.isNotEmpty) {
+                                                String cleanValue = value
+                                                    .replaceAll(',', '');
+                                                int? coins = int.tryParse(
+                                                  cleanValue,
+                                                );
 
-                                              if (coins != null) {
-                                                if (coins > 99999) {
-                                                  prizeCoinsController.text =
-                                                      NumberFormat(
-                                                        '#,##0',
-                                                      ).format(99999);
-                                                  prizeCoinsController
-                                                          .selection =
-                                                      TextSelection.fromPosition(
-                                                        TextPosition(
-                                                          offset:
-                                                              prizeCoinsController
-                                                                  .text
-                                                                  .length,
-                                                        ),
-                                                      );
-                                                } else {
-                                                  String formatted =
-                                                      NumberFormat(
-                                                        '#,##0',
-                                                      ).format(coins);
-                                                  if (formatted != value) {
+                                                if (coins != null) {
+                                                  if (coins > 99999) {
                                                     prizeCoinsController.text =
-                                                        formatted;
+                                                        NumberFormat(
+                                                          '#,##0',
+                                                        ).format(99999);
                                                     prizeCoinsController
                                                             .selection =
                                                         TextSelection.fromPosition(
                                                           TextPosition(
-                                                            offset: formatted
-                                                                .length,
+                                                            offset:
+                                                                prizeCoinsController
+                                                                    .text
+                                                                    .length,
                                                           ),
                                                         );
+                                                  } else {
+                                                    String formatted =
+                                                        NumberFormat(
+                                                          '#,##0',
+                                                        ).format(coins);
+                                                    if (formatted != value) {
+                                                      prizeCoinsController
+                                                              .text =
+                                                          formatted;
+                                                      prizeCoinsController
+                                                              .selection =
+                                                          TextSelection.fromPosition(
+                                                            TextPosition(
+                                                              offset: formatted
+                                                                  .length,
+                                                            ),
+                                                          );
+                                                    }
                                                   }
+                                                } else if (cleanValue.isEmpty) {
+                                                  prizeCoinsController.text =
+                                                      '';
                                                 }
-                                              } else if (cleanValue.isEmpty) {
-                                                prizeCoinsController.text = '';
                                               }
-                                            }
-                                          },
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 20),
-
-                                      Text(
-                                        "Game Rules:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: 300,
-                                            height: 50,
-                                            decoration: BoxDecoration(
-                                              color: _hasStrokeGameType() 
-                                                  ? Colors.grey.withOpacity(0.5)
-                                                  : Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            child: DropdownButton<String>(
-                                              value: selectedGameRule,
-                                              dropdownColor: Colors.white,
-                                              underline: const SizedBox(),
-                                              icon: Icon(
-                                                Icons.arrow_drop_down,
-                                                color: _hasStrokeGameType() 
-                                                    ? Colors.grey
-                                                    : Colors.black,
-                                              ),
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 16,
-                                                color: _hasStrokeGameType() 
-                                                    ? Colors.grey
-                                                    : Colors.black,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                              isExpanded: true,
-                                              items: const [
-                                                DropdownMenuItem(
-                                                  value: 'none',
-                                                  child: Text('None'),
-                                                ),
-                                                DropdownMenuItem(
-                                                  value: 'heart',
-                                                  child: Text(
-                                                    'Heart Deduction',
-                                                  ),
-                                                ),
-                                                DropdownMenuItem(
-                                                  value: 'timer',
-                                                  child: Text(
-                                                    'Timer Countdown',
-                                                  ),
-                                                ),
-                                                DropdownMenuItem(
-                                                  value: 'score',
-                                                  child: Text('Score'),
-                                                ),
-                                              ],
-                                              onChanged: _hasStrokeGameType()
-                                                  ? null // Disable if Stroke is used
-                                                  : (String? newValue) {
-                                                      if (newValue != null) {
-                                                        setState(() {
-                                                          selectedGameRule = newValue;
-                                                          // Update heart and timer states based on selection
-                                                          heartEnabled =
-                                                              newValue == 'heart';
-                                                          if (newValue != 'timer') {
-                                                            timerMinutesController
-                                                                .clear();
-                                                            timerSecondsController
-                                                                .clear();
-                                                            timerSeconds = 0;
-                                                          }
-                                                        });
-                                                      }
-                                                    },
-                                            ),
+                                            },
                                           ),
+                                        ),
+
+                                        const SizedBox(height: 20),
+
+                                        Text(
+                                          "Game Rules:",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 300,
+                                              height: 50,
+                                              decoration: BoxDecoration(
+                                                color: _hasStrokeGameType()
+                                                    ? Colors.grey.withOpacity(
+                                                        0.5,
+                                                      )
+                                                    : Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              child: DropdownButton<String>(
+                                                value: selectedGameRule,
+                                                dropdownColor: Colors.white,
+                                                underline: const SizedBox(),
+                                                icon: Icon(
+                                                  Icons.arrow_drop_down,
+                                                  color: _hasStrokeGameType()
+                                                      ? Colors.grey
+                                                      : Colors.black,
+                                                ),
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 16,
+                                                  color: _hasStrokeGameType()
+                                                      ? Colors.grey
+                                                      : Colors.black,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                isExpanded: true,
+                                                items: const [
+                                                  DropdownMenuItem(
+                                                    value: 'none',
+                                                    child: Text('None'),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'heart',
+                                                    child: Text(
+                                                      'Heart Deduction',
+                                                    ),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'timer',
+                                                    child: Text(
+                                                      'Timer Countdown',
+                                                    ),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'score',
+                                                    child: Text('Score'),
+                                                  ),
+                                                ],
+                                                onChanged: _hasStrokeGameType()
+                                                    ? null // Disable if Stroke is used
+                                                    : (String? newValue) {
+                                                        if (newValue != null) {
+                                                          setState(() {
+                                                            selectedGameRule =
+                                                                newValue;
+                                                            // Update heart and timer states based on selection
+                                                            heartEnabled =
+                                                                newValue ==
+                                                                'heart';
+                                                            if (newValue !=
+                                                                'timer') {
+                                                              timerMinutesController
+                                                                  .clear();
+                                                              timerSecondsController
+                                                                  .clear();
+                                                              timerSeconds = 0;
+                                                            }
+                                                          });
+                                                        }
+                                                      },
+                                              ),
+                                            ),
                                           ],
                                         ),
                                         if (_hasStrokeGameType())
                                           Padding(
-                                            padding: const EdgeInsets.only(top: 8),
+                                            padding: const EdgeInsets.only(
+                                              top: 8,
+                                            ),
                                             child: Row(
                                               children: [
                                                 const Icon(
@@ -4449,7 +4495,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                     style: GoogleFonts.poppins(
                                                       fontSize: 12,
                                                       color: Colors.red,
-                                                      fontWeight: FontWeight.w500,
+                                                      fontWeight:
+                                                          FontWeight.w500,
                                                     ),
                                                   ),
                                                 ),
@@ -4462,224 +4509,227 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           const SizedBox(height: 10),
                                           Row(
                                             children: [
-                                            // Minutes field
-                                            Container(
+                                              // Minutes field
+                                              Container(
                                                 width:
                                                     (MediaQuery.of(
                                                               context,
                                                             ).size.width *
                                                             0.6)
                                                         .clamp(0, 80),
-                                              height: 50,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
+                                                height: 50,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                child: TextField(
+                                                  controller:
+                                                      timerMinutesController,
+                                                  keyboardType:
+                                                      TextInputType.number,
+                                                  inputFormatters: [
+                                                    FilteringTextInputFormatter
+                                                        .digitsOnly,
+                                                    LengthLimitingTextInputFormatter(
+                                                      2,
+                                                    ),
+                                                  ],
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 16,
+                                                    color: Colors.black,
+                                                  ),
+                                                  decoration: InputDecoration(
+                                                    hintText: "Min",
+                                                    hintStyle:
+                                                        GoogleFonts.poppins(
+                                                          color: Colors.black54,
+                                                          fontSize: 14,
+                                                        ),
+                                                    border: InputBorder.none,
+                                                  ),
+                                                  onChanged: (value) {
+                                                    setState(() {
+                                                      int minutes =
+                                                          int.tryParse(value) ??
+                                                          0;
+                                                      int seconds =
+                                                          int.tryParse(
+                                                            timerSecondsController
+                                                                .text,
+                                                          ) ??
+                                                          0;
+                                                      timerSeconds =
+                                                          (minutes * 60) +
+                                                          seconds;
+                                                    });
+                                                  },
+                                                ),
                                               ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                  ),
-                                              child: TextField(
-                                                controller:
-                                                    timerMinutesController,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .digitsOnly,
-                                                  LengthLimitingTextInputFormatter(
-                                                    2,
-                                                  ),
-                                                ],
-                                                textAlign: TextAlign.center,
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                ":",
                                                 style: GoogleFonts.poppins(
-                                                  fontSize: 16,
-                                                  color: Colors.black,
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
                                                 ),
-                                                decoration: InputDecoration(
-                                                  hintText: "Min",
-                                                  hintStyle:
-                                                      GoogleFonts.poppins(
-                                                        color: Colors.black54,
-                                                        fontSize: 14,
-                                                      ),
-                                                  border: InputBorder.none,
-                                                ),
-                                                onChanged: (value) {
-                                                  setState(() {
-                                                    int minutes =
-                                                        int.tryParse(value) ??
-                                                        0;
-                                                    int seconds =
-                                                        int.tryParse(
-                                                          timerSecondsController
-                                                              .text,
-                                                        ) ??
-                                                        0;
-                                                    timerSeconds =
-                                                        (minutes * 60) +
-                                                        seconds;
-                                                  });
-                                                },
                                               ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              ":",
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            // Seconds field
-                                            Container(
+                                              const SizedBox(width: 5),
+                                              // Seconds field
+                                              Container(
                                                 width:
                                                     (MediaQuery.of(
                                                               context,
                                                             ).size.width *
                                                             0.6)
                                                         .clamp(0, 80),
-                                              height: 50,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                  ),
-                                              child: TextField(
-                                                controller:
-                                                    timerSecondsController,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter
-                                                      .digitsOnly,
-                                                  LengthLimitingTextInputFormatter(
-                                                    2,
-                                                  ),
-                                                ],
-                                                textAlign: TextAlign.center,
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 16,
-                                                  color: Colors.black,
+                                                height: 50,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
                                                 ),
-                                                decoration: InputDecoration(
-                                                  hintText: "Sec",
-                                                  hintStyle:
-                                                      GoogleFonts.poppins(
-                                                        color: Colors.black54,
-                                                        fontSize: 14,
-                                                      ),
-                                                  border: InputBorder.none,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                child: TextField(
+                                                  controller:
+                                                      timerSecondsController,
+                                                  keyboardType:
+                                                      TextInputType.number,
+                                                  inputFormatters: [
+                                                    FilteringTextInputFormatter
+                                                        .digitsOnly,
+                                                    LengthLimitingTextInputFormatter(
+                                                      2,
+                                                    ),
+                                                  ],
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 16,
+                                                    color: Colors.black,
+                                                  ),
+                                                  decoration: InputDecoration(
+                                                    hintText: "Sec",
+                                                    hintStyle:
+                                                        GoogleFonts.poppins(
+                                                          color: Colors.black54,
+                                                          fontSize: 14,
+                                                        ),
+                                                    border: InputBorder.none,
+                                                  ),
+                                                  onChanged: (value) {
+                                                    setState(() {
+                                                      int minutes =
+                                                          int.tryParse(
+                                                            timerMinutesController
+                                                                .text,
+                                                          ) ??
+                                                          0;
+                                                      int seconds =
+                                                          int.tryParse(value) ??
+                                                          0;
+                                                      // Limit seconds to 59
+                                                      if (seconds > 59) {
+                                                        seconds = 59;
+                                                        timerSecondsController
+                                                                .text =
+                                                            '59';
+                                                        timerSecondsController
+                                                                .selection =
+                                                            TextSelection.fromPosition(
+                                                              TextPosition(
+                                                                offset:
+                                                                    timerSecondsController
+                                                                        .text
+                                                                        .length,
+                                                              ),
+                                                            );
+                                                      }
+                                                      timerSeconds =
+                                                          (minutes * 60) +
+                                                          seconds;
+                                                    });
+                                                  },
                                                 ),
-                                                onChanged: (value) {
-                                                  setState(() {
-                                                    int minutes =
-                                                        int.tryParse(
-                                                          timerMinutesController
-                                                              .text,
-                                                        ) ??
-                                                        0;
-                                                    int seconds =
-                                                        int.tryParse(value) ??
-                                                        0;
-                                                    // Limit seconds to 59
-                                                    if (seconds > 59) {
-                                                      seconds = 59;
-                                                      timerSecondsController
-                                                              .text =
-                                                          '59';
-                                                      timerSecondsController
-                                                              .selection =
-                                                          TextSelection.fromPosition(
-                                                            TextPosition(
-                                                              offset:
-                                                                  timerSecondsController
-                                                                      .text
-                                                                      .length,
-                                                            ),
-                                                          );
-                                                    }
-                                                    timerSeconds =
-                                                        (minutes * 60) +
-                                                        seconds;
-                                                  });
-                                                },
                                               ),
-                                            ),
-                                          ],
+                                            ],
                                           ),
                                         ],
 
-                                      const SizedBox(height: 20),
+                                        const SizedBox(height: 20),
 
-                                      Text(
-                                        "Game Set:",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          Container(
-                                            width: 300,
-                                            height: 50,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            child: DropdownButton<String>(
-                                              value: selectedGameSet,
-                                              dropdownColor: Colors.white,
-                                              underline: const SizedBox(),
-                                              icon: const Icon(
-                                                Icons.arrow_drop_down,
-                                                color: Colors.black,
-                                              ),
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 16,
-                                                color: Colors.black,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                              isExpanded: true,
-                                              items: const [
-                                                DropdownMenuItem(
-                                                  value: 'public',
-                                                  child: Text('Public'),
-                                                ),
-                                                DropdownMenuItem(
-                                                  value: 'private',
-                                                  child: Text('Private'),
-                                                ),
-                                              ],
-                                              onChanged: (String? newValue) {
-                                                if (newValue != null) {
-                                                  setState(() {
-                                                    selectedGameSet = newValue;
-                                                    if (newValue == 'public') {
-                                                      gameCodeController
-                                                          .clear();
-                                                    }
-                                                  });
-                                                }
-                                              },
-                                            ),
+                                        Text(
+                                          "Game Set:",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
                                           ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              width: 300,
+                                              height: 50,
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              child: DropdownButton<String>(
+                                                value: selectedGameSet,
+                                                dropdownColor: Colors.white,
+                                                underline: const SizedBox(),
+                                                icon: const Icon(
+                                                  Icons.arrow_drop_down,
+                                                  color: Colors.black,
+                                                ),
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 16,
+                                                  color: Colors.black,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                isExpanded: true,
+                                                items: const [
+                                                  DropdownMenuItem(
+                                                    value: 'public',
+                                                    child: Text('Public'),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 'private',
+                                                    child: Text('Private'),
+                                                  ),
+                                                ],
+                                                onChanged: (String? newValue) {
+                                                  if (newValue != null) {
+                                                    setState(() {
+                                                      selectedGameSet =
+                                                          newValue;
+                                                      if (newValue ==
+                                                          'public') {
+                                                        gameCodeController
+                                                            .clear();
+                                                      }
+                                                    });
+                                                  }
+                                                },
+                                              ),
+                                            ),
                                           ],
                                         ),
 
@@ -4765,171 +4815,174 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                           ),
                                         ],
 
-                                      const SizedBox(height: 40),
+                                        const SizedBox(height: 40),
 
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 10,
-                                          bottom: 10,
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 10,
+                                            bottom: 10,
+                                          ),
+                                          child: Divider(color: Colors.white),
                                         ),
-                                        child: Divider(color: Colors.white),
-                                      ),
 
-                                      // Auto-save status indicator
-                                      if (_autoSaveStatus.isNotEmpty)
+                                        // Auto-save status indicator
+                                        if (_autoSaveStatus.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 10,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  _autoSaveStatus.contains('✓')
+                                                      ? Icons.check_circle
+                                                      : _autoSaveStatus
+                                                            .contains('Saving')
+                                                      ? Icons.sync
+                                                      : _autoSaveStatus
+                                                            .contains(
+                                                              'disabled',
+                                                            )
+                                                      ? Icons
+                                                            .settings_backup_restore
+                                                      : Icons.edit_note,
+                                                  color:
+                                                      _autoSaveStatus.contains(
+                                                        '✓',
+                                                      )
+                                                      ? Colors.green
+                                                      : _autoSaveStatus
+                                                            .contains(
+                                                              'disabled',
+                                                            )
+                                                      ? Colors.grey
+                                                      : Colors.orange,
+                                                  size: 16,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    _autoSaveStatus,
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 12,
+                                                      color:
+                                                          _autoSaveStatus
+                                                              .contains('✓')
+                                                          ? Colors.green
+                                                          : _autoSaveStatus
+                                                                .contains(
+                                                                  'disabled',
+                                                                )
+                                                          ? Colors.grey
+                                                          : Colors.orange,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
                                         Padding(
                                           padding: const EdgeInsets.only(
                                             bottom: 10,
                                           ),
                                           child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.start,
                                             children: [
-                                              Icon(
-                                                _autoSaveStatus.contains('✓')
-                                                    ? Icons.check_circle
-                                                    : _autoSaveStatus.contains(
-                                                        'Saving',
-                                                      )
-                                                    ? Icons.sync
-                                                    : _autoSaveStatus.contains(
-                                                        'disabled',
-                                                      )
-                                                    ? Icons
-                                                          .settings_backup_restore
-                                                    : Icons.edit_note,
-                                                color:
-                                                    _autoSaveStatus.contains(
-                                                      '✓',
-                                                    )
-                                                    ? Colors.green
-                                                    : _autoSaveStatus.contains(
-                                                        'disabled',
-                                                      )
-                                                    ? Colors.grey
-                                                    : Colors.orange,
-                                                size: 16,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
+                                              AnimatedButton(
+                                                width: 100,
+                                                height: 50,
+                                                color: Colors.red,
+                                                onPressed: () {
+                                                  _showDeleteConfirmationDialog();
+                                                },
                                                 child: Text(
-                                                  _autoSaveStatus,
+                                                  "Delete",
                                                   style: GoogleFonts.poppins(
-                                                    fontSize: 12,
-                                                    color:
-                                                        _autoSaveStatus
-                                                            .contains('✓')
-                                                        ? Colors.green
-                                                        : _autoSaveStatus
-                                                              .contains(
-                                                                'disabled',
-                                                              )
-                                                        ? Colors.grey
-                                                        : Colors.orange,
-                                                    fontWeight: FontWeight.w500,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.white,
                                                   ),
                                                 ),
+                                              ),
+                                              const SizedBox(width: 20),
+
+                                              AnimatedButton(
+                                                width: 100,
+                                                height: 50,
+                                                color: Colors.blue,
+                                                onPressed: () {
+                                                  _showCloseConfirmationDialog();
+                                                },
+                                                child: Text(
+                                                  "Close",
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 20),
+
+                                              AnimatedButton(
+                                                width: 100,
+                                                height: 50,
+                                                color: Colors.green,
+                                                onPressed: _isSaving
+                                                    ? () {}
+                                                    : () async {
+                                                        _saveCurrentPageData();
+                                                        await _saveToFirestore();
+                                                      },
+                                                child: _isSaving
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          valueColor:
+                                                              AlwaysStoppedAnimation<
+                                                                Color
+                                                              >(Colors.white),
+                                                        ),
+                                                      )
+                                                    : Text(
+                                                        "Save",
+                                                        style:
+                                                            GoogleFonts.poppins(
+                                                              fontSize: 16,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
+                                                      ),
                                               ),
                                             ],
                                           ),
                                         ),
-
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 10,
-                                        ),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.start,
-                                          children: [
-                                            AnimatedButton(
-                                              width: 100,
-                                              height: 50,
-                                              color: Colors.red,
-                                              onPressed: () {
-                                                _showDeleteConfirmationDialog();
-                                              },
-                                              child: Text(
-                                                "Delete",
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 20),
-
-                                            AnimatedButton(
-                                              width: 100,
-                                              height: 50,
-                                              color: Colors.blue,
-                                              onPressed: () {
-                                                _showCloseConfirmationDialog();
-                                              },
-                                              child: Text(
-                                                "Close",
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 20),
-
-                                            AnimatedButton(
-                                              width: 100,
-                                              height: 50,
-                                              color: Colors.green,
-                                              onPressed: _isSaving
-                                                  ? () {}
-                                                  : () async {
-                                                      _saveCurrentPageData();
-                                                      await _saveToFirestore();
-                                                    },
-                                              child: _isSaving
-                                                  ? const SizedBox(
-                                                      width: 20,
-                                                      height: 20,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        valueColor:
-                                                            AlwaysStoppedAnimation<
-                                                              Color
-                                                            >(Colors.white),
-                                                      ),
-                                                    )
-                                                  : Text(
-                                                      "Save",
-                                                      style:
-                                                          GoogleFonts.poppins(
-                                                            fontSize: 16,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            color: Colors.white,
-                                                          ),
-                                                    ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                                ),
+                              ],
+                            ),
+                          ),
 
-            // -------- Column 2 --------
-            Expanded(
+                        // -------- Column 2 --------
+                        Expanded(
                           child: Center(
                             child: Container(
                               width: 428,
                               height: MediaQuery.of(
                                 context,
                               ).size.height.clamp(1200.0, 2400.0),
-                              decoration: BoxDecoration(color: Colors.white,
-                  ),
+                              decoration: BoxDecoration(color: Colors.white),
                               child: GestureDetector(
                                 onPanUpdate: (details) {
                                   // Handle mouse drag scrolling
@@ -4975,197 +5028,237 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                         ),
                                       ),
 
-                            // Hearts display (when heart rule is selected) - moved to left side below progress bar
-                            if (heartEnabled)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 16,
-                                  top: 8,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: List.generate(
-                                      5,
-                                      (index) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                        ),
-                                        child: Icon(
-                                          Icons.favorite,
-                                          color: Colors.red,
-                                          size: 30,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            // Timer display (when timer rule is selected)
-                            if (selectedGameRule == 'timer' && timerSeconds > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  right: 16,
-                                  top: 8,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.timer,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '${(timerSeconds ~/ 60).toString().padLeft(2, '0')}:${(timerSeconds % 60).toString().padLeft(2, '0')}',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                      // Hearts display (when heart rule is selected) - moved to left side below progress bar
+                                      if (heartEnabled)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 16,
+                                            top: 8,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: List.generate(
+                                                5,
+                                                (index) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 4,
+                                                      ),
+                                                  child: Icon(
+                                                    Icons.favorite,
+                                                    color: Colors.red,
+                                                    size: 30,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ],
-                                    ),
+
+                                      // Timer display (when timer rule is selected)
+                                      if (selectedGameRule == 'timer' &&
+                                          timerSeconds > 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 16,
+                                            top: 8,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.centerRight,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.timer,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '${(timerSeconds ~/ 60).toString().padLeft(2, '0')}:${(timerSeconds % 60).toString().padLeft(2, '0')}',
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                      Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Column(
+                                          children: [
+                                            SizedBox(
+                                              height: 800,
+                                              child:
+                                                  selectedGameType ==
+                                                      'Fill in the blank'
+                                                  ? MyFillTheBlank(
+                                                      answerController:
+                                                          answerController,
+                                                      visibleLetters:
+                                                          visibleLetters,
+                                                      onRevealLetter: (int index) {
+                                                        setState(() {
+                                                          visibleLetters[index] =
+                                                              true;
+                                                        });
+                                                      },
+                                                      onHideLetter: (int index) {
+                                                        setState(() {
+                                                          visibleLetters[index] =
+                                                              false;
+                                                        });
+                                                      },
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Fill in the blank 2'
+                                                  ? MyFillInTheBlank2(
+                                                      answerController:
+                                                          answerController,
+                                                      visibleLetters:
+                                                          visibleLetters,
+                                                      pickedImage:
+                                                          selectedImageBytes,
+                                                      imageUrl:
+                                                          pages[currentPageIndex]
+                                                              .imageUrl,
+                                                      onRevealLetter: (int index) {
+                                                        setState(() {
+                                                          visibleLetters[index] =
+                                                              true;
+                                                        });
+                                                      },
+                                                      onHideLetter: (int index) {
+                                                        setState(() {
+                                                          visibleLetters[index] =
+                                                              false;
+                                                        });
+                                                      },
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Guess the answer'
+                                                  ? MyFillInTheBlank3(
+                                                      hintController:
+                                                          hintController,
+                                                      questionController:
+                                                          descriptionFieldController,
+                                                      visibleLetters:
+                                                          visibleLetters,
+                                                      pickedImage:
+                                                          selectedImageBytes,
+                                                      imageUrl:
+                                                          pages[currentPageIndex]
+                                                              .imageUrl,
+                                                      multipleChoices:
+                                                          multipleChoices,
+                                                      correctAnswerIndex:
+                                                          correctAnswerIndex,
+                                                      selectedAnswerIndex:
+                                                          _selectedAnswerIndex,
+                                                      onAnswerSelected:
+                                                          _onAnswerSelected,
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Guess the answer 2'
+                                                  ? MyGuessTheAnswer(
+                                                      hintController:
+                                                          hintController,
+                                                      questionController:
+                                                          descriptionFieldController,
+                                                      visibleLetters:
+                                                          visibleLetters,
+                                                      pickedImages:
+                                                          guessAnswerImages,
+                                                      imageUrls:
+                                                          pages[currentPageIndex]
+                                                              .guessAnswerImageUrls,
+                                                      multipleChoices:
+                                                          multipleChoices,
+                                                      correctAnswerIndex:
+                                                          correctAnswerIndex,
+                                                      selectedAnswerIndex:
+                                                          _selectedAnswerIndex,
+                                                      onAnswerSelected:
+                                                          _onAnswerSelected,
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Read the sentence'
+                                                  ? MyReadTheSentence(
+                                                      sentenceController:
+                                                          readSentenceController,
+                                                    )
+                                                  : selectedGameType ==
+                                                        'What is it called'
+                                                  ? MyWhatItIsCalled(
+                                                      sentenceController:
+                                                          readSentenceController,
+                                                      pickedImage:
+                                                          whatCalledImageBytes,
+                                                      imageUrl:
+                                                          pages[currentPageIndex]
+                                                              .whatCalledImageUrl,
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Listen and Repeat'
+                                                  ? MyListenAndRepeat(
+                                                      sentenceController:
+                                                          listenAndRepeatController,
+                                                      audioPath:
+                                                          listenAndRepeatAudioPath,
+                                                      audioSource:
+                                                          listenAndRepeatAudioSource,
+                                                      audioUrl:
+                                                          pages[currentPageIndex]
+                                                              .listenAndRepeatAudioUrl,
+                                                    )
+                                                  : selectedGameType ==
+                                                        'Image Match'
+                                                  ? MyImageMatch(
+                                                      pickedImages:
+                                                          imageMatchImages,
+                                                      count: imageMatchCount,
+                                                    )
+                                                  : selectedGameType == 'Math'
+                                                  ? MyMath(mathState: mathState)
+                                                  : MyStroke(
+                                                      sentenceController:
+                                                          readSentenceController,
+                                                      pickedImage:
+                                                          strokeImageBytes,
+                                                      imageUrl:
+                                                          pages[currentPageIndex]
+                                                              .imageUrl,
+                                                    ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-
-                                      Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              children: [
-                                            SizedBox(
-                                              height: 800,
-                                  child: selectedGameType == 'Fill in the blank'
-                                      ? MyFillTheBlank(
-                                          answerController: answerController,
-                                          visibleLetters: visibleLetters,
-                                          onRevealLetter: (int index) {
-                                            setState(() {
-                                              visibleLetters[index] = true;
-                                            });
-                                          },
-                                          onHideLetter: (int index) {
-                                            setState(() {
-                                              visibleLetters[index] = false;
-                                            });
-                                          },
-                                        )
-                                      : selectedGameType ==
-                                            'Fill in the blank 2'
-                                      ? MyFillInTheBlank2(
-                                          answerController: answerController,
-                                          visibleLetters: visibleLetters,
-                                          pickedImage: selectedImageBytes,
-                                          imageUrl:
-                                              pages[currentPageIndex].imageUrl,
-                                          onRevealLetter: (int index) {
-                                            setState(() {
-                                              visibleLetters[index] = true;
-                                            });
-                                          },
-                                          onHideLetter: (int index) {
-                                            setState(() {
-                                              visibleLetters[index] = false;
-                                            });
-                                          },
-                                        )
-                                      : selectedGameType == 'Guess the answer'
-                                      ? MyFillInTheBlank3(
-                                          hintController: hintController,
-                                          questionController:
-                                              descriptionFieldController,
-                                          visibleLetters: visibleLetters,
-                                          pickedImage: selectedImageBytes,
-                                          imageUrl:
-                                              pages[currentPageIndex].imageUrl,
-                                          multipleChoices: multipleChoices,
-                                          correctAnswerIndex:
-                                              correctAnswerIndex,
-                                                      selectedAnswerIndex:
-                                                          _selectedAnswerIndex,
-                                                      onAnswerSelected:
-                                                          _onAnswerSelected,
-                                        )
-                                      : selectedGameType == 'Guess the answer 2'
-                                      ? MyGuessTheAnswer(
-                                          hintController: hintController,
-                                          questionController:
-                                              descriptionFieldController,
-                                          visibleLetters: visibleLetters,
-                                          pickedImages: guessAnswerImages,
-                                          imageUrls: pages[currentPageIndex]
-                                              .guessAnswerImageUrls,
-                                          multipleChoices: multipleChoices,
-                                          correctAnswerIndex:
-                                              correctAnswerIndex,
-                                                      selectedAnswerIndex:
-                                                          _selectedAnswerIndex,
-                                                      onAnswerSelected:
-                                                          _onAnswerSelected,
-                                        )
-                                      : selectedGameType == 'Read the sentence'
-                                      ? MyReadTheSentence(
-                                          sentenceController:
-                                              readSentenceController,
-                                        )
-                                      : selectedGameType == 'What is it called'
-                                      ? MyWhatItIsCalled(
-                                          sentenceController:
-                                              readSentenceController,
-                                          pickedImage: whatCalledImageBytes,
-                                          imageUrl: pages[currentPageIndex]
-                                              .whatCalledImageUrl,
-                                        )
-                                      : selectedGameType == 'Listen and Repeat'
-                                      ? MyListenAndRepeat(
-                                          sentenceController:
-                                              listenAndRepeatController,
-                                          audioPath: listenAndRepeatAudioPath,
-                                          audioSource:
-                                              listenAndRepeatAudioSource,
-                                          audioUrl: pages[currentPageIndex]
-                                              .listenAndRepeatAudioUrl,
-                                        )
-                                      : selectedGameType == 'Image Match'
-                                      ? MyImageMatch(
-                                          pickedImages: imageMatchImages,
-                                          count: imageMatchCount,
-                                        )
-                                      : selectedGameType == 'Math'
-                                      ? MyMath(mathState: mathState)
-                                      : MyStroke(
-                                          sentenceController: readSentenceController,
-                                          pickedImage: strokeImageBytes,
-                                          imageUrl: pages[currentPageIndex].imageUrl,
-                                        ),
-                                ),
-
-                                
-                              ],
                             ),
                           ),
-                                    ],
-                                  ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+                        ),
 
                         // -------- Column 3 -------- (Hidden on medium screens <= 1024px)
                         if (!_isMediumScreen)
@@ -5175,546 +5268,584 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                    Row(
-                      children: [
-                        Text(
-                          "Game Type:",
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                                      width: 210,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: DropdownButton<String>(
-                            value: selectedGameType,
-                            dropdownColor: Colors.white,
-                            underline: const SizedBox(),
-                            icon: const Icon(
-                              Icons.arrow_drop_down,
-                              color: Colors.black,
-                            ),
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              color: Colors.black,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'Fill in the blank',
-                                child: Text('Fill in the blank'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Fill in the blank 2',
-                                child: Text('Fill in the blank 2'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Guess the answer',
-                                child: Text('Guess the answer'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Guess the answer 2',
-                                child: Text('Guess the answer 2'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Read the sentence',
-                                child: Text('Read the sentence'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'What is it called',
-                                child: Text('What is it called'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Listen and Repeat',
-                                child: Text('Listen and Repeat'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Image Match',
-                                child: Text('Image Match'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Math',
-                                child: Text('Math'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Stroke',
-                                child: Text('Stroke'),
-                              ),
-                            ],
-                            onChanged: (String? newValue) {
-                              if (newValue != null) {
-                                setState(() {
-                                  selectedGameType = newValue;
-                                  // Automatically set gameRule to 'score' if Stroke is selected
-                                  if (newValue == 'Stroke') {
-                                    selectedGameRule = 'score';
-                                    heartEnabled = false;
-                                    timerMinutesController.clear();
-                                    timerSecondsController.clear();
-                                    timerSeconds = 0;
-                                  }
-                                });
-                                            // Reset test status when game type is changed
-                                            _resetGameTestStatus();
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10, bottom: 10),
-                      child: Divider(color: Colors.white),
-                    ),
-
-                                // Scrollable game-specific settings area
-                                Expanded(
-                                  child: SingleChildScrollView(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Validation Warning Banner
-                                        if (_validatePages().containsKey(
-                                          currentPageIndex,
-                                        ))
-                                          Container(
-                                            margin: const EdgeInsets.only(
-                                              bottom: 15,
-                                            ),
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red.withOpacity(
-                                                0.2,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: Colors.red,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                const Icon(
-                                                  Icons.warning_amber_rounded,
-                                                  color: Colors.red,
-                                                  size: 24,
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Text(
-                                                    _validatePages()[currentPageIndex] ??
-                                                        'Error',
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 14,
-                                                      color: Colors.red,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-
-                                        if (selectedGameType ==
-                                            'Fill in the blank')
-                                          MyFillTheBlankSettings(
-                                            answerController: answerController,
-                                            hintController: hintController,
-                                            visibleLetters: visibleLetters,
-                                            onToggle: _toggleLetter,
-                                          )
-                                        else if (selectedGameType ==
-                                            'Fill in the blank 2')
-                                          MyFillInTheBlank2Settings(
-                                            answerController: answerController,
-                                            hintController: hintController,
-                                            visibleLetters: visibleLetters,
-                                            onToggle: _toggleLetter,
-                                            onImagePicked: (Uint8List imageBytes) {
-                                              setState(() {
-                                                selectedImageBytes = imageBytes;
-                                              });
-                                              // Trigger auto-save when image is picked
-                                              _triggerAutoSave();
-                                            },
-                                          )
-                                        else if (selectedGameType ==
-                                            'Guess the answer')
-                                          MyFillInTheBlank3Settings(
-                                            hintController: hintController,
-                                            questionController:
-                                                descriptionFieldController,
-                                            visibleLetters: visibleLetters,
-                                            onToggle: _toggleLetter,
-                                            onImagePicked:
-                                                (Uint8List imageBytes) {
-                                                  setState(() {
-                                                    selectedImageBytes =
-                                                        imageBytes;
-                                                  });
-                                                },
-                                            onChoicesChanged:
-                                                (List<String> choices) {
-                                                  setState(() {
-                                                    multipleChoices = choices;
-                                                // Also update the current page's data immediately
-                                                pages[currentPageIndex]
-                                                        .multipleChoices =
-                                                    List.from(choices);
-                                                  });
-                                              // Reset test status when choices are changed
-                                              _resetGameTestStatus();
-                                                },
-                                            onCorrectAnswerSelected:
-                                                (int index) {
-                                                  setState(() {
-                                                    correctAnswerIndex = index;
-                                                // Also update the current page's data immediately
-                                                pages[currentPageIndex]
-                                                        .correctAnswerIndex =
-                                                    index;
-                                                  });
-                                              // Reset test status when answer is changed
-                                              _resetGameTestStatus();
-                                                },
-                                            initialChoices: multipleChoices,
-                                            initialCorrectIndex:
-                                                correctAnswerIndex,
-                                          )
-                                        else if (selectedGameType ==
-                                            'Guess the answer 2')
-                                          MyGuessTheAnswerSettings(
-                                            hintController: hintController,
-                                            questionController:
-                                                descriptionFieldController,
-                                            visibleLetters: visibleLetters,
-                                            onToggle: _toggleLetter,
-                                            onImagePicked:
-                                                (
-                                                  int index,
-                                                  Uint8List imageBytes,
-                                                ) {
-                                                  setState(() {
-                                                    guessAnswerImages[index] =
-                                                        imageBytes;
-                                                  });
-                                                },
-                                            onChoicesChanged:
-                                                (List<String> choices) {
-                                                  setState(() {
-                                                    multipleChoices = choices;
-                                                // Also update the current page's data immediately
-                                                pages[currentPageIndex]
-                                                        .multipleChoices =
-                                                    List.from(choices);
-                                                  });
-                                              // Reset test status when choices are changed
-                                              _resetGameTestStatus();
-                                                },
-                                            onCorrectAnswerSelected:
-                                                (int index) {
-                                                  setState(() {
-                                                    correctAnswerIndex = index;
-                                                // Also update the current page's data immediately
-                                                pages[currentPageIndex]
-                                                        .correctAnswerIndex =
-                                                    index;
-                                                  });
-                                              // Reset test status when answer is changed
-                                              _resetGameTestStatus();
-                                                },
-                                            initialChoices: multipleChoices,
-                                            initialCorrectIndex:
-                                                correctAnswerIndex,
-                                          )
-                                        else if (selectedGameType ==
-                                            'Read the sentence')
-                                          MyReadTheSentenceSettings(
-                                            sentenceController:
-                                                readSentenceController,
-                                          )
-                                        else if (selectedGameType ==
-                                            'What is it called')
-                                          MyWhatItIsCalledSettings(
-                                            sentenceController:
-                                                readSentenceController,
-                                            hintController: hintController,
-                                            onImagePicked:
-                                                (Uint8List imageBytes) {
-                                                  setState(() {
-                                                    whatCalledImageBytes =
-                                                        imageBytes;
-                                                  });
-                                                },
-                                          )
-                                        else if (selectedGameType ==
-                                            'Listen and Repeat')
-                                          MyListenAndRepeatSettings(
-                                            sentenceController:
-                                                listenAndRepeatController,
-                                            onAudioChanged:
-                                                (
-                                                  String? audioPath,
-                                                  String audioSource,
-                                                  Uint8List? audioBytes,
-                                                ) {
-                                                  print(
-                                                    "Audio changed callback received: path=$audioPath, source=$audioSource, bytes=${audioBytes?.length}",
-                                                  );
-                                                  setState(() {
-                                                    listenAndRepeatAudioPath =
-                                                        audioPath;
-                                                    listenAndRepeatAudioSource =
-                                                        audioSource;
-                                                    listenAndRepeatAudioBytes =
-                                                        audioBytes;
-                                                  });
-                                                  // Save the current page data immediately when audio changes
-                                                  _saveCurrentPageData();
-                                                },
-                                          )
-                                        else if (selectedGameType ==
-                                            'Image Match')
-                                          MyImageMatchSettings(
-                                            onImagePicked:
-                                                (
-                                                  int index,
-                                                  Uint8List imageBytes,
-                                                ) {
-                                                  setState(() {
-                                                    imageMatchImages[index] =
-                                                        imageBytes;
-                                                  });
-                                                  debugPrint(
-                                                    'Image Match image $index picked, size: ${imageBytes.length} bytes',
-                                                  );
-                                                  // Trigger auto-save when image is picked
-                                                  _triggerAutoSave();
-                                                },
-                                            onCountChanged: (int newCount) {
-                                              setState(() {
-                                                imageMatchCount = newCount;
-                                              });
-                                              debugPrint(
-                                                'Image Match count changed to: $newCount',
-                                              );
-                                              // Trigger auto-save when count changes
-                                              _triggerAutoSave();
-                                            },
-                                            onMatchChanged: (Map<int, int> matches) {
-                                              setState(() {
-                                                imageMatchMappings = matches;
-                                              });
-                                              debugPrint(
-                                                'Image Match mappings changed: $matches',
-                                              );
-                                              // Trigger auto-save when matches change
-                                              _triggerAutoSave();
-                                            },
-                                            initialImages: imageMatchImages,
-                                            initialCount: imageMatchCount,
-                                            initialMatches: imageMatchMappings,
-                                          )
-                                        else if (selectedGameType == 'Math')
-                                          MyMathSettings(mathState: mathState)
-                                        else if (selectedGameType == 'Stroke')
-                                          MyStrokeSettings(
-                                            sentenceController: readSentenceController,
-                                            onImagePicked: (Uint8List imageBytes) {
-                                              setState(() {
-                                                strokeImageBytes = imageBytes;
-                                              });
-                                              _triggerAutoSave();
-                                            },
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10, bottom: 10),
-                      child: Divider(color: Colors.white),
-                    ),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        AnimatedButton(
-                          width: 50,
-                          height: 50,
-                          color: currentPageIndex > 0
-                              ? Colors.blue
-                              : Colors.grey.withOpacity(0.5),
-                          onPressed: _goToPreviousPage,
-                          child: Icon(
-                            Icons.arrow_upward_rounded,
-                            color: currentPageIndex > 0
-                                ? Colors.white
-                                : Colors.white.withOpacity(0.5),
-                          ),
-                        ),
-
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                AnimatedButton(
-                                          width: 80,
-                                  height: 50,
-                                          color: Colors.green,
-                                  onPressed: _showPageSelector,
-                                  child: Text(
-                                            "${currentPageIndex + 1} of ${pages.length}",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                                // Red error badge
-                                if (_validatePages().containsKey(
-                                  currentPageIndex,
-                                ))
-                                  Positioned(
-                                    top: -5,
-                                    right: -5,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: const Color(0xFF1E201E),
-                                          width: 2,
+                                  Row(
+                                    children: [
+                                      Text(
+                                        "Game Type:",
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
                                         ),
                                       ),
-                                      child: const Icon(
-                                        Icons.error,
-                                        color: Colors.white,
-                                        size: 16,
+                                      const SizedBox(width: 12),
+                                      Container(
+                                        width: 210,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: DropdownButton<String>(
+                                          value: selectedGameType,
+                                          dropdownColor: Colors.white,
+                                          underline: const SizedBox(),
+                                          icon: const Icon(
+                                            Icons.arrow_drop_down,
+                                            color: Colors.black,
+                                          ),
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          isExpanded: true,
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'Fill in the blank',
+                                              child: Text('Fill in the blank'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Fill in the blank 2',
+                                              child: Text(
+                                                'Fill in the blank 2',
+                                              ),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Guess the answer',
+                                              child: Text('Guess the answer'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Guess the answer 2',
+                                              child: Text('Guess the answer 2'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Read the sentence',
+                                              child: Text('Read the sentence'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'What is it called',
+                                              child: Text('What is it called'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Listen and Repeat',
+                                              child: Text('Listen and Repeat'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Image Match',
+                                              child: Text('Image Match'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Math',
+                                              child: Text('Math'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'Stroke',
+                                              child: Text('Stroke'),
+                                            ),
+                                          ],
+                                          onChanged: (String? newValue) {
+                                            if (newValue != null) {
+                                              setState(() {
+                                                selectedGameType = newValue;
+                                                // Automatically set gameRule to 'score' if Stroke is selected
+                                                if (newValue == 'Stroke') {
+                                                  selectedGameRule = 'score';
+                                                  heartEnabled = false;
+                                                  timerMinutesController
+                                                      .clear();
+                                                  timerSecondsController
+                                                      .clear();
+                                                  timerSeconds = 0;
+                                                }
+                                              });
+                                              // Reset test status when game type is changed
+                                              _resetGameTestStatus();
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      AnimatedButton(
+                                        width: 50,
+                                        height: 50,
+                                        color: Colors.deepPurple,
+                                        onPressed: () {
+                                          _navigateToGameQuick();
+                                        },
+                                        child: const Icon(
+                                          Icons.psychology,
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 10,
+                                      bottom: 10,
+                                    ),
+                                    child: Divider(color: Colors.white),
+                                  ),
+
+                                  // Scrollable game-specific settings area
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Validation Warning Banner
+                                          if (_validatePages().containsKey(
+                                            currentPageIndex,
+                                          ))
+                                            Container(
+                                              margin: const EdgeInsets.only(
+                                                bottom: 15,
+                                              ),
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red.withOpacity(
+                                                  0.2,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: Colors.red,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.warning_amber_rounded,
+                                                    color: Colors.red,
+                                                    size: 24,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Text(
+                                                      _validatePages()[currentPageIndex] ??
+                                                          'Error',
+                                                      style:
+                                                          GoogleFonts.poppins(
+                                                            fontSize: 14,
+                                                            color: Colors.red,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+
+                                          if (selectedGameType ==
+                                              'Fill in the blank')
+                                            MyFillTheBlankSettings(
+                                              answerController:
+                                                  answerController,
+                                              hintController: hintController,
+                                              visibleLetters: visibleLetters,
+                                              onToggle: _toggleLetter,
+                                            )
+                                          else if (selectedGameType ==
+                                              'Fill in the blank 2')
+                                            MyFillInTheBlank2Settings(
+                                              answerController:
+                                                  answerController,
+                                              hintController: hintController,
+                                              visibleLetters: visibleLetters,
+                                              onToggle: _toggleLetter,
+                                              onImagePicked:
+                                                  (Uint8List imageBytes) {
+                                                    setState(() {
+                                                      selectedImageBytes =
+                                                          imageBytes;
+                                                    });
+                                                    // Trigger auto-save when image is picked
+                                                    _triggerAutoSave();
+                                                  },
+                                            )
+                                          else if (selectedGameType ==
+                                              'Guess the answer')
+                                            MyFillInTheBlank3Settings(
+                                              hintController: hintController,
+                                              questionController:
+                                                  descriptionFieldController,
+                                              visibleLetters: visibleLetters,
+                                              onToggle: _toggleLetter,
+                                              onImagePicked:
+                                                  (Uint8List imageBytes) {
+                                                    setState(() {
+                                                      selectedImageBytes =
+                                                          imageBytes;
+                                                    });
+                                                  },
+                                              onChoicesChanged: (List<String> choices) {
+                                                setState(() {
+                                                  multipleChoices = choices;
+                                                  // Also update the current page's data immediately
+                                                  pages[currentPageIndex]
+                                                          .multipleChoices =
+                                                      List.from(choices);
+                                                });
+                                                // Reset test status when choices are changed
+                                                _resetGameTestStatus();
+                                              },
+                                              onCorrectAnswerSelected: (int index) {
+                                                setState(() {
+                                                  correctAnswerIndex = index;
+                                                  // Also update the current page's data immediately
+                                                  pages[currentPageIndex]
+                                                          .correctAnswerIndex =
+                                                      index;
+                                                });
+                                                // Reset test status when answer is changed
+                                                _resetGameTestStatus();
+                                              },
+                                              initialChoices: multipleChoices,
+                                              initialCorrectIndex:
+                                                  correctAnswerIndex,
+                                            )
+                                          else if (selectedGameType ==
+                                              'Guess the answer 2')
+                                            MyGuessTheAnswerSettings(
+                                              hintController: hintController,
+                                              questionController:
+                                                  descriptionFieldController,
+                                              visibleLetters: visibleLetters,
+                                              onToggle: _toggleLetter,
+                                              onImagePicked:
+                                                  (
+                                                    int index,
+                                                    Uint8List imageBytes,
+                                                  ) {
+                                                    setState(() {
+                                                      guessAnswerImages[index] =
+                                                          imageBytes;
+                                                    });
+                                                  },
+                                              onChoicesChanged: (List<String> choices) {
+                                                setState(() {
+                                                  multipleChoices = choices;
+                                                  // Also update the current page's data immediately
+                                                  pages[currentPageIndex]
+                                                          .multipleChoices =
+                                                      List.from(choices);
+                                                });
+                                                // Reset test status when choices are changed
+                                                _resetGameTestStatus();
+                                              },
+                                              onCorrectAnswerSelected: (int index) {
+                                                setState(() {
+                                                  correctAnswerIndex = index;
+                                                  // Also update the current page's data immediately
+                                                  pages[currentPageIndex]
+                                                          .correctAnswerIndex =
+                                                      index;
+                                                });
+                                                // Reset test status when answer is changed
+                                                _resetGameTestStatus();
+                                              },
+                                              initialChoices: multipleChoices,
+                                              initialCorrectIndex:
+                                                  correctAnswerIndex,
+                                            )
+                                          else if (selectedGameType ==
+                                              'Read the sentence')
+                                            MyReadTheSentenceSettings(
+                                              sentenceController:
+                                                  readSentenceController,
+                                            )
+                                          else if (selectedGameType ==
+                                              'What is it called')
+                                            MyWhatItIsCalledSettings(
+                                              sentenceController:
+                                                  readSentenceController,
+                                              hintController: hintController,
+                                              onImagePicked:
+                                                  (Uint8List imageBytes) {
+                                                    setState(() {
+                                                      whatCalledImageBytes =
+                                                          imageBytes;
+                                                    });
+                                                  },
+                                            )
+                                          else if (selectedGameType ==
+                                              'Listen and Repeat')
+                                            MyListenAndRepeatSettings(
+                                              sentenceController:
+                                                  listenAndRepeatController,
+                                              onAudioChanged:
+                                                  (
+                                                    String? audioPath,
+                                                    String audioSource,
+                                                    Uint8List? audioBytes,
+                                                  ) {
+                                                    print(
+                                                      "Audio changed callback received: path=$audioPath, source=$audioSource, bytes=${audioBytes?.length}",
+                                                    );
+                                                    setState(() {
+                                                      listenAndRepeatAudioPath =
+                                                          audioPath;
+                                                      listenAndRepeatAudioSource =
+                                                          audioSource;
+                                                      listenAndRepeatAudioBytes =
+                                                          audioBytes;
+                                                    });
+                                                    // Save the current page data immediately when audio changes
+                                                    _saveCurrentPageData();
+                                                  },
+                                            )
+                                          else if (selectedGameType ==
+                                              'Image Match')
+                                            MyImageMatchSettings(
+                                              onImagePicked:
+                                                  (
+                                                    int index,
+                                                    Uint8List imageBytes,
+                                                  ) {
+                                                    setState(() {
+                                                      imageMatchImages[index] =
+                                                          imageBytes;
+                                                    });
+                                                    debugPrint(
+                                                      'Image Match image $index picked, size: ${imageBytes.length} bytes',
+                                                    );
+                                                    // Trigger auto-save when image is picked
+                                                    _triggerAutoSave();
+                                                  },
+                                              onCountChanged: (int newCount) {
+                                                setState(() {
+                                                  imageMatchCount = newCount;
+                                                });
+                                                debugPrint(
+                                                  'Image Match count changed to: $newCount',
+                                                );
+                                                // Trigger auto-save when count changes
+                                                _triggerAutoSave();
+                                              },
+                                              onMatchChanged: (Map<int, int> matches) {
+                                                setState(() {
+                                                  imageMatchMappings = matches;
+                                                });
+                                                debugPrint(
+                                                  'Image Match mappings changed: $matches',
+                                                );
+                                                // Trigger auto-save when matches change
+                                                _triggerAutoSave();
+                                              },
+                                              initialImages: imageMatchImages,
+                                              initialCount: imageMatchCount,
+                                              initialMatches:
+                                                  imageMatchMappings,
+                                            )
+                                          else if (selectedGameType == 'Math')
+                                            MyMathSettings(mathState: mathState)
+                                          else if (selectedGameType == 'Stroke')
+                                            MyStrokeSettings(
+                                              sentenceController:
+                                                  readSentenceController,
+                                              onImagePicked:
+                                                  (Uint8List imageBytes) {
+                                                    setState(() {
+                                                      strokeImageBytes =
+                                                          imageBytes;
+                                                    });
+                                                    _triggerAutoSave();
+                                                  },
+                                            ),
+                                        ],
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
 
-                        AnimatedButton(
-                          width: 50,
-                          height: 50,
-                          color: Colors.blue,
-                          onPressed: _goToNextPage,
-                          child: Icon(
-                            currentPageIndex < pages.length - 1
-                                ? Icons.arrow_downward_rounded
-                                : Icons.add,
-                            color: Colors.white,
-                          ),
-                        ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: 10,
+                                      bottom: 10,
+                                    ),
+                                    child: Divider(color: Colors.white),
+                                  ),
 
-                        AnimatedButton(
-                          width: 50,
-                          height: 50,
-                          color: pages.length > 1
-                              ? Colors.red
-                              : Colors.red.withOpacity(0.5),
-                          onPressed: _deletePage,
-                          child: Icon(
-                            Icons.delete_forever_rounded,
-                            color: pages.length > 1
-                                ? Colors.white
-                                : Colors.white.withOpacity(0.5),
-                          ),
-                        ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                      AnimatedButton(
+                                        width: 50,
+                                        height: 50,
+                                        color: currentPageIndex > 0
+                                            ? Colors.blue
+                                            : Colors.grey.withOpacity(0.5),
+                                        onPressed: _goToPreviousPage,
+                                        child: Icon(
+                                          Icons.arrow_upward_rounded,
+                                          color: currentPageIndex > 0
+                                              ? Colors.white
+                                              : Colors.white.withOpacity(0.5),
+                                        ),
+                                      ),
 
-                        SizedBox(
-                          height: 50,
-                          child: IntrinsicHeight(
-                            child: const VerticalDivider(
-                              thickness: 2,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-
-                        AnimatedButton(
-                          width: 100,
-                          height: 50,
-                                      color: _gameTest
-                                          ? (_isPublished
-                                                ? Colors.grey
-                                                : Colors.orange)
-                                          : Colors.green,
-                                      onPressed: _gameTest
-                                          ? (_isPublished || _isLaunching
-                                                ? () {} // Disabled when already published or launching
-                                                : () async {
-                                                    _saveCurrentPageData();
-                                                    await _publishGame();
-                                                  })
-                                          : () async {
-                                              // Test functionality - navigate to testing page with gameId
-                                              if (gameId != null) {
-                                                await Get.toNamed(
-                                                  '/testing',
-                                                  arguments: {'gameId': gameId},
-                                                );
-                                                // Refresh game data when returning from test
-                                                await _loadFromFirestore(
-                                                  gameId!,
-                                                );
-                                              } else {
-                                                debugPrint(
-                                                  'No gameId available for testing',
-                                                );
-                                              }
-                                            },
-                                      child: _gameTest && _isLaunching
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                      Color
-                                                    >(Colors.white),
-                                              ),
-                                            )
-                                          : Text(
-                                              _gameTest
-                                                  ? (_isPublished
-                                                        ? "Launched"
-                                                        : "Launch")
-                                                  : "Test",
+                                      Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          AnimatedButton(
+                                            width: 80,
+                                            height: 50,
+                                            color: Colors.green,
+                                            onPressed: _showPageSelector,
+                                            child: Text(
+                                              "${currentPageIndex + 1} of ${pages.length}",
                                               style: GoogleFonts.poppins(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.bold,
                                                 color: Colors.white,
                                               ),
                                             ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                                          ),
+                                          // Red error badge
+                                          if (_validatePages().containsKey(
+                                            currentPageIndex,
+                                          ))
+                                            Positioned(
+                                              top: -5,
+                                              right: -5,
+                                              child: Container(
+                                                padding: const EdgeInsets.all(
+                                                  6,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: const Color(
+                                                      0xFF1E201E,
+                                                    ),
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.error,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+
+                                      AnimatedButton(
+                                        width: 50,
+                                        height: 50,
+                                        color: Colors.blue,
+                                        onPressed: _goToNextPage,
+                                        child: Icon(
+                                          currentPageIndex < pages.length - 1
+                                              ? Icons.arrow_downward_rounded
+                                              : Icons.add,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+
+                                      AnimatedButton(
+                                        width: 50,
+                                        height: 50,
+                                        color: pages.length > 1
+                                            ? Colors.red
+                                            : Colors.red.withOpacity(0.5),
+                                        onPressed: _deletePage,
+                                        child: Icon(
+                                          Icons.delete_forever_rounded,
+                                          color: pages.length > 1
+                                              ? Colors.white
+                                              : Colors.white.withOpacity(0.5),
+                                        ),
+                                      ),
+
+                                      SizedBox(
+                                        height: 50,
+                                        child: IntrinsicHeight(
+                                          child: const VerticalDivider(
+                                            thickness: 2,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+
+                                      AnimatedButton(
+                                        width: 100,
+                                        height: 50,
+                                        color: _gameTest
+                                            ? (_isPublished
+                                                  ? Colors.grey
+                                                  : Colors.orange)
+                                            : Colors.green,
+                                        onPressed: _gameTest
+                                            ? (_isPublished || _isLaunching
+                                                  ? () {} // Disabled when already published or launching
+                                                  : () async {
+                                                      _saveCurrentPageData();
+                                                      await _publishGame();
+                                                    })
+                                            : () async {
+                                                // Test functionality - navigate to testing page with gameId
+                                                if (gameId != null) {
+                                                  await Get.toNamed(
+                                                    '/testing',
+                                                    arguments: {
+                                                      'gameId': gameId,
+                                                    },
+                                                  );
+                                                  // Refresh game data when returning from test
+                                                  await _loadFromFirestore(
+                                                    gameId!,
+                                                  );
+                                                } else {
+                                                  debugPrint(
+                                                    'No gameId available for testing',
+                                                  );
+                                                }
+                                              },
+                                        child: _gameTest && _isLaunching
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(Colors.white),
+                                                ),
+                                              )
+                                            : Text(
+                                                _gameTest
+                                                    ? (_isPublished
+                                                          ? "Launched"
+                                                          : "Launch")
+                                                    : "Test",
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
