@@ -58,6 +58,8 @@ dependencies:
   fl_chart: ^1.1.1
   image_picker: ^1.2.0
   pdf: ^3.11.1
+  google_generative_language_api: ^0.2.1
+  syncfusion_flutter_pdf: ^28.1.33
 
 dev_dependencies:
   flutter_test:

@@ -4,7 +4,7 @@
 
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:animated_button/animated_button.dart';
+import 'package:animated_button/animated_button.dart'; 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2040,7 +2040,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const MyGameQuick(),
+            MyGameQuick(gameId: gameId), // Pass gameId to game_quick.dart
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(1.0, 0.0);
           const end = Offset.zero;
