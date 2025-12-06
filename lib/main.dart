@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:lexi_on_web/admin/admin.dart';
+import 'package:lexi_on_web/admin/student_dashboard.dart';
+import 'package:lexi_on_web/admin/teachers_dashboard.dart';
 import 'package:lexi_on_web/editor/game_edit.dart';
 import 'package:lexi_on_web/editor/game_manage.dart';
 import 'package:lexi_on_web/editor/game_published.dart';
@@ -55,6 +57,8 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/game_check', page: () => const MyGameCheck()),
         GetPage(name: '/game_report', page: () => const MyGameReports()),
          GetPage(name: '/teacher_profile', page: () => const MyTeacherProfile()),
+         GetPage(name: '/StudentDashboard', page: () => StudentDashboard()),
+         GetPage(name: '/TeacherDashboard', page: () => const MyTeachersDashboard()),
       ],
     );
   }

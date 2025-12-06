@@ -3,6 +3,7 @@
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:get/get.dart';
 import '../models/chart_data.dart';
 import '../models/chart_widgets.dart';
 import '../models/custom_scroll_behavior.dart';
@@ -164,8 +165,7 @@ class _MyDashBoardState extends State<MyDashBoard> {
   // Responsive helper methods
   int _getCrossAxisCount(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    if (width >= 1400) return 5; // Large desktop (for 5 cards)
-    if (width >= 1200) return 4; // Desktop
+    if (width >= 1200) return 4; // Desktop (for 4 cards)
     if (width >= 800) return 3; // Tablet landscape
     if (width >= 600) return 2; // Tablet portrait
     return 1; // Mobile
@@ -254,6 +254,7 @@ class _MyDashBoardState extends State<MyDashBoard> {
           icon: Icons.school,
           color: Colors.blue,
           gradient: [Colors.blue.shade400, Colors.blue.shade700],
+          isClickable: true,
         ),
         _buildStatCard(
           title: 'Total Students',
@@ -268,13 +269,6 @@ class _MyDashBoardState extends State<MyDashBoard> {
           icon: Icons.class_,
           color: Colors.green,
           gradient: [Colors.green.shade400, Colors.green.shade700],
-        ),
-        _buildStatCard(
-          title: 'Active Calls',
-          value: _stats.activeVideoCalls.toString(),
-          icon: Icons.video_call,
-          color: Colors.orange,
-          gradient: [Colors.orange.shade400, Colors.orange.shade700],
         ),
         _buildStatCard(
           title: 'Published Games',
@@ -293,81 +287,108 @@ class _MyDashBoardState extends State<MyDashBoard> {
     required IconData icon,
     required Color color,
     required List<Color> gradient,
+    bool isClickable = false,
   }) {
     final padding = _getResponsivePadding(context) * 0.8;
     final iconSize = _getResponsiveFontSize(context, base: 24);
     final valueSize = _getResponsiveFontSize(context, base: 32);
     final titleSize = _getResponsiveFontSize(context, base: 14);
     
-    return Container(
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: gradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+    // Check if this is the Total Students or Total Teachers card
+    final isStudentsCard = title == 'Total Students';
+    final isTeachersCard = title == 'Total Teachers';
+    final shouldShowArrow = isStudentsCard || isTeachersCard;
+    
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+        onTap: isStudentsCard 
+            ? _navigateToStudentDashboard 
+            : isTeachersCard 
+                ? _navigateToTeacherDashboard 
+                : null,
+        child: Container(
+          padding: EdgeInsets.all(padding),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: gradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: EdgeInsets.all(padding * 0.4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: Colors.white, size: iconSize),
-              ),
-              Icon(
-                Icons.trending_up,
-                color: Colors.white.withOpacity(0.7),
-                size: iconSize * 0.8,
-              ),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  value,
-                  style: GoogleFonts.poppins(
-                    fontSize: valueSize,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(padding * 0.4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: Colors.white, size: iconSize),
                   ),
-                ),
+                  Icon(
+                    shouldShowArrow ? Icons.arrow_forward_ios : Icons.trending_up,
+                    color: Colors.white.withOpacity(0.7),
+                    size: iconSize * 0.8,
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: titleSize,
-                  color: Colors.white.withOpacity(0.9),
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      style: GoogleFonts.poppins(
+                        fontSize: valueSize,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: titleSize,
+                      color: Colors.white.withOpacity(0.9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  /// Navigate to Student Dashboard
+  void _navigateToStudentDashboard() {
+    Get.toNamed('/StudentDashboard');
+  }
+
+  /// Navigate to Teacher Dashboard
+  void _navigateToTeacherDashboard() {
+    Get.toNamed('/TeacherDashboard');
   }
 
   Widget _buildUserGrowthChart() {

@@ -32,7 +32,7 @@ class ChartWidgets {
           gridData: FlGridData(
             show: true,
             drawVerticalLine: true,
-            horizontalInterval: 1,
+            horizontalInterval: 10, // Show grid lines every 10% (0%, 10%, 20%, ..., 100%)
             verticalInterval: 1,
             getDrawingHorizontalLine: (value) {
               return FlLine(
@@ -114,15 +114,33 @@ class ChartWidgets {
                 );
               }).toList(),
               isCurved: true,
-              gradient: LinearGradient(colors: chartConfig.lineGradient),
+              gradient: LinearGradient(
+                colors: chartConfig.lineGradient,
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+              ),
               barWidth: chartConfig.lineWidth,
               isStrokeCapRound: true,
               dotData: FlDotData(
                 show: true,
                 getDotPainter: (spot, percent, barData, index) {
+                  // Color dots based on percentage value
+                  Color dotColor;
+                  if (spot.y >= 80) {
+                    dotColor = const Color(0xFF66BB6A); // Green (excellent)
+                  } else if (spot.y >= 60) {
+                    dotColor = const Color(0xFF9CCC65); // Light green (good)
+                  } else if (spot.y >= 40) {
+                    dotColor = const Color(0xFFFFEE58); // Yellow (average)
+                  } else if (spot.y >= 20) {
+                    dotColor = const Color(0xFFFFA726); // Orange (below average)
+                  } else {
+                    dotColor = const Color(0xFFEF5350); // Red (poor)
+                  }
+                  
                   return FlDotCirclePainter(
                     radius: chartConfig.dotRadius,
-                    color: chartConfig.dotColor,
+                    color: dotColor,
                     strokeWidth: 2,
                     strokeColor: Colors.white,
                   );
@@ -131,9 +149,14 @@ class ChartWidgets {
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
-                  colors: chartConfig.areaGradient,
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0x66EF5350), // Red with 40% opacity at bottom
+                    const Color(0x44FFEE58), // Yellow with 27% opacity in middle
+                    const Color(0x1A66BB6A), // Green with 10% opacity at top
+                  ],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  stops: const [0.0, 0.5, 1.0],
                 ),
               ),
             ),

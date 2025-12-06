@@ -132,15 +132,18 @@ class ChartConfig {
   factory ChartConfig.defaultConfig() {
     return ChartConfig(
       lineGradient: [
-        const Color(0xFF26C6DA), // Colors.cyan.shade400
-        const Color(0xFF00897B), // Colors.teal.shade600
+        const Color(0xFFEF5350), // Red (poor - 0%)
+        const Color(0xFFFFA726), // Orange (below average)
+        const Color(0xFFFFEE58), // Yellow (average)
+        const Color(0xFF9CCC65), // Light green (good)
+        const Color(0xFF66BB6A), // Green (excellent - 100%)
       ],
       areaGradient: [
-        const Color(0x6626C6DA), // Colors.cyan with 40% opacity
-        const Color(0x1A00897B), // Colors.teal with 10% opacity
+        const Color(0x66EF5350), // Red with 40% opacity
+        const Color(0x1A66BB6A), // Green with 10% opacity
       ],
       gridLineColor: const Color(0x1AFFFFFF), // White with 10% opacity
-      dotColor: const Color(0xFF26C6DA),
+      dotColor: const Color(0xFF66BB6A), // Green dot color
     );
   }
 }
