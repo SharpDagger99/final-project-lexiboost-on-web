@@ -498,12 +498,16 @@ class _MyStrokeState extends State<MyStroke> {
 // Settings widget for Column 3
 class MyStrokeSettings extends StatefulWidget {
   final TextEditingController sentenceController;
+  final TextEditingController? answerController; // Answer controller for image mode
   final Function(Uint8List)? onImagePicked;
+  final VoidCallback? onImageCleared; // Callback to clear the image
 
   const MyStrokeSettings({
     super.key,
     required this.sentenceController,
+    this.answerController,
     this.onImagePicked,
+    this.onImageCleared,
   });
 
   @override
@@ -523,42 +527,109 @@ class _MyStrokeSettingsState extends State<MyStrokeSettings> {
     }
   }
 
+  Future<void> _showSwitchToTextConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Container(
+            width: MediaQuery.of(context).size.width.clamp(0.0, 400.0),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 50,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Switch to Text Mode?',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Switching to text mode will remove the uploaded image. Do you want to continue?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    AnimatedButton(
+                      width: 100,
+                      height: 40,
+                      color: Colors.grey,
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    AnimatedButton(
+                      width: 100,
+                      height: 40,
+                      color: Colors.orange,
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text(
+                        'Continue',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _isImageMode = false;
+      });
+      
+      // Clear the image by calling the callback
+      if (widget.onImageCleared != null) {
+        widget.onImageCleared!();
+      }
+      
+      // Clear the answer controller
+      if (widget.answerController != null) {
+        widget.answerController!.clear();
+      }
+      
+      // Don't clear sentenceController as it's used for text mode
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Note about score game mode requirement
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.red, width: 1.5),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.note_rounded,
-                color: Colors.red,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  "Note: This game type only works at score game mode. The game mode will automatically reset to score if this game type is used",
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.red,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
         Text(
           _isImageMode ? "Image:" : "Sentence:",
           style: GoogleFonts.poppins(
@@ -568,7 +639,7 @@ class _MyStrokeSettingsState extends State<MyStrokeSettings> {
           ),
         ),
         const SizedBox(height: 8),
-        if (_isImageMode)
+        if (_isImageMode) ...[
           AnimatedButton(
             width: 180,
             height: 50,
@@ -582,8 +653,43 @@ class _MyStrokeSettingsState extends State<MyStrokeSettings> {
                 color: Colors.black,
               ),
             ),
-          )
-        else
+          ),
+          const SizedBox(height: 20),
+          // Answer field for image mode (similar to what_called.dart)
+          Text(
+            "Answer:",
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 300,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 1),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TextField(
+              controller: widget.answerController ?? widget.sentenceController,
+              maxLength: 50,
+              style: GoogleFonts.poppins(fontSize: 16, color: Colors.black),
+              decoration: InputDecoration(
+                hintText: "The Answer...",
+                hintStyle: GoogleFonts.poppins(
+                  color: Colors.black54,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+                counterText: "", // hides default counter below field
+              ),
+            ),
+          ),
+        ] else
           Container(
             width: 450,
             height: 150,
@@ -623,10 +729,16 @@ class _MyStrokeSettingsState extends State<MyStrokeSettings> {
               width: 150,
               height: 50,
               color: _isImageMode ? Colors.blue : Colors.green,
-              onPressed: () {
-                setState(() {
-                  _isImageMode = !_isImageMode;
-                });
+              onPressed: () async {
+                // If switching from image mode to text mode, show confirmation
+                if (_isImageMode) {
+                  await _showSwitchToTextConfirmation();
+                } else {
+                  // Switching from text to image mode - no confirmation needed
+                  setState(() {
+                    _isImageMode = true;
+                  });
+                }
               },
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,

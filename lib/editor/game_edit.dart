@@ -209,6 +209,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   bool _isPublished = false; // Track if game is already published
   bool _isLaunching = false; // Loading state for launch button
   bool _showLaunchSuccess = false; // Show launch success message
+  bool _hasUnsavedChanges = false; // Track if there are unsaved changes
 
   final mathState = MathState();
 
@@ -337,15 +338,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     });
   }
 
-  /// Check if Stroke game type is used in any page
-  bool _hasStrokeGameType() {
-    for (final page in pages) {
-      if (page.gameType == 'Stroke') {
-        return true;
-      }
-    }
-    return false;
-  }
 
   /// Validate all pages for required data
   Map<int, String> _validatePages() {
@@ -382,6 +374,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
     // Show "Unsaved changes" status
     if (mounted) {
       setState(() {
+        _hasUnsavedChanges = true; // Mark as having unsaved changes
         if (!_autoSaveEnabled) {
           _autoSaveStatus = 'Auto-save disabled - unsaved changes';
         } else {
@@ -412,6 +405,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _autoSaveStatus = 'All changes saved ✓';
+            _hasUnsavedChanges = false; // Mark as saved
           });
 
           // Clear status after 3 seconds
@@ -635,15 +629,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       }
 
       progressValue = (pageIndex + 1) / pages.length;
-
-      // Ensure gameRule is set to 'score' if Stroke is used in any page
-      if (_hasStrokeGameType() && selectedGameRule != 'score') {
-        selectedGameRule = 'score';
-        heartEnabled = false;
-        timerMinutesController.clear();
-        timerSecondsController.clear();
-        timerSeconds = 0;
-      }
 
       debugPrint(
         'After setState, selectedImageBytes is null: ${selectedImageBytes == null}',
@@ -1288,7 +1273,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           await _loadPageScores();
         }
 
-        // Game loaded successfully
+        // Game loaded successfully - mark as no unsaved changes since we just loaded
+        _hasUnsavedChanges = false;
         debugPrint('Game loaded successfully ✓');
       } else {
         _showLoadingError('Game not found. Please check the game ID.');
@@ -1587,15 +1573,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         pages = loadedPages;
         // Start at the last page instead of the first
         currentPageIndex = pages.length - 1;
-
-        // Ensure gameRule is set to 'score' if Stroke is used in any page
-        if (_hasStrokeGameType() && selectedGameRule != 'score') {
-          selectedGameRule = 'score';
-          heartEnabled = false;
-          timerMinutesController.clear();
-          timerSecondsController.clear();
-          timerSeconds = 0;
-        }
 
         if (pages.isNotEmpty) {
           _loadPageData(currentPageIndex);
@@ -2372,6 +2349,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         setState(() {
           _isSaving = false;
           _showSaveSuccess = true;
+          _hasUnsavedChanges = false; // Mark as saved
         });
 
         // Hide success message after 2 seconds
@@ -3246,9 +3224,17 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
         else if (selectedGameType == 'Stroke')
           MyStrokeSettings(
             sentenceController: readSentenceController,
+            answerController: answerController,
             onImagePicked: (Uint8List imageBytes) {
               setState(() {
                 strokeImageBytes = imageBytes;
+              });
+              _triggerAutoSave();
+            },
+            onImageCleared: () {
+              setState(() {
+                strokeImageBytes = null;
+                pages[currentPageIndex].imageUrl = null;
               });
               _triggerAutoSave();
             },
@@ -3604,9 +3590,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
               width: (MediaQuery.of(context).size.width * 0.6).clamp(0, 300),
               height: 50,
               decoration: BoxDecoration(
-                color: _hasStrokeGameType()
-                    ? Colors.grey.withOpacity(0.5)
-                    : Colors.white,
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -3614,13 +3598,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 value: selectedGameRule,
                 dropdownColor: Colors.white,
                 underline: const SizedBox(),
-                icon: Icon(
+                icon: const Icon(
                   Icons.arrow_drop_down,
-                  color: _hasStrokeGameType() ? Colors.grey : Colors.black,
+                  color: Colors.black,
                 ),
                 style: GoogleFonts.poppins(
                   fontSize: 16,
-                  color: _hasStrokeGameType() ? Colors.grey : Colors.black,
+                  color: Colors.black,
                   fontWeight: FontWeight.w500,
                 ),
                 isExpanded: true,
@@ -3636,45 +3620,23 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   ),
                   DropdownMenuItem(value: 'score', child: Text('Score')),
                 ],
-                onChanged: _hasStrokeGameType()
-                    ? null // Disable if Stroke is used
-                    : (String? newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            selectedGameRule = newValue;
-                            heartEnabled = newValue == 'heart';
-                            if (newValue != 'timer') {
-                              timerMinutesController.clear();
-                              timerSecondsController.clear();
-                              timerSeconds = 0;
-                            }
-                          });
-                        }
-                      },
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedGameRule = newValue;
+                      heartEnabled = newValue == 'heart';
+                      if (newValue != 'timer') {
+                        timerMinutesController.clear();
+                        timerSecondsController.clear();
+                        timerSeconds = 0;
+                      }
+                    });
+                  }
+                },
               ),
             ),
           ],
         ),
-        if (_hasStrokeGameType())
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.red, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "Game Rules is locked to 'Score' because Stroke game type is used in this game.",
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.red,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         if (selectedGameRule == 'timer') ...[
           const SizedBox(height: 10),
           Row(
@@ -3946,8 +3908,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 width: 100,
                 height: 50,
                 color: Colors.blue,
-                onPressed: () {
-                  _showCloseConfirmationDialog();
+                onPressed: () async {
+                  // If no unsaved changes, close directly
+                  if (!_hasUnsavedChanges) {
+                    await _navigateBasedOnRole();
+                  } else {
+                    // Show confirmation dialog if there are unsaved changes
+                    _showCloseConfirmationDialog();
+                  }
                 },
                 child: Text(
                   "Close",
@@ -4398,11 +4366,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               width: 300,
                                               height: 50,
                                               decoration: BoxDecoration(
-                                                color: _hasStrokeGameType()
-                                                    ? Colors.grey.withOpacity(
-                                                        0.5,
-                                                      )
-                                                    : Colors.white,
+                                                color: Colors.white,
                                                 borderRadius:
                                                     BorderRadius.circular(10),
                                               ),
@@ -4414,17 +4378,13 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                 value: selectedGameRule,
                                                 dropdownColor: Colors.white,
                                                 underline: const SizedBox(),
-                                                icon: Icon(
+                                                icon: const Icon(
                                                   Icons.arrow_drop_down,
-                                                  color: _hasStrokeGameType()
-                                                      ? Colors.grey
-                                                      : Colors.black,
+                                                  color: Colors.black,
                                                 ),
                                                 style: GoogleFonts.poppins(
                                                   fontSize: 16,
-                                                  color: _hasStrokeGameType()
-                                                      ? Colors.grey
-                                                      : Colors.black,
+                                                  color: Colors.black,
                                                   fontWeight: FontWeight.w500,
                                                 ),
                                                 isExpanded: true,
@@ -4450,59 +4410,30 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                     child: Text('Score'),
                                                   ),
                                                 ],
-                                                onChanged: _hasStrokeGameType()
-                                                    ? null // Disable if Stroke is used
-                                                    : (String? newValue) {
-                                                        if (newValue != null) {
-                                                          setState(() {
-                                                            selectedGameRule =
-                                                                newValue;
-                                                            // Update heart and timer states based on selection
-                                                            heartEnabled =
-                                                                newValue ==
-                                                                'heart';
-                                                            if (newValue !=
-                                                                'timer') {
-                                                              timerMinutesController
-                                                                  .clear();
-                                                              timerSecondsController
-                                                                  .clear();
-                                                              timerSeconds = 0;
-                                                            }
-                                                          });
-                                                        }
-                                                      },
+                                                onChanged: (String? newValue) {
+                                                  if (newValue != null) {
+                                                    setState(() {
+                                                      selectedGameRule =
+                                                          newValue;
+                                                      // Update heart and timer states based on selection
+                                                      heartEnabled =
+                                                          newValue ==
+                                                          'heart';
+                                                      if (newValue !=
+                                                          'timer') {
+                                                        timerMinutesController
+                                                            .clear();
+                                                        timerSecondsController
+                                                            .clear();
+                                                        timerSeconds = 0;
+                                                      }
+                                                    });
+                                                  }
+                                                },
                                               ),
                                             ),
                                           ],
                                         ),
-                                        if (_hasStrokeGameType())
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 8,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                const Icon(
-                                                  Icons.info_outline,
-                                                  color: Colors.red,
-                                                  size: 16,
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Game Rules is locked to 'Score' because Stroke game type is used in this game.",
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 12,
-                                                      color: Colors.red,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
 
                                         // Timer configuration (minutes and seconds) - placed below the Game Rules dropdown
                                         if (selectedGameRule == 'timer') ...[
@@ -4914,8 +4845,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                 width: 100,
                                                 height: 50,
                                                 color: Colors.blue,
-                                                onPressed: () {
-                                                  _showCloseConfirmationDialog();
+                                                onPressed: () async {
+                                                  // If no unsaved changes, close directly
+                                                  if (!_hasUnsavedChanges) {
+                                                    await _navigateBasedOnRole();
+                                                  } else {
+                                                    // Show confirmation dialog if there are unsaved changes
+                                                    _showCloseConfirmationDialog();
+                                                  }
                                                 },
                                                 child: Text(
                                                   "Close",
@@ -5654,6 +5591,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                             MyStrokeSettings(
                                               sentenceController:
                                                   readSentenceController,
+                                              answerController: answerController,
                                               onImagePicked:
                                                   (Uint8List imageBytes) {
                                                     setState(() {
@@ -5662,6 +5600,14 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                     });
                                                     _triggerAutoSave();
                                                   },
+                                              onImageCleared: () {
+                                                setState(() {
+                                                  strokeImageBytes = null;
+                                                  pages[currentPageIndex]
+                                                      .imageUrl = null;
+                                                });
+                                                _triggerAutoSave();
+                                              },
                                             ),
                                         ],
                                       ),

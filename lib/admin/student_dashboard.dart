@@ -75,9 +75,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           'email': data['email'] ?? 'No email',
           'username': data['username'] ?? 'Unknown',
           'createdAt': data['createdAt'] ?? data['created_at'],
-          'lastActive': data['lastActive'] ?? data['last_active'],
           'profileImage': data['profileImage'] ?? data['profile_image'],
-          'status': _getStudentStatus(data['lastActive'] ?? data['last_active']),
           'banned': data['banned'] ?? false,
           'coins': data['coins'] ?? 0,
         };
@@ -108,37 +106,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
-  String _getStudentStatus(dynamic lastActive) {
-    if (lastActive == null) return 'Inactive';
-    
-    try {
-      final lastActiveDate = (lastActive as Timestamp).toDate();
-      final now = DateTime.now();
-      final difference = now.difference(lastActiveDate);
 
-      if (difference.inMinutes < 5) return 'Online';
-      if (difference.inDays < 7) return 'Active';
-      if (difference.inDays < 30) return 'Inactive';
-      return 'Dormant';
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Online':
-        return Colors.green;
-      case 'Active':
-        return Colors.blue;
-      case 'Inactive':
-        return Colors.orange;
-      case 'Dormant':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -284,8 +252,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildStudentCard(Map<String, dynamic> student) {
-    final status = student['status'] as String;
-    final statusColor = _getStatusColor(status);
     final isBanned = student['banned'] as bool? ?? false;
 
     return Container(
@@ -312,45 +278,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Row(
               children: [
                 // Avatar
-                Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: Colors.purple.withOpacity(0.3),
-                      backgroundImage: student['profileImage'] != null && (student['profileImage'] as String).isNotEmpty
-                          ? MemoryImage(base64Decode(student['profileImage']))
-                          : null,
-                      child: student['profileImage'] == null || (student['profileImage'] as String).isEmpty
-                          ? Text(
-                              (student['name'] as String)
-                                  .substring(0, 1)
-                                  .toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            )
-                          : null,
-                    ),
-                    if (!isBanned)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: statusColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF2A2A3E),
-                              width: 2,
-                            ),
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.purple.withOpacity(0.3),
+                  backgroundImage: student['profileImage'] != null && (student['profileImage'] as String).isNotEmpty
+                      ? MemoryImage(base64Decode(student['profileImage']))
+                      : null,
+                  child: student['profileImage'] == null || (student['profileImage'] as String).isEmpty
+                      ? Text(
+                          (student['name'] as String)
+                              .substring(0, 1)
+                              .toUpperCase(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
-                        ),
-                      ),
-                  ],
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 16),
                 // Student Info
@@ -406,67 +351,41 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (!isBanned)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                      if (student['coins'] != null && student['coins'] > 0) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.amber.withOpacity(0.5),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.monetization_on,
+                                size: 12,
+                                color: Colors.amber,
                               ),
-                              decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: statusColor.withOpacity(0.5),
-                                ),
-                              ),
-                              child: Text(
-                                status,
+                              const SizedBox(width: 4),
+                              Text(
+                                '${student['coins']}',
                                 style: GoogleFonts.poppins(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
-                                  color: statusColor,
+                                  color: Colors.amber,
                                 ),
                               ),
-                            ),
-                          if (student['coins'] != null && student['coins'] > 0) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Colors.amber.withOpacity(0.5),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.monetization_on,
-                                    size: 12,
-                                    color: Colors.amber,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${student['coins']}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.amber,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -534,27 +453,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(student['status'])
-                                .withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: _getStatusColor(student['status'])
-                                  .withOpacity(0.5),
-                            ),
-                          ),
-                          child: Text(
-                            student['status'],
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _getStatusColor(student['status']),
-                            ),
+                        Text(
+                          '@${student['username']}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.6),
                           ),
                         ),
                       ],
@@ -578,10 +481,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
               _buildDetailRow(
                 'Joined',
                 _formatDate(student['createdAt']),
-              ),
-              _buildDetailRow(
-                'Last Active',
-                _formatDate(student['lastActive']),
               ),
               if (student['banned'] == true) ...[
                 const SizedBox(height: 8),
