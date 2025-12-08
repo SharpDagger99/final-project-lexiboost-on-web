@@ -210,6 +210,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   bool _isLaunching = false; // Loading state for launch button
   bool _showLaunchSuccess = false; // Show launch success message
   bool _hasUnsavedChanges = false; // Track if there are unsaved changes
+  bool _showImageHint = true; // Track image hint visibility for Guess the answer
 
   final mathState = MathState();
 
@@ -3133,6 +3134,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             },
             initialChoices: multipleChoices,
             initialCorrectIndex: correctAnswerIndex,
+            initialShowImageHint: _showImageHint,
+            onImageHintToggled: (bool value) {
+              setState(() {
+                _showImageHint = value;
+              });
+            },
           )
         else if (selectedGameType == 'Guess the answer 2')
           MyGuessTheAnswerSettings(
@@ -5451,6 +5458,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               initialChoices: multipleChoices,
                                               initialCorrectIndex:
                                                   correctAnswerIndex,
+                                              initialShowImageHint: _showImageHint,
+                                              onImageHintToggled: (bool value) {
+                                                setState(() {
+                                                  _showImageHint = value;
+                                                });
+                                              },
                                             )
                                           else if (selectedGameType ==
                                               'Guess the answer 2')

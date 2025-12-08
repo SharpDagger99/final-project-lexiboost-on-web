@@ -332,5 +332,173 @@ class ChartWidgets {
       ),
     );
   }
+
+  /// Build a multi-line chart for game types by weekday
+  static Widget buildGameTypeWeekdayChart({
+    required Map<String, List<GameTypeWeekdayData>> data,
+    required Map<String, Color> gameTypeColors,
+    double height = 300,
+  }) {
+    if (data.isEmpty) {
+      return SizedBox(
+        height: height,
+        child: Center(
+          child: Text(
+            'No game data available',
+            style: GoogleFonts.poppins(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    
+    // Find max value for Y-axis
+    int maxValue = 0;
+    for (var gameTypeData in data.values) {
+      for (var dayData in gameTypeData) {
+        if (dayData.count > maxValue) {
+          maxValue = dayData.count;
+        }
+      }
+    }
+    
+    // Add padding to max value
+    maxValue = (maxValue * 1.2).ceil();
+    if (maxValue == 0) maxValue = 10;
+
+    return SizedBox(
+      height: height,
+      child: LineChart(
+        LineChartData(
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: true,
+            horizontalInterval: maxValue / 5,
+            verticalInterval: 1,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: const Color(0x1AFFFFFF),
+                strokeWidth: 1,
+              );
+            },
+            getDrawingVerticalLine: (value) {
+              return FlLine(
+                color: const Color(0x1AFFFFFF),
+                strokeWidth: 1,
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 30,
+                interval: 1,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  if (value.toInt() >= 0 && value.toInt() < weekdays.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        weekdays[value.toInt()],
+                        style: GoogleFonts.poppins(
+                          color: Colors.white.withOpacity(0.6),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: maxValue / 5,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      value.toInt().toString(),
+                      style: GoogleFonts.poppins(
+                        color: Colors.white.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+                reservedSize: 42,
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          minX: 0,
+          maxX: 6,
+          minY: 0,
+          maxY: maxValue.toDouble(),
+          lineBarsData: data.entries.map((entry) {
+            final gameType = entry.key;
+            final weekdayData = entry.value;
+            final color = gameTypeColors[gameType] ?? Colors.grey;
+            
+            return LineChartBarData(
+              spots: weekdayData.asMap().entries.map((e) {
+                return FlSpot(e.key.toDouble(), e.value.count.toDouble());
+              }).toList(),
+              isCurved: true,
+              color: color,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) {
+                  return FlDotCirclePainter(
+                    radius: 4,
+                    color: color,
+                    strokeWidth: 2,
+                    strokeColor: Colors.white,
+                  );
+                },
+              ),
+              belowBarData: BarAreaData(
+                show: false,
+              ),
+            );
+          }).toList(),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                return touchedBarSpots.map((barSpot) {
+                  final gameType = data.keys.elementAt(barSpot.barIndex);
+                  return LineTooltipItem(
+                    '$gameType\n${weekdays[barSpot.x.toInt()]}: ${barSpot.y.toInt()} plays',
+                    GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 

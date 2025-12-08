@@ -164,23 +164,31 @@ class MyGuessTheAnswer extends StatelessWidget {
                     final index = entry.key;
                     final choice = entry.value;
                     final isSelected = selectedAnswerIndex == index;
+                    
+                    // Calculate button width based on text length (max 40 chars)
+                    final textLength = choice.length.clamp(0, 40);
+                    final buttonWidth = (textLength * 8.0).clamp(150.0, 320.0);
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: AnimatedButton(
-                        width: 200,
+                        width: buttonWidth,
                         height: 50,
                         color: isSelected ? Colors.green : Colors.lightBlue,
                         onPressed: () => onAnswerSelected(index),
-                        child: Text(
-                          choice.isNotEmpty ? choice : "Choice ${index + 1}",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          child: Text(
+                            choice.isNotEmpty ? choice : "Choice ${index + 1}",
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     );
@@ -478,7 +486,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                       constraints: const BoxConstraints(maxWidth: 350),
                       child: TextField(
                         controller: choiceControllers[0],
-                        maxLength: 50,
+                        maxLength: 40,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -521,7 +529,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                       constraints: const BoxConstraints(maxWidth: 350),
                       child: TextField(
                         controller: choiceControllers[1],
-                        maxLength: 50,
+                        maxLength: 40,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -564,7 +572,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                       constraints: const BoxConstraints(maxWidth: 350),
                       child: TextField(
                         controller: choiceControllers[2],
-                        maxLength: 50,
+                        maxLength: 40,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -607,7 +615,7 @@ class _MyGuessTheAnswerSettingsState extends State<MyGuessTheAnswerSettings> {
                       constraints: const BoxConstraints(maxWidth: 350),
                       child: TextField(
                         controller: choiceControllers[3],
-                        maxLength: 50,
+                        maxLength: 40,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -699,6 +707,7 @@ Future<String> uploadGuessTheAnswerImageToFirebase({
 /// @param multipleChoice3 - Third multiple choice option
 /// @param multipleChoice4 - Fourth multiple choice option
 /// @param correctAnswerIndex - Index of the correct answer (0-3)
+/// @param showImageHint - Whether to show the image hints (default: true)
 Future<void> saveGuessTheAnswerToFirebase({
   required String userId,
   required String gameId,
@@ -714,6 +723,7 @@ Future<void> saveGuessTheAnswerToFirebase({
   required String multipleChoice3,
   required String multipleChoice4,
   required int correctAnswerIndex,
+  bool showImageHint = true,
 }) async {
   try {
     final firestore = FirebaseFirestore.instance;
@@ -741,6 +751,7 @@ Future<void> saveGuessTheAnswerToFirebase({
       'multipleChoice3': multipleChoice3, // Third choice
       'multipleChoice4': multipleChoice4, // Fourth choice
       'correctAnswerIndex': correctAnswerIndex, // Index of correct answer (0-3)
+      'showImageHint': showImageHint, // Toggle state for image hints
       'gameType': 'guess_the_answer',
       'timestamp': FieldValue.serverTimestamp(),
     };
@@ -761,7 +772,7 @@ Future<void> saveGuessTheAnswerToFirebase({
 /// @param gameId - The game ID from created_games collection
 /// @param roundDocId - The document ID from game_rounds collection
 /// @param gameTypeDocId - The document ID from game_type subcollection
-/// @returns Map containing question, hint, images, multiple choices, and correct answer index
+/// @returns Map containing question, hint, images, multiple choices, correct answer index, and showImageHint
 Future<Map<String, dynamic>?> loadGuessTheAnswerFromFirebase({
   required String userId,
   required String gameId,
@@ -798,6 +809,7 @@ Future<Map<String, dynamic>?> loadGuessTheAnswerFromFirebase({
         'multipleChoice3': data?['multipleChoice3'] ?? '',
         'multipleChoice4': data?['multipleChoice4'] ?? '',
         'correctAnswerIndex': data?['correctAnswerIndex'] ?? -1,
+        'showImageHint': data?['showImageHint'] ?? true, // Default to true if not set
       };
     } else {
       print('Document does not exist');

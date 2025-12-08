@@ -20,6 +20,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
   final int correctAnswerIndex;
   final int selectedAnswerIndex;
   final Function(int) onAnswerSelected;
+  final bool showImageHint; // Add toggle state
 
   const MyFillInTheBlank3({
     super.key,
@@ -32,6 +33,7 @@ class MyFillInTheBlank3 extends StatelessWidget {
     this.correctAnswerIndex = -1,
     this.selectedAnswerIndex = -1,
     required this.onAnswerSelected,
+    this.showImageHint = true, // Default to showing image
   });
 
   @override
@@ -60,65 +62,66 @@ class MyFillInTheBlank3 extends StatelessWidget {
         ),
         const SizedBox(height: 20),
 
-        // Image preview
-        Center(
-          child: Container(
-            width: 400,
-            height: 200,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(25),
-              
-            ),
-            child: pickedImage != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(25),
-                    child: Image.memory(pickedImage!, fit: BoxFit.contain),
-                  )
-                : imageUrl != null && imageUrl!.isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(25),
-                    child: Image.network(
-                      imageUrl!,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                : null,
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Text(
-                            "Failed to load image",
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: Colors.red,
-                              fontWeight: FontWeight.w500,
+        // Image preview (only show if toggle is on)
+        if (showImageHint) ...[
+          Center(
+            child: Container(
+              width: 400,
+              height: 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(25),
+                
+              ),
+              child: pickedImage != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(25),
+                      child: Image.memory(pickedImage!, fit: BoxFit.contain),
+                    )
+                  : imageUrl != null && imageUrl!.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(25),
+                      child: Image.network(
+                        imageUrl!,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                  : null,
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      "Image Hint",
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.blue,
-                        fontWeight: FontWeight.w500,
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Text(
+                              "Failed to load image",
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.red,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        "Image Hint",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
+            ),
           ),
-        ),
-
-        const SizedBox(height: 20),
+          const SizedBox(height: 20),
+        ],
 
         // Question text
         Container(
@@ -154,23 +157,38 @@ class MyFillInTheBlank3 extends StatelessWidget {
                     final index = entry.key;
                     final choice = entry.value;
                     final isSelected = selectedAnswerIndex == index;
+                    
+                    // Calculate button width based on text length (max 80 chars)
+                    final textLength = choice.length.clamp(0, 80);
+                    final calculatedWidth = textLength * 8.0;
+                    
+                    // Cap width at 400px, text will wrap to second line if it exceeds this
+                    final buttonWidth = calculatedWidth.clamp(200.0, 400.0);
+                    
+                    // Determine if text should wrap to 2 lines (when calculated width exceeds 400)
+                    final shouldWrap = calculatedWidth >= 400.0;
+                    final buttonHeight = shouldWrap ? 70.0 : 50.0;
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: AnimatedButton(
-                        width: 200,
-                        height: 50,
+                        width: buttonWidth,
+                        height: buttonHeight,
                         color: isSelected ? Colors.green : Colors.lightBlue,
                         onPressed: () => onAnswerSelected(index),
-                        child: Text(
-                          choice.isNotEmpty ? choice : "Choice ${index + 1}",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                          child: Text(
+                            choice.isNotEmpty ? choice : "Choice ${index + 1}",
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.visible,
                           ),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     );
@@ -200,6 +218,8 @@ class MyFillInTheBlank3Settings extends StatefulWidget {
   final Function(int) onCorrectAnswerSelected;
   final List<String> initialChoices; // Add initial choices
   final int initialCorrectIndex; // Add initial correct answer index
+  final bool initialShowImageHint; // Add initial toggle state
+  final Function(bool) onImageHintToggled; // Add toggle callback
 
   const MyFillInTheBlank3Settings({
     super.key,
@@ -212,6 +232,8 @@ class MyFillInTheBlank3Settings extends StatefulWidget {
     required this.onCorrectAnswerSelected,
     this.initialChoices = const [],
     this.initialCorrectIndex = -1,
+    this.initialShowImageHint = true,
+    required this.onImageHintToggled,
   });
 
   @override
@@ -228,10 +250,14 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
   ];
   int selectedChoiceIndex =
       0; // Track which choice is selected (default to first choice)
+  late bool showImageHint; // Track image hint toggle state
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize image hint toggle state
+    showImageHint = widget.initialShowImageHint;
     
     // Load initial choices into controllers
     for (int i = 0; i < choiceControllers.length; i++) {
@@ -332,7 +358,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Upload image
+        // Upload image with toggle
         Row(
           children: [
             Text(
@@ -357,6 +383,32 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                   color: Colors.black,
                 ),
               ),
+            ),
+            const SizedBox(width: 10),
+            // Toggle switch for image hint
+            Row(
+              children: [
+                Text(
+                  "Show Hint",
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: showImageHint,
+                  onChanged: (value) {
+                    setState(() {
+                      showImageHint = value;
+                    });
+                    widget.onImageHintToggled(value);
+                  },
+                  activeThumbColor: Colors.green,
+                  inactiveThumbColor: Colors.grey,
+                ),
+              ],
             ),
           ],
         ),
@@ -459,7 +511,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: TextField(
                         controller: choiceControllers[0],
-                        maxLength: 50,
+                        maxLength: 80,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -502,7 +554,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: TextField(
                         controller: choiceControllers[1],
-                        maxLength: 50,
+                        maxLength: 80,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -545,7 +597,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: TextField(
                         controller: choiceControllers[2],
-                        maxLength: 50,
+                        maxLength: 80,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -588,7 +640,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: TextField(
                         controller: choiceControllers[3],
-                        maxLength: 50,
+                        maxLength: 80,
                         maxLines: 3,
                         minLines: 1,
                         decoration: InputDecoration(
@@ -676,6 +728,7 @@ Future<String> uploadFillTheBlank3ImageToFirebase({
 /// @param multipleChoice2 - Second multiple choice option
 /// @param multipleChoice3 - Third multiple choice option
 /// @param multipleChoice4 - Fourth multiple choice option
+/// @param showImageHint - Whether to show the image hint (default: true)
 Future<void> saveFillTheBlank3ToFirebase({
   required String userId,
   required String gameId,
@@ -689,6 +742,7 @@ Future<void> saveFillTheBlank3ToFirebase({
   required String multipleChoice2,
   required String multipleChoice3,
   required String multipleChoice4,
+  bool showImageHint = true,
 }) async {
   try {
     final firestore = FirebaseFirestore.instance;
@@ -714,6 +768,7 @@ Future<void> saveFillTheBlank3ToFirebase({
       'multipleChoice2': multipleChoice2, // Second choice
       'multipleChoice3': multipleChoice3, // Third choice
       'multipleChoice4': multipleChoice4, // Fourth choice
+      'showImageHint': showImageHint, // Toggle state for image hint
       'gameType': 'fill_the_blank3',
       'timestamp': FieldValue.serverTimestamp(),
     };
@@ -734,7 +789,7 @@ Future<void> saveFillTheBlank3ToFirebase({
 /// @param gameId - The game ID from created_games collection
 /// @param roundDocId - The document ID from game_rounds collection
 /// @param gameTypeDocId - The document ID from game_type subcollection
-/// @returns Map containing question, gameHint, answer, image, and multiple choices
+/// @returns Map containing question, gameHint, answer, image, multiple choices, and showImageHint
 Future<Map<String, dynamic>?> loadFillTheBlank3FromFirebase({
   required String userId,
   required String gameId,
@@ -769,6 +824,7 @@ Future<Map<String, dynamic>?> loadFillTheBlank3FromFirebase({
         'multipleChoice2': data?['multipleChoice2'] ?? '',
         'multipleChoice3': data?['multipleChoice3'] ?? '',
         'multipleChoice4': data?['multipleChoice4'] ?? '',
+        'showImageHint': data?['showImageHint'] ?? true, // Default to true if not set
       };
     } else {
       print('Document does not exist');

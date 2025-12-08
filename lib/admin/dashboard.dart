@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter, unnecessary_brace_in_string_interps
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter, unnecessary_brace_in_string_interps, unnecessary_to_list_in_spreads
 
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
@@ -8,6 +8,7 @@ import '../models/chart_data.dart';
 import '../models/chart_widgets.dart';
 import '../models/custom_scroll_behavior.dart';
 import '../services/dashboard_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class MyDashBoard extends StatefulWidget {
   const MyDashBoard({super.key});
@@ -19,6 +20,8 @@ class MyDashBoard extends StatefulWidget {
 class _MyDashBoardState extends State<MyDashBoard> {
   final DashboardService _dashboardService = DashboardService();
   DashboardStats _stats = DashboardStats.empty();
+  List<GameTypeStats> _gameTypeStats = [];
+  Map<String, List<GameTypeWeekdayData>> _gameTypesByWeekday = {};
   bool _isLoading = true;
 
   @override
@@ -30,9 +33,15 @@ class _MyDashBoardState extends State<MyDashBoard> {
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
     try {
-      final stats = await _dashboardService.getDashboardStats();
+      final results = await Future.wait([
+        _dashboardService.getDashboardStats(),
+        _dashboardService.getGameTypeStatistics(),
+        _dashboardService.getGameTypesByWeekday(),
+      ]);
       setState(() {
-        _stats = stats;
+        _stats = results[0] as DashboardStats;
+        _gameTypeStats = results[1] as List<GameTypeStats>;
+        _gameTypesByWeekday = results[2] as Map<String, List<GameTypeWeekdayData>>;
         _isLoading = false;
       });
     } catch (e) {
@@ -102,6 +111,73 @@ class _MyDashBoardState extends State<MyDashBoard> {
                           ),
                           SizedBox(height: _getResponsiveSpacing(context)),
                           _buildStatsGrid(),
+
+                          SizedBox(height: _getResponsiveSpacing(context) * 2),
+
+                          // Total Games Played Card
+                          Text(
+                            'Game Statistics',
+                            style: GoogleFonts.poppins(
+                              fontSize: _getResponsiveFontSize(
+                                context,
+                                base: 20,
+                              ),
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: _getResponsiveSpacing(context)),
+                          _buildTotalGamesPlayedCard(),
+
+                          SizedBox(height: _getResponsiveSpacing(context) * 2),
+
+                          // Game Type Statistics
+                          Text(
+                            'Games Played by Type',
+                            style: GoogleFonts.poppins(
+                              fontSize: _getResponsiveFontSize(
+                                context,
+                                base: 20,
+                              ),
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: _getResponsiveSpacing(context)),
+                          _buildGameTypeStatistics(),
+
+                          SizedBox(height: _getResponsiveSpacing(context) * 2),
+
+                          // Game Types by Weekday Chart
+                          Row(
+                            children: [
+                              Text(
+                                'Game Types Played by Weekday',
+                                style: GoogleFonts.poppins(
+                                  fontSize: _getResponsiveFontSize(
+                                    context,
+                                    base: 20,
+                                  ),
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '(${_getCurrentWeekDateRange()})',
+                                style: GoogleFonts.poppins(
+                                  fontSize: _getResponsiveFontSize(
+                                    context,
+                                    base: 14,
+                                  ),
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: _getResponsiveSpacing(context)),
+                          _buildGameTypeWeekdayChart(),
 
                           SizedBox(height: _getResponsiveSpacing(context) * 2),
 
@@ -294,7 +370,7 @@ class _MyDashBoardState extends State<MyDashBoard> {
     final valueSize = _getResponsiveFontSize(context, base: 32);
     final titleSize = _getResponsiveFontSize(context, base: 14);
     
-    // Check if this is the Total Students or Total Teachers card
+    // Check if this is a clickable card
     final isStudentsCard = title == 'Total Students';
     final isTeachersCard = title == 'Total Teachers';
     final shouldShowArrow = isStudentsCard || isTeachersCard;
@@ -515,6 +591,432 @@ class _MyDashBoardState extends State<MyDashBoard> {
     );
   }
 
+  Widget _buildTotalGamesPlayedCard() {
+    final padding = _getResponsivePadding(context);
+    
+    return Container(
+      padding: EdgeInsets.all(padding * 1.5),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF6B6B), Color(0xFFEE5A6F)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.sports_esports,
+              color: Colors.white,
+              size: _getResponsiveFontSize(context, base: 40),
+            ),
+          ),
+          SizedBox(width: padding),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Total Games Played',
+                  style: GoogleFonts.poppins(
+                    fontSize: _getResponsiveFontSize(context, base: 16),
+                    color: Colors.white.withOpacity(0.9),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _stats.totalGamesPlayed.toString(),
+                    style: GoogleFonts.poppins(
+                      fontSize: _getResponsiveFontSize(context, base: 36),
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameTypeStatistics() {
+    if (_gameTypeStats.isEmpty) {
+      return Container(
+        padding: EdgeInsets.all(_getResponsivePadding(context) * 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A3E),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'No game data available',
+            style: GoogleFonts.poppins(
+              fontSize: _getResponsiveFontSize(context, base: 14),
+              color: Colors.white70,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final padding = _getResponsivePadding(context);
+    final spacing = _getResponsiveSpacing(context);
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width >= 900;
+
+    // Calculate total games played across all types
+    final totalGamesAcrossTypes = _gameTypeStats.fold<int>(
+      0,
+      (sum, stat) => sum + stat.totalPlayed,
+    );
+
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: isDesktop
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side - Progress bars
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _gameTypeStats.map((stat) {
+                      final percentage = totalGamesAcrossTypes > 0
+                          ? (stat.totalPlayed / totalGamesAcrossTypes * 100)
+                          : 0.0;
+                      
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: spacing),
+                        child: _buildGameTypeBar(
+                          gameType: _formatGameTypeName(stat.gameType),
+                          totalPlayed: stat.totalPlayed,
+                          percentage: percentage,
+                          color: _getGameTypeColor(stat.gameType),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                SizedBox(width: padding * 2),
+                // Right side - Pie chart
+                Expanded(
+                  flex: 2,
+                  child: _buildGameTypePieChart(totalGamesAcrossTypes),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Progress bars
+                ..._gameTypeStats.map((stat) {
+                  final percentage = totalGamesAcrossTypes > 0
+                      ? (stat.totalPlayed / totalGamesAcrossTypes * 100)
+                      : 0.0;
+                  
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: spacing),
+                    child: _buildGameTypeBar(
+                      gameType: _formatGameTypeName(stat.gameType),
+                      totalPlayed: stat.totalPlayed,
+                      percentage: percentage,
+                      color: _getGameTypeColor(stat.gameType),
+                    ),
+                  );
+                }).toList(),
+                SizedBox(height: spacing * 2),
+                // Pie chart below on mobile
+                _buildGameTypePieChart(totalGamesAcrossTypes),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildGameTypePieChart(int totalGamesAcrossTypes) {
+    final width = MediaQuery.of(context).size.width;
+    final chartSize = width >= 900 ? 280.0 : 240.0;
+
+    return Column(
+      children: [
+        SizedBox(
+          height: chartSize,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: chartSize * 0.25,
+              sections: _gameTypeStats.map((stat) {
+                final percentage = totalGamesAcrossTypes > 0
+                    ? (stat.totalPlayed / totalGamesAcrossTypes * 100)
+                    : 0.0;
+                final color = _getGameTypeColor(stat.gameType);
+                
+                return PieChartSectionData(
+                  color: color,
+                  value: stat.totalPlayed.toDouble(),
+                  title: '${percentage.toStringAsFixed(1)}%',
+                  radius: chartSize * 0.18,
+                  titleStyle: GoogleFonts.poppins(
+                    fontSize: _getResponsiveFontSize(context, base: 12),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  badgeWidget: null,
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        SizedBox(height: _getResponsiveSpacing(context)),
+        // Legend
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: _gameTypeStats.map((stat) {
+            return _buildLegendItem(
+              _formatGameTypeName(stat.gameType),
+              _getGameTypeColor(stat.gameType),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: _getResponsiveFontSize(context, base: 11),
+            color: Colors.white70,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGameTypeWeekdayChart() {
+    final padding = _getResponsivePadding(context);
+    final chartHeight = _getChartHeight(context);
+
+    // Create color map for game types
+    Map<String, Color> gameTypeColors = {};
+    for (var gameType in _gameTypesByWeekday.keys) {
+      gameTypeColors[gameType] = _getGameTypeColor(gameType);
+    }
+
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A3E),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ChartWidgets.buildGameTypeWeekdayChart(
+            data: _gameTypesByWeekday,
+            gameTypeColors: gameTypeColors,
+            height: chartHeight - (padding * 2),
+          ),
+          if (_gameTypesByWeekday.isNotEmpty) ...[
+            SizedBox(height: _getResponsiveSpacing(context) * 2),
+            // Legend
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: _gameTypesByWeekday.keys.map((gameType) {
+                return _buildLegendItem(
+                  _formatGameTypeName(gameType),
+                  _getGameTypeColor(gameType),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameTypeBar({
+    required String gameType,
+    required int totalPlayed,
+    required double percentage,
+    required Color color,
+  }) {
+    final fontSize = _getResponsiveFontSize(context, base: 14);
+    final progressHeight = MediaQuery.of(context).size.width < 600 ? 10.0 : 12.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(
+                gameType,
+                style: GoogleFonts.poppins(
+                  fontSize: fontSize,
+                  color: Colors.white.withOpacity(0.9),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$totalPlayed plays (${percentage.toStringAsFixed(1)}%)',
+              style: GoogleFonts.poppins(
+                fontSize: fontSize,
+                color: Colors.white.withOpacity(0.8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: percentage / 100,
+            minHeight: progressHeight,
+            backgroundColor: Colors.white.withOpacity(0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatGameTypeName(String gameType) {
+    // Normalize the game type name (handle both spaces and underscores)
+    final normalized = gameType.toLowerCase().replaceAll(' ', '_');
+    
+    switch (normalized) {
+      case 'fill_in_the_blank':
+      case 'fill_the_blank':
+        return 'Fill in the Blank';
+      case 'fill_in_the_blank_2':
+      case 'fill_the_blank_2':
+        return 'Fill in the Blank 2';
+      case 'guess_the_answer':
+        return 'Guess the Answer';
+      case 'guess_the_answer_2':
+        return 'Guess the Answer 2';
+      case 'image_match':
+        return 'Image Match';
+      case 'listen_and_repeat':
+        return 'Listen and Repeat';
+      case 'math':
+        return 'Math';
+      case 'read_the_sentence':
+        return 'Read the Sentence';
+      case 'stroke':
+        return 'Stroke';
+      case 'what_is_it_called':
+        return 'What is it Called';
+      default:
+        // Return original with proper capitalization
+        return gameType
+            .split(RegExp(r'[_\s]+'))
+            .map((word) => word.isEmpty
+                ? ''
+                : word[0].toUpperCase() + word.substring(1).toLowerCase())
+            .join(' ');
+    }
+  }
+
+  Color _getGameTypeColor(String gameType) {
+    // Normalize the game type name (handle both spaces and underscores)
+    final normalized = gameType.toLowerCase().replaceAll(' ', '_');
+    
+    switch (normalized) {
+      case 'fill_in_the_blank':
+      case 'fill_the_blank':
+        return const Color(0xFF4CAF50); // Green
+      case 'fill_in_the_blank_2':
+      case 'fill_the_blank_2':
+        return const Color(0xFFFFEB3B); // Yellow
+      case 'guess_the_answer':
+        return const Color(0xFFFF9800); // Orange
+      case 'guess_the_answer_2':
+        return const Color(0xFF00BCD4); // Cyan
+      case 'image_match':
+        return const Color(0xFF8BC34A); // Light Green
+      case 'listen_and_repeat':
+        return const Color(0xFF9C27B0); // Violet
+      case 'math':
+        return const Color(0xFF9E9E9E); // Grey
+      case 'read_the_sentence':
+        return const Color(0xFFFFFFFF); // White
+      case 'stroke':
+        return const Color(0xFFE91E63); // Pink
+      case 'what_is_it_called':
+        return const Color(0xFFF44336); // Red
+      default:
+        return const Color(0xFF607D8B); // Blue Grey
+    }
+  }
+
   /// Helper function to escape CSV fields
   String _escapeCsvField(String field) {
     // If field contains comma, quote, or newline, wrap in quotes and escape quotes
@@ -620,6 +1122,32 @@ class _MyDashBoardState extends State<MyDashBoard> {
     csvBuffer.writeln(
       'Students,${_stats.totalStudents},${_stats.studentPercentage.toStringAsFixed(2)}%',
     );
+    csvBuffer.writeln(''); // Empty line
+
+    // Game Statistics
+    csvBuffer.writeln('GAME STATISTICS');
+    csvBuffer.writeln('Total Games Played,${_stats.totalGamesPlayed}');
+    csvBuffer.writeln(''); // Empty line
+
+    // Game Type Statistics
+    csvBuffer.writeln('GAMES PLAYED BY TYPE');
+    csvBuffer.writeln('Game Type,Total Played,Total Correct,Total Wrong,Percentage');
+    if (_gameTypeStats.isNotEmpty) {
+      final totalGamesAcrossTypes = _gameTypeStats.fold<int>(
+        0,
+        (sum, stat) => sum + stat.totalPlayed,
+      );
+      for (var stat in _gameTypeStats) {
+        final percentage = totalGamesAcrossTypes > 0
+            ? (stat.totalPlayed / totalGamesAcrossTypes * 100)
+            : 0.0;
+        csvBuffer.writeln(
+          '${_escapeCsvField(_formatGameTypeName(stat.gameType))},${stat.totalPlayed},${stat.totalCorrect},${stat.totalWrong},${percentage.toStringAsFixed(2)}%',
+        );
+      }
+    } else {
+      csvBuffer.writeln('No game data available,0,0,0,0%');
+    }
     csvBuffer.writeln(''); // Empty line
 
     // User Registrations by Weekday (Current Week - Percentage Based)

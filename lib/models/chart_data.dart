@@ -42,6 +42,7 @@ class DashboardStats {
   final int totalClasses;
   final int activeVideoCalls;
   final int totalPublishedGames;
+  final int totalGamesPlayed;
   final int totalUsers;
   final List<MonthlyChartData> monthlyGrowth;
 
@@ -51,6 +52,7 @@ class DashboardStats {
     required this.totalClasses,
     required this.activeVideoCalls,
     required this.totalPublishedGames,
+    required this.totalGamesPlayed,
     required this.monthlyGrowth,
   }) : totalUsers = totalTeachers + totalStudents;
 
@@ -71,6 +73,7 @@ class DashboardStats {
       totalClasses: 0,
       activeVideoCalls: 0,
       totalPublishedGames: 0,
+      totalGamesPlayed: 0,
       monthlyGrowth: [],
     );
   }
@@ -81,6 +84,7 @@ class DashboardStats {
     int? totalClasses,
     int? activeVideoCalls,
     int? totalPublishedGames,
+    int? totalGamesPlayed,
     List<MonthlyChartData>? monthlyGrowth,
   }) {
     return DashboardStats(
@@ -89,6 +93,7 @@ class DashboardStats {
       totalClasses: totalClasses ?? this.totalClasses,
       activeVideoCalls: activeVideoCalls ?? this.activeVideoCalls,
       totalPublishedGames: totalPublishedGames ?? this.totalPublishedGames,
+      totalGamesPlayed: totalGamesPlayed ?? this.totalGamesPlayed,
       monthlyGrowth: monthlyGrowth ?? this.monthlyGrowth,
     );
   }
@@ -146,5 +151,18 @@ class ChartConfig {
       dotColor: const Color(0xFF66BB6A), // Green dot color
     );
   }
+}
+
+/// Model class for game type weekday data
+class GameTypeWeekdayData {
+  final String weekday;
+  final int count;
+  final String gameType;
+
+  GameTypeWeekdayData({
+    required this.weekday,
+    required this.count,
+    required this.gameType,
+  });
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:lexi_on_web/admin/admin.dart';
+import 'package:lexi_on_web/admin/game_dashboard.dart';
 import 'package:lexi_on_web/admin/student_dashboard.dart';
 import 'package:lexi_on_web/admin/teachers_dashboard.dart';
 import 'package:lexi_on_web/editor/game_edit.dart';
@@ -50,7 +51,7 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/game_edit', page: () => const MyGameEdit()),
         GetPage(name: '/game_save', page: () => const MyGameSave()),
         GetPage(name: '/teacher_home', page: () => const MyTeacherHome()),
-        GetPage(name: '/testing', page: () => const MyTesting()),
+        
         GetPage(name: '/game_published', page: () => const MyGamePublished()),
         GetPage(name: '/game_rate', page: () => const MyGameRate()),
         GetPage(name: '/game_manage', page: () => const MyManagement()),
@@ -59,6 +60,8 @@ class MyApp extends StatelessWidget {
          GetPage(name: '/teacher_profile', page: () => const MyTeacherProfile()),
          GetPage(name: '/StudentDashboard', page: () => StudentDashboard()),
          GetPage(name: '/TeacherDashboard', page: () => const MyTeachersDashboard()),
+         GetPage(name: '/game_dashboard', page: () => const MyGameDashboard()),
+         GetPage(name: '/testing', page: () => const MyTesting()),
       ],
     );
   }

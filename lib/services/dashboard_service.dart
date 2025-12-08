@@ -17,6 +17,7 @@ class DashboardService {
         _getClassesCount(),
         _getActiveVideoCallsCount(),
         _getPublishedGamesCount(),
+        _getTotalGamesPlayedCount(),
         _getMonthlyGrowthData(),
       ]);
 
@@ -26,7 +27,8 @@ class DashboardService {
         totalClasses: results[2] as int,
         activeVideoCalls: results[3] as int,
         totalPublishedGames: results[4] as int,
-        monthlyGrowth: results[5] as List<MonthlyChartData>,
+        totalGamesPlayed: results[5] as int,
+        monthlyGrowth: results[6] as List<MonthlyChartData>,
       );
     } catch (e) {
       print('Error fetching dashboard stats: $e');
@@ -95,6 +97,35 @@ class DashboardService {
       return snapshot.docs.length;
     } catch (e) {
       print('Error fetching published games count: $e');
+      return 0;
+    }
+  }
+
+  /// Get total number of games played by all students
+  Future<int> _getTotalGamesPlayedCount() async {
+    try {
+      // Get all students
+      final studentsSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'student')
+          .get();
+
+      int totalGamesPlayed = 0;
+
+      // For each student, count their completed games
+      for (var studentDoc in studentsSnapshot.docs) {
+        final completedGamesSnapshot = await _firestore
+            .collection('users')
+            .doc(studentDoc.id)
+            .collection('completed_games')
+            .get();
+        
+        totalGamesPlayed += completedGamesSnapshot.docs.length;
+      }
+
+      return totalGamesPlayed;
+    } catch (e) {
+      print('Error fetching total games played count: $e');
       return 0;
     }
   }
@@ -271,6 +302,180 @@ class DashboardService {
         'total': 0,
       };
     }
+  }
+
+  /// Get game type statistics from all students
+  Future<List<GameTypeStats>> getGameTypeStatistics() async {
+    try {
+      // Get all students
+      final studentsSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'student')
+          .get();
+
+      // Map to aggregate game type stats
+      Map<String, GameTypeStats> gameTypeMap = {};
+
+      // For each student, get their game_type_stats
+      for (var studentDoc in studentsSnapshot.docs) {
+        final gameTypeStatsSnapshot = await _firestore
+            .collection('users')
+            .doc(studentDoc.id)
+            .collection('game_type_stats')
+            .get();
+
+        for (var statDoc in gameTypeStatsSnapshot.docs) {
+          final data = statDoc.data();
+          final gameType = data['gameType'] as String? ?? 'Unknown';
+          final totalCorrect = data['totalCorrect'] as int? ?? 0;
+          final totalWrong = data['totalWrong'] as int? ?? 0;
+          final totalPlayed = data['totalPlayed'] as int? ?? 0;
+
+          if (gameTypeMap.containsKey(gameType)) {
+            // Aggregate existing stats
+            gameTypeMap[gameType] = gameTypeMap[gameType]!.copyWith(
+              totalCorrect: gameTypeMap[gameType]!.totalCorrect + totalCorrect,
+              totalWrong: gameTypeMap[gameType]!.totalWrong + totalWrong,
+              totalPlayed: gameTypeMap[gameType]!.totalPlayed + totalPlayed,
+            );
+          } else {
+            // Create new entry
+            gameTypeMap[gameType] = GameTypeStats(
+              gameType: gameType,
+              totalCorrect: totalCorrect,
+              totalWrong: totalWrong,
+              totalPlayed: totalPlayed,
+            );
+          }
+        }
+      }
+
+      // Convert to list and sort by total played (descending)
+      final statsList = gameTypeMap.values.toList();
+      statsList.sort((a, b) => b.totalPlayed.compareTo(a.totalPlayed));
+
+      return statsList;
+    } catch (e) {
+      print('Error fetching game type statistics: $e');
+      return [];
+    }
+  }
+
+  /// Get game types played by weekday for the current week
+  Future<Map<String, List<GameTypeWeekdayData>>> getGameTypesByWeekday() async {
+    try {
+      final now = DateTime.now();
+      
+      // Get start of current week (Monday 00:00:00)
+      final daysFromMonday = now.weekday - 1;
+      final startOfWeek = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: daysFromMonday));
+      
+      // Get end of current week (Sunday 23:59:59)
+      final endOfWeek = startOfWeek.add(const Duration(days: 7));
+      
+      // Get all students
+      final studentsSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'student')
+          .get();
+
+      // Map to store game type counts by weekday
+      // Structure: {gameType: {weekday: count}}
+      Map<String, Map<String, int>> gameTypeWeekdayMap = {};
+
+      // For each student, get their completed games from current week
+      for (var studentDoc in studentsSnapshot.docs) {
+        final completedGamesSnapshot = await _firestore
+            .collection('users')
+            .doc(studentDoc.id)
+            .collection('completed_games')
+            .get();
+
+        for (var gameDoc in completedGamesSnapshot.docs) {
+          final data = gameDoc.data();
+          
+          // Check if game has completedAt timestamp
+          if (data['completedAt'] != null) {
+            final completedAt = (data['completedAt'] as Timestamp).toDate();
+            
+            // Only count games from current week
+            if (completedAt.isAfter(startOfWeek.subtract(const Duration(milliseconds: 1))) &&
+                completedAt.isBefore(endOfWeek)) {
+              
+              final gameType = data['gameType'] as String? ?? 'Unknown';
+              final weekday = completedAt.weekday; // 1 = Monday, 7 = Sunday
+              final weekdayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
+              
+              // Initialize maps if needed
+              if (!gameTypeWeekdayMap.containsKey(gameType)) {
+                gameTypeWeekdayMap[gameType] = {
+                  'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
+                };
+              }
+              
+              gameTypeWeekdayMap[gameType]![weekdayName] = 
+                  (gameTypeWeekdayMap[gameType]![weekdayName] ?? 0) + 1;
+            }
+          }
+        }
+      }
+
+      // Convert to result format
+      Map<String, List<GameTypeWeekdayData>> result = {};
+      
+      for (var gameType in gameTypeWeekdayMap.keys) {
+        result[gameType] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((weekday) {
+          return GameTypeWeekdayData(
+            weekday: weekday,
+            count: gameTypeWeekdayMap[gameType]![weekday] ?? 0,
+            gameType: gameType,
+          );
+        }).toList();
+      }
+
+      return result;
+    } catch (e) {
+      print('Error fetching game types by weekday: $e');
+      return {};
+    }
+  }
+}
+
+/// Model class for game type statistics
+class GameTypeStats {
+  final String gameType;
+  final int totalCorrect;
+  final int totalWrong;
+  final int totalPlayed;
+
+  GameTypeStats({
+    required this.gameType,
+    required this.totalCorrect,
+    required this.totalWrong,
+    required this.totalPlayed,
+  });
+
+  double get winRate {
+    if (totalCorrect == 0 && totalWrong == 0) return 0.0;
+    // Using the scoring system: correct = +25%, wrong = -50%
+    final correctPoints = totalCorrect * 25.0;
+    final wrongPoints = totalWrong * 50.0;
+    return (correctPoints - wrongPoints).clamp(0.0, 100.0);
+  }
+
+  GameTypeStats copyWith({
+    String? gameType,
+    int? totalCorrect,
+    int? totalWrong,
+    int? totalPlayed,
+  }) {
+    return GameTypeStats(
+      gameType: gameType ?? this.gameType,
+      totalCorrect: totalCorrect ?? this.totalCorrect,
+      totalWrong: totalWrong ?? this.totalWrong,
+      totalPlayed: totalPlayed ?? this.totalPlayed,
+    );
   }
 }
 
