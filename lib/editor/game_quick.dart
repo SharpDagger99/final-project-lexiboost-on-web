@@ -44,6 +44,7 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
   // Chat/Prompt state
   List<Map<String, dynamic>> chatMessages = [];
   Map<String, dynamic>? generatedActivity;
+  Map<String, dynamic>? pendingActivityPlan; // Activity plan waiting for confirmation
   
   // Document upload state
   Uint8List? uploadedDocumentBytes;
@@ -231,13 +232,152 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
     });
   }
 
+  // Game types that require images
+  final List<String> _imageRequiredGameTypes = [
+    'Image Match',
+    'What is it called',
+    'Listen and Repeat',
+    'Guess the answer 2',
+    'Fill in the blank 2',
+  ];
+
   // Add game type to the list
   void _addGameType(String gameType) {
-    if (!selectedGameTypes.contains(gameType)) {
+    if (selectedGameTypes.contains(gameType)) {
+      return; // Already added
+    }
+    
+    // Check if this game type requires images
+    if (_imageRequiredGameTypes.contains(gameType)) {
+      _showImageRequiredDialog(gameType);
+    } else {
       setState(() {
         selectedGameTypes.add(gameType);
       });
     }
+  }
+  
+  // Show dialog for image-required game types
+  void _showImageRequiredDialog(String gameType) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2C2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Row(
+          children: [
+            const Icon(Icons.image, color: Colors.orange, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Image Required',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The game type "$gameType" requires images to function properly.',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Important Notice:',
+                        style: GoogleFonts.poppins(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• AI will create the activity structure\n'
+                    '• You MUST manually add images later\n'
+                    '• Images can be added in the game editor\n'
+                    '• Activity won\'t work without images',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Do you want to continue with this game type?',
+              style: GoogleFonts.poppins(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(
+                color: Colors.grey,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                selectedGameTypes.add(gameType);
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              'I Understand, Add It',
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Remove game type from the list
@@ -277,14 +417,190 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
 
   // Generate from edit mode
   Future<void> _generateFromEditMode() async {
-    await Future.delayed(const Duration(seconds: 1));
-
     final totalPages = int.parse(totalPageController.text);
     
-    // Create pages array with the selected game types
+    // Use Gemini AI to generate content for Edit Mode
+    debugPrint('=== EDIT MODE: Starting AI generation ===');
+    debugPrint('Game Types: $selectedGameTypes');
+    debugPrint('Difficulty: $selectedDifficulty');
+    debugPrint('Total Pages: $totalPages');
+    
+    final result = await _geminiService.generateEditModeActivity(
+      gameTypes: selectedGameTypes,
+      difficulty: selectedDifficulty,
+      gameRule: selectedGameRule,
+      totalPages: totalPages,
+      documentContent: extractedDocumentContent,
+      documentFileName: uploadedDocumentName,
+    );
+
+    debugPrint('=== EDIT MODE: AI generation result ===');
+    debugPrint('Success: ${result['success']}');
+    if (result['success'] != true) {
+      debugPrint('Error: ${result['error']}');
+      debugPrint('Details: ${result['details']}');
+      debugPrint('Raw Response: ${result['rawResponse']}');
+    }
+
+    if (result['success'] == true) {
+      final activityData = result['data'] as Map<String, dynamic>;
+      
+      // Ensure the activity has the correct structure
+      final activity = {
+        'title': activityData['title'] ?? 'Custom Activity',
+        'description': activityData['description'] ?? 'Activity created with AI assistance',
+        'gameTypes': selectedGameTypes,
+        'difficulty': selectedDifficulty,
+        'gameRule': selectedGameRule,
+        'totalPages': totalPages,
+        'pages': activityData['pages'] ?? _createDefaultPages(totalPages),
+        'images': uploadedImages.length,
+      };
+
+      setState(() {
+        generatedActivity = activity;
+      });
+
+      // Auto-save to Firestore
+      await _saveGeneratedActivityToFirestore(activity);
+
+      if (mounted) {
+        _showSuccessDialog(
+          'Activity created successfully with $totalPages pages!',
+        );
+      }
+    } else {
+      // Show detailed error to user
+      final errorMessage = result['error'] ?? 'Unknown error';
+      final errorDetails = result['details'] ?? '';
+      
+      debugPrint('AI generation failed: $errorMessage');
+      debugPrint('Error details: $errorDetails');
+      
+      if (mounted) {
+        // Show detailed error dialog
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF2A2C2A),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text(
+              'AI Generation Error',
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Error Message:',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage,
+                    style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                  ),
+                  if (errorDetails.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Details:',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        errorDetails.length > 500 
+                            ? '${errorDetails.substring(0, 500)}...' 
+                            : errorDetails,
+                        style: GoogleFonts.robotoMono(
+                          color: Colors.red.shade200,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Would you like to create a basic activity structure instead?',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.poppins(color: Colors.grey),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  
+                  // Create basic structure
+                  final activity = {
+                    'title': 'Custom Activity',
+                    'description': 'Activity created from manual input',
+                    'gameTypes': selectedGameTypes,
+                    'difficulty': selectedDifficulty,
+                    'gameRule': selectedGameRule,
+                    'totalPages': totalPages,
+                    'pages': _createDefaultPages(totalPages),
+                    'images': uploadedImages.length,
+                  };
+
+                  setState(() {
+                    generatedActivity = activity;
+                  });
+
+                  // Auto-save to Firestore
+                  await _saveGeneratedActivityToFirestore(activity);
+
+                  if (mounted) {
+                    _showSuccessDialog(
+                      'Basic activity structure created with $totalPages pages.',
+                    );
+                  }
+                },
+                child: Text(
+                  'Create Basic Structure',
+                  style: GoogleFonts.poppins(color: Colors.green),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+  
+  // Create default pages structure when AI is unavailable
+  List<Map<String, dynamic>> _createDefaultPages(int totalPages) {
     final List<Map<String, dynamic>> pages = [];
     for (int i = 0; i < totalPages; i++) {
-      // Cycle through game types if there are more pages than game types
       final gameType = selectedGameTypes[i % selectedGameTypes.length];
       pages.add({
         'pageNumber': i + 1,
@@ -295,35 +611,38 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
         'choices': [],
       });
     }
-
-    final activity = {
-      'title': 'Custom Activity',
-      'description': 'Activity created from manual input',
-      'gameTypes': selectedGameTypes,
-      'difficulty': selectedDifficulty,
-      'gameRule': selectedGameRule,
-      'totalPages': totalPages,
-      'pages': pages,
-      'images': uploadedImages.length,
-    };
-
-    setState(() {
-      generatedActivity = activity;
-    });
-
-    // Auto-save to Firestore
-    await _saveGeneratedActivityToFirestore(activity);
-
-    if (mounted) {
-      _showSuccessDialog(
-        'Activity created successfully with ${totalPageController.text} pages!',
-      );
-    }
+    return pages;
   }
 
   // Generate from prompt mode using AI
   Future<void> _generateFromPromptMode() async {
     final userPrompt = promptController.text.trim();
+    
+    debugPrint('=== PROMPT MODE: Starting AI generation ===');
+    debugPrint('User Prompt: $userPrompt');
+    debugPrint('Has Document: ${extractedDocumentContent != null}');
+    
+    // Check if user is confirming a pending plan
+    if (pendingActivityPlan != null && 
+        (userPrompt.toLowerCase().contains('yes') || 
+         userPrompt.toLowerCase().contains('confirm') ||
+         userPrompt.toLowerCase().contains('create') ||
+         userPrompt.toLowerCase().contains('proceed'))) {
+      
+      // Add user confirmation message
+      setState(() {
+        chatMessages.add({
+          'role': 'user',
+          'content': userPrompt,
+          'timestamp': DateTime.now(),
+        });
+      });
+      
+      // Create the activity from pending plan
+      await _createActivityFromPlan(pendingActivityPlan!);
+      promptController.clear();
+      return;
+    }
     
     // Add user message to chat
     setState(() {
@@ -345,23 +664,32 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
       }
     });
 
-    // Generate with AI (include document content if available)
-    final result = await _geminiService.generateGameActivity(
+    // Generate activity plan with AI
+    final result = await _geminiService.generateActivityPlan(
       userPrompt: userPrompt,
       imageDescriptions: uploadedFileNames,
       documentContent: extractedDocumentContent,
       documentFileName: uploadedDocumentName,
     );
 
+    debugPrint('=== PROMPT MODE: AI generation result ===');
+    debugPrint('Success: ${result['success']}');
+    if (result['success'] != true) {
+      debugPrint('Error: ${result['error']}');
+      debugPrint('Details: ${result['details']}');
+      debugPrint('Raw Response: ${result['rawResponse']}');
+    }
+
     if (result['success'] == true) {
-      final activityData = result['data'];
+      final activityPlan = result['data'];
       
+      // Store pending plan
       setState(() {
-        generatedActivity = activityData;
+        pendingActivityPlan = activityPlan;
         chatMessages.add({
           'role': 'assistant',
-          'content': 'I\'ve generated an activity based on your request!',
-          'activity': activityData,
+          'content': _buildActivityPlanMessage(activityPlan),
+          'activityPlan': activityPlan,
           'timestamp': DateTime.now(),
         });
       });
@@ -378,6 +706,121 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
       });
 
       promptController.clear();
+    } else {
+      final errorMessage = result['error'] ?? 'Unknown error';
+      final errorDetails = result['details'] ?? '';
+      final rawResponse = result['rawResponse'] ?? '';
+      
+      // Create detailed error message for chat
+      String detailedError = 'Sorry, I encountered an error:\n\n';
+      detailedError += '❌ $errorMessage\n';
+      
+      if (errorDetails.isNotEmpty) {
+        detailedError += '\n📋 Details:\n${errorDetails.length > 300 ? errorDetails.substring(0, 300) + '...' : errorDetails}\n';
+      }
+      
+      if (rawResponse.isNotEmpty) {
+        detailedError += '\n📄 Response Preview:\n${rawResponse.length > 200 ? rawResponse.substring(0, 200) + '...' : rawResponse}';
+      }
+      
+      setState(() {
+        chatMessages.add({
+          'role': 'assistant',
+          'content': detailedError,
+          'isError': true,
+          'timestamp': DateTime.now(),
+        });
+      });
+      
+      // Scroll to bottom to show error
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+  }
+  
+  // Build activity plan message
+  String _buildActivityPlanMessage(Map<String, dynamic> plan) {
+    final title = plan['title'] ?? 'Untitled Activity';
+    final description = plan['description'] ?? 'No description';
+    final gameTypes = (plan['gameTypes'] as List?)?.join(', ') ?? 'Not specified';
+    final difficulty = plan['difficulty'] ?? 'Not specified';
+    final gameRule = plan['gameRule'] ?? 'none';
+    final totalPages = plan['totalPages'] ?? 0;
+    final reasoning = plan['reasoning'] ?? '';
+    
+    String message = '📋 **Activity Plan**\n\n';
+    message += '**Title:** $title\n';
+    message += '**Description:** $description\n\n';
+    message += '**Game Types:** $gameTypes\n';
+    message += '**Difficulty:** $difficulty\n';
+    message += '**Game Rule:** $gameRule\n';
+    message += '**Total Pages:** $totalPages\n';
+    
+    if (reasoning.isNotEmpty) {
+      message += '\n**Why this plan?**\n$reasoning\n';
+    }
+    
+    message += '\n✅ **To create this activity, type "yes" or "confirm"**\n';
+    message += '✏️ **To modify, describe what you want to change**';
+    
+    return message;
+  }
+  
+  // Create activity from confirmed plan
+  Future<void> _createActivityFromPlan(Map<String, dynamic> plan) async {
+    setState(() {
+      chatMessages.add({
+        'role': 'assistant',
+        'content': '⏳ Creating your activity... Please wait.',
+        'timestamp': DateTime.now(),
+      });
+    });
+    
+    // Scroll to bottom
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+    
+    // Generate full activity with AI
+    final result = await _geminiService.generateFullActivity(activityPlan: plan);
+    
+    if (result['success'] == true) {
+      final activityData = result['data'];
+      
+      setState(() {
+        generatedActivity = activityData;
+        pendingActivityPlan = null; // Clear pending plan
+        chatMessages.add({
+          'role': 'assistant',
+          'content': '✅ Activity created successfully! Saving to your game...',
+          'activity': activityData,
+          'timestamp': DateTime.now(),
+        });
+      });
+
+      // Scroll to bottom
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
       
       // Auto-save to Firestore
       await _saveGeneratedActivityToFirestore(activityData);
@@ -385,7 +828,8 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
       setState(() {
         chatMessages.add({
           'role': 'assistant',
-          'content': 'Sorry, I encountered an error: ${result['error']}',
+          'content': '❌ Failed to create activity: ${result['error']}\n\nPlease try again or modify your request.',
+          'isError': true,
           'timestamp': DateTime.now(),
         });
       });
@@ -424,28 +868,127 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
 
     setState(() {
       _isSaving = true;
-      _saveStatus = 'Adding pages to game...';
+      _saveStatus = 'Saving activity to game...';
     });
 
     try {
       // Extract activity data
       final gameTypes = activityData['gameTypes'] as List? ?? [];
       final pages = activityData['pages'] as List? ?? [];
+      final title = activityData['title'] as String?;
+      final description = activityData['description'] as String?;
+      final difficulty = activityData['difficulty'] as String?;
+      final gameRule = activityData['gameRule'] as String?;
+      final prizeCoins = activityData['prizeCoins'];
+      final gameSet = activityData['gameSet'] as String?;
+      final gameCode = activityData['gameCode'] as String?;
+      final heart = activityData['heart'] as bool?;
+      final timer = activityData['timer'] as int?;
 
       debugPrint('Adding ${pages.length} pages to existing game: $gameId');
+
+      // Update game metadata (Column 1) if provided by AI
+      Map<String, dynamic> gameMetadataUpdates = {
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      if (title != null && title.isNotEmpty) {
+        gameMetadataUpdates['title'] = title;
+        debugPrint('Updating game title: $title');
+      }
+
+      if (description != null && description.isNotEmpty) {
+        gameMetadataUpdates['description'] = description;
+        debugPrint('Updating game description: $description');
+      }
+
+      if (difficulty != null && difficulty.isNotEmpty) {
+        gameMetadataUpdates['difficulty'] = difficulty;
+        debugPrint('Updating game difficulty: $difficulty');
+      }
+
+      if (gameRule != null && gameRule.isNotEmpty) {
+        gameMetadataUpdates['gameRule'] = gameRule;
+        debugPrint('Updating game rule: $gameRule');
+      }
+
+      // AI-controlled Prize Coins (if user requests it)
+      if (prizeCoins != null) {
+        String coinsValue = prizeCoins.toString();
+        gameMetadataUpdates['prizeCoins'] = coinsValue;
+        debugPrint('Updating prize coins: $coinsValue');
+      }
+
+      // AI-controlled Game Set (if user requests it)
+      if (gameSet != null && (gameSet == 'public' || gameSet == 'private')) {
+        gameMetadataUpdates['gameSet'] = gameSet;
+        debugPrint('Updating game set: $gameSet');
+      }
+
+      // AI-controlled Game Code (if user requests private game)
+      if (gameCode != null && gameCode.isNotEmpty) {
+        gameMetadataUpdates['gameCode'] = gameCode;
+        debugPrint('Updating game code: $gameCode');
+      }
+
+      // AI-controlled Heart setting (if user requests it)
+      if (heart != null) {
+        gameMetadataUpdates['heart'] = heart;
+        debugPrint('Updating heart setting: $heart');
+      }
+
+      // AI-controlled Timer setting (if user requests it)
+      if (timer != null && timer >= 0) {
+        gameMetadataUpdates['timer'] = timer;
+        debugPrint('Updating timer: $timer seconds');
+      }
+
+      // Update game metadata in Firestore
+      if (gameMetadataUpdates.length > 1) { // More than just updated_at
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('created_games')
+            .doc(gameId)
+            .update(gameMetadataUpdates);
+
+        debugPrint('Game metadata updated successfully');
+        
+        // Show notification about metadata updates
+        List<String> updatedFields = [];
+        if (title != null && title.isNotEmpty) updatedFields.add('Title');
+        if (description != null && description.isNotEmpty) updatedFields.add('Description');
+        if (difficulty != null && difficulty.isNotEmpty) updatedFields.add('Difficulty');
+        if (gameRule != null && gameRule.isNotEmpty) updatedFields.add('Game Rule');
+        if (prizeCoins != null) updatedFields.add('Prize Coins');
+        if (gameSet != null) updatedFields.add('Game Set');
+        if (gameCode != null && gameCode.isNotEmpty) updatedFields.add('Game Code');
+        if (heart != null) updatedFields.add('Heart');
+        if (timer != null) updatedFields.add('Timer');
+        
+        if (updatedFields.isNotEmpty && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('AI Updated: ${updatedFields.join(', ')}'),
+              backgroundColor: Colors.blue,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
 
       // Save game rounds (pages) - they will be appended to existing pages
       await _saveGameRounds(pages, gameTypes);
 
       setState(() {
         _isSaving = false;
-        _saveStatus = 'Pages added successfully! ✓';
+        _saveStatus = 'Activity saved successfully! ✓';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${pages.length} page(s) added to game successfully!'),
+            content: Text('Activity saved! ${pages.length} page(s) added to game.'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
@@ -469,10 +1012,10 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
         }
       });
     } catch (e) {
-      debugPrint('Error adding pages to game: $e');
+      debugPrint('Error saving activity to game: $e');
       setState(() {
         _isSaving = false;
-        _saveStatus = 'Failed to add pages';
+        _saveStatus = 'Failed to save activity';
       });
 
       if (mounted) {
@@ -553,10 +1096,29 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
       final answer = pageData['answer'] ?? '';
       final hint = pageData['hint'] ?? '';
       final choices = pageData['choices'] as List? ?? [];
+      
+      // AI-controlled configurations
+      final visibleLettersFromAI = pageData['visibleLetters'] as List?;
+      final correctAnswerIndexFromAI = pageData['correctAnswerIndex'] as int?;
+      final showImageHintFromAI = pageData['showImageHint'] as bool?;
+      final imageCountFromAI = pageData['imageCount'] as int?;
+      final totalBoxesFromAI = pageData['totalBoxes'] as int?;
+      final boxValuesFromAI = pageData['boxValues'] as List?;
+      final operatorsFromAI = pageData['operators'] as List?;
+      final mathAnswerFromAI = pageData['answer'];
 
       if (gameType == 'Fill in the blank' || gameType == 'Fill in the blank 2') {
-        // Create visible letters array (all visible by default)
-        final visibleLetters = List<bool>.filled(answer.length, true);
+        // Use AI-generated visible letters or create default based on difficulty
+        List<bool> visibleLetters;
+        if (visibleLettersFromAI != null && visibleLettersFromAI.isNotEmpty) {
+          visibleLetters = visibleLettersFromAI.map((e) => e as bool).toList();
+        } else {
+          // Default: hide ~50% of letters for medium difficulty
+          visibleLetters = List.generate(
+            answer.toString().length,
+            (index) => index % 2 == 0, // Alternate visibility
+          );
+        }
         
         gameTypeData.addAll({
           'answer': visibleLetters,
@@ -568,10 +1130,13 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
           gameTypeData['imageUrl'] = '';
         }
       } else if (gameType == 'Guess the answer' || gameType == 'Guess the answer 2') {
+        // Use AI-controlled correct answer index (default to 0 if not provided)
+        final correctIndex = correctAnswerIndexFromAI ?? 0;
+        
         gameTypeData.addAll({
           'question': content,
           'gameHint': hint,
-          'answer': 0, // Default to first choice
+          'answer': correctIndex,
           'multipleChoice1': choices.isNotEmpty ? choices[0] : '',
           'multipleChoice2': choices.length > 1 ? choices[1] : '',
           'multipleChoice3': choices.length > 2 ? choices[2] : '',
@@ -580,14 +1145,17 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
 
         if (gameType == 'Guess the answer') {
           gameTypeData['image'] = '';
+          // AI controls whether to show image hint - default to FALSE for text-based questions
+          gameTypeData['showImageHint'] = showImageHintFromAI ?? false;
+          debugPrint('AI set showImageHint to: ${gameTypeData['showImageHint']} for Guess the answer');
         } else {
           gameTypeData['image1'] = '';
           gameTypeData['image2'] = '';
           gameTypeData['image3'] = '';
-          gameTypeData['correctAnswerIndex'] = 0;
+          gameTypeData['correctAnswerIndex'] = correctIndex;
         }
       } else if (gameType == 'Read the sentence') {
-        gameTypeData['sentence'] = content;
+        gameTypeData['sentence'] = content.isNotEmpty ? content : answer;
       } else if (gameType == 'What is it called') {
         gameTypeData.addAll({
           'answer': answer,
@@ -604,9 +1172,11 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
           'gameType': 'listen_and_repeat',
         });
       } else if (gameType == 'Image Match') {
+        // AI can control image count (2, 4, 6, or 8)
+        final imageCount = imageCountFromAI ?? 2;
         gameTypeData.addAll({
-          'imageCount': 2,
-          'image_configuration': 2,
+          'imageCount': imageCount,
+          'image_configuration': imageCount,
           'image1': '',
           'image2': '',
           'image3': '',
@@ -621,35 +1191,69 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
           'image_match7': 0,
         });
       } else if (gameType == 'Math') {
+        // AI controls math configuration
+        final totalBoxes = totalBoxesFromAI ?? 2;
+        final boxValues = boxValuesFromAI ?? [];
+        final operators = operatorsFromAI ?? ['+'];
+        
+        // Parse math answer - ensure it's a number
+        double mathAnswer = 0.0;
+        if (mathAnswerFromAI != null) {
+          if (mathAnswerFromAI is num) {
+            mathAnswer = mathAnswerFromAI.toDouble();
+          } else if (mathAnswerFromAI is String) {
+            mathAnswer = double.tryParse(mathAnswerFromAI) ?? 0.0;
+          }
+        }
+        
         gameTypeData.addAll({
-          'totalBoxes': 1,
-          'answer': 0.0,
-          'box1': 0.0,
-          'box2': 0.0,
-          'box3': 0.0,
-          'box4': 0.0,
-          'box5': 0.0,
-          'box6': 0.0,
-          'box7': 0.0,
-          'box8': 0.0,
-          'box9': 0.0,
-          'box10': 0.0,
-          'operator1_2': '',
-          'operator2_3': '',
-          'operator3_4': '',
-          'operator4_5': '',
-          'operator5_6': '',
-          'operator6_7': '',
-          'operator7_8': '',
-          'operator8_9': '',
-          'operator9_10': '',
+          'totalBoxes': totalBoxes,
+          'answer': mathAnswer,
         });
+        
+        // Set box values from AI - ONLY NUMBERS ALLOWED
+        for (int i = 1; i <= 10; i++) {
+          if (i <= boxValues.length) {
+            final value = boxValues[i - 1];
+            // Ensure only numeric values are stored
+            double numericValue = 0.0;
+            if (value is num) {
+              numericValue = value.toDouble();
+            } else if (value is String) {
+              numericValue = double.tryParse(value) ?? 0.0;
+            }
+            gameTypeData['box$i'] = numericValue;
+          } else {
+            gameTypeData['box$i'] = 0.0;
+          }
+        }
+        
+        // Set operators from AI - AI can change these (+, -, ×, ÷)
+        for (int i = 1; i < 10; i++) {
+          if (i <= operators.length) {
+            String operator = operators[i - 1].toString();
+            // Normalize operator symbols (convert * to ×, / to ÷)
+            if (operator == '*') operator = '×';
+            if (operator == '/') operator = '÷';
+            // Validate operator is one of the allowed types
+            if (['+', '-', '×', '÷'].contains(operator)) {
+              gameTypeData['operator${i}_${i + 1}'] = operator;
+            } else {
+              gameTypeData['operator${i}_${i + 1}'] = '+'; // Default to + if invalid
+            }
+          } else {
+            gameTypeData['operator${i}_${i + 1}'] = '';
+          }
+        }
+        
+        debugPrint('AI configured Math: totalBoxes=$totalBoxes, boxValues=$boxValues, operators=$operators, answer=$mathAnswer');
       } else if (gameType == 'Stroke') {
         gameTypeData['imageUrl'] = '';
+        gameTypeData['sentence'] = content.isNotEmpty ? content : answer;
       }
 
       await docRef.set(gameTypeData);
-      debugPrint('Game type data saved for $gameType');
+      debugPrint('Game type data saved for $gameType with AI configurations');
     } catch (e) {
       debugPrint('Failed to save game type data: $e');
     }
@@ -1197,6 +1801,7 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
         itemBuilder: (context, index) {
           final message = chatMessages[index];
           final isUser = message['role'] == 'user';
+          final isError = message['isError'] == true;
           
           return Align(
             alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -1213,17 +1818,31 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
                     decoration: BoxDecoration(
                       color: isUser
                           ? Colors.deepPurple
-                          : Colors.white.withOpacity(0.1),
+                          : isError
+                              ? Colors.red.withOpacity(0.2)
+                              : Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
+                      border: isError 
+                          ? Border.all(color: Colors.red, width: 1)
+                          : null,
                     ),
                     child: Text(
                       message['content'],
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
+                      style: isError
+                          ? GoogleFonts.robotoMono(
+                              fontSize: 13,
+                              color: Colors.white,
+                            )
+                          : GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.white,
+                            ),
                     ),
                   ),
+                  if (message['activityPlan'] != null) ...[
+                    const SizedBox(height: 12),
+                    _buildActivityPlanPreview(message['activityPlan']),
+                  ],
                   if (message['activity'] != null) ...[
                     const SizedBox(height: 12),
                     _buildActivityPreview(message['activity']),
@@ -1233,6 +1852,165 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
             ),
           );
         },
+      ),
+    );
+  }
+  
+  // Activity plan preview with confirmation buttons
+  Widget _buildActivityPlanPreview(Map<String, dynamic> plan) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.assignment, color: Colors.blue, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Activity Plan',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildPlanInfoRow('Title', plan['title'] ?? 'N/A'),
+          _buildPlanInfoRow('Description', plan['description'] ?? 'N/A'),
+          _buildPlanInfoRow('Game Types', (plan['gameTypes'] as List?)?.join(', ') ?? 'N/A'),
+          _buildPlanInfoRow('Difficulty', plan['difficulty'] ?? 'N/A'),
+          _buildPlanInfoRow('Game Rule', plan['gameRule'] ?? 'N/A'),
+          _buildPlanInfoRow('Total Pages', plan['totalPages']?.toString() ?? 'N/A'),
+          
+          if (plan['reasoning'] != null && plan['reasoning'].toString().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reasoning:',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade200,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    plan['reasoning'],
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    promptController.text = 'yes, create this activity';
+                    _generateFromPromptMode();
+                  },
+                  icon: const Icon(Icons.check_circle, size: 18),
+                  label: Text(
+                    'Confirm & Create',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    // Focus on prompt input for modifications
+                    setState(() {
+                      promptController.text = '';
+                    });
+                  },
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: Text(
+                    'Modify Plan',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orange,
+                    side: const BorderSide(color: Colors.orange, width: 2),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Plan info row helper
+  Widget _buildPlanInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade200,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1738,17 +2516,62 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
                 fontWeight: FontWeight.w500,
               ),
               isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'Fill in the blank', child: Text('Fill in the blank')),
-                DropdownMenuItem(value: 'Fill in the blank 2', child: Text('Fill in the blank 2')),
-                DropdownMenuItem(value: 'Guess the answer', child: Text('Guess the answer')),
-                DropdownMenuItem(value: 'Guess the answer 2', child: Text('Guess the answer 2')),
-                DropdownMenuItem(value: 'Read the sentence', child: Text('Read the sentence')),
-                DropdownMenuItem(value: 'What is it called', child: Text('What is it called')),
-                DropdownMenuItem(value: 'Listen and Repeat', child: Text('Listen and Repeat')),
-                DropdownMenuItem(value: 'Image Match', child: Text('Image Match')),
-                DropdownMenuItem(value: 'Math', child: Text('Math')),
-                DropdownMenuItem(value: 'Stroke', child: Text('Stroke')),
+              items: [
+                const DropdownMenuItem(value: 'Fill in the blank', child: Text('Fill in the blank')),
+                DropdownMenuItem(
+                  value: 'Fill in the blank 2',
+                  child: Row(
+                    children: [
+                      const Text('Fill in the blank 2'),
+                      const SizedBox(width: 8),
+                      Icon(Icons.image, size: 16, color: Colors.orange.withOpacity(0.7)),
+                    ],
+                  ),
+                ),
+                const DropdownMenuItem(value: 'Guess the answer', child: Text('Guess the answer')),
+                DropdownMenuItem(
+                  value: 'Guess the answer 2',
+                  child: Row(
+                    children: [
+                      const Text('Guess the answer 2'),
+                      const SizedBox(width: 8),
+                      Icon(Icons.image, size: 16, color: Colors.orange.withOpacity(0.7)),
+                    ],
+                  ),
+                ),
+                const DropdownMenuItem(value: 'Read the sentence', child: Text('Read the sentence')),
+                DropdownMenuItem(
+                  value: 'What is it called',
+                  child: Row(
+                    children: [
+                      const Text('What is it called'),
+                      const SizedBox(width: 8),
+                      Icon(Icons.image, size: 16, color: Colors.orange.withOpacity(0.7)),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'Listen and Repeat',
+                  child: Row(
+                    children: [
+                      const Text('Listen and Repeat'),
+                      const SizedBox(width: 8),
+                      Icon(Icons.image, size: 16, color: Colors.orange.withOpacity(0.7)),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'Image Match',
+                  child: Row(
+                    children: [
+                      const Text('Image Match'),
+                      const SizedBox(width: 8),
+                      Icon(Icons.image, size: 16, color: Colors.orange.withOpacity(0.7)),
+                    ],
+                  ),
+                ),
+                const DropdownMenuItem(value: 'Math', child: Text('Math')),
+                const DropdownMenuItem(value: 'Stroke', child: Text('Stroke')),
               ],
               onChanged: (String? value) {
                 if (value != null) {
@@ -1779,41 +2602,88 @@ class _MyGameQuickState extends State<MyGameQuick> with SingleTickerProviderStat
               ),
             )
           else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: selectedGameTypes.map((gameType) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.green, width: 2),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        gameType,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: selectedGameTypes.map((gameType) {
+                    final requiresImage = _imageRequiredGameTypes.contains(gameType);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: requiresImage 
+                            ? Colors.orange.withOpacity(0.2)
+                            : Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: requiresImage ? Colors.orange : Colors.green,
+                          width: 2,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => _removeGameType(gameType),
-                        child: const Icon(
-                          Icons.close,
-                          size: 18,
-                          color: Colors.red,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (requiresImage) ...[
+                            Icon(
+                              Icons.image,
+                              size: 16,
+                              color: Colors.orange,
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            gameType,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _removeGameType(gameType),
+                            child: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    );
+                  }).toList(),
+                ),
+                
+                // Show warning if any selected game type requires images
+                if (selectedGameTypes.any((type) => _imageRequiredGameTypes.contains(type))) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Game types with 🖼️ icon require manual image upload after generation',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.orange.shade200,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              }).toList(),
+                ],
+              ],
             ),
         ],
       ),

@@ -77,6 +77,9 @@ class PageData {
   List<String> mathOperators; // Operators between boxes
   String mathAnswer; // The calculated result
 
+  // Image hint toggle for Guess the answer
+  bool showImageHint;
+
   PageData({
     this.title = '',
     this.description = '',
@@ -114,6 +117,7 @@ class PageData {
     this.mathBoxValues = const [],
     this.mathOperators = const [],
     this.mathAnswer = '0',
+    this.showImageHint = true,
   }) : guessAnswerImages = guessAnswerImages ?? [null, null, null],
        imageMatchImages = imageMatchImages ?? List.filled(8, null),
        imageMatchMappings = imageMatchMappings ?? {},
@@ -210,7 +214,6 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   bool _isLaunching = false; // Loading state for launch button
   bool _showLaunchSuccess = false; // Show launch success message
   bool _hasUnsavedChanges = false; // Track if there are unsaved changes
-  bool _showImageHint = true; // Track image hint visibility for Guess the answer
 
   final mathState = MathState();
 
@@ -500,6 +503,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       mathBoxValues: mathState.boxControllers.map((c) => c.text).toList(),
       mathOperators: List.from(mathState.operators),
       mathAnswer: mathState.resultController.text,
+      showImageHint: pages[currentPageIndex].showImageHint, // Preserve showImageHint per page
     );
   }
 
@@ -666,166 +670,340 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   void _showPageSelector() {
     // Get validation errors for all pages
     final validationErrors = _validatePages();
+    
+    // Track selected pages for deletion
+    Set<int> selectedPagesForDeletion = {};
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: const Color(0xFF2A2C2A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Container(
-            width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Select Page',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  child: Scrollbar(
-                    controller: _pageSelectorScrollController,
-                    thumbVisibility: true,
-                    trackVisibility: true,
-                    thickness: 8,
-                    radius: const Radius.circular(10),
-                    child: GestureDetector(
-                      onPanUpdate: (details) {
-                        // Drag to scroll functionality
-                        _pageSelectorScrollController.position.moveTo(
-                          _pageSelectorScrollController.offset -
-                              details.delta.dy,
-                        );
-                      },
-                      child: ListView.builder(
-                        controller: _pageSelectorScrollController,
-                        shrinkWrap: true,
-                        itemCount: pages.length,
-                        itemBuilder: (context, index) {
-                          final isCurrentPage = index == currentPageIndex;
-                          final hasError = validationErrors.containsKey(index);
-
-                          return Container(
-                            margin: const EdgeInsets.symmetric(
-                              vertical: 4,
-                              horizontal: 4,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: const Color(0xFF2A2C2A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Container(
+                width: MediaQuery.of(context).size.width.clamp(0.0, 500.0),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Select Page',
+                          style: GoogleFonts.poppins(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (selectedPagesForDeletion.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
                             ),
-                            child: Row(
-                              children: [
-                                // Page button section
-                                Expanded(
-                                  child: Material(
-                                    color: isCurrentPage
-                                        ? Colors.green.withOpacity(0.3)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: InkWell(
-                                      onTap: () {
-                                        if (!isCurrentPage) {
-                                          _saveCurrentPageData();
-                                          currentPageIndex = index;
-                                          _selectedAnswerIndex =
-                                              -1; // Reset selected answer
-                                          _loadPageData(currentPageIndex);
-                                        }
-                                        Navigator.of(context).pop();
-                                      },
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          border: Border.all(
-                                            color: isCurrentPage
-                                                ? Colors.green
-                                                : Colors.white.withOpacity(0.3),
-                                            width: isCurrentPage ? 2 : 1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Text(
-                                              'Page ${index + 1}',
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 16,
-                                                color: Colors.white,
-                                                fontWeight: isCurrentPage
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.red),
+                            ),
+                            child: Text(
+                              '${selectedPagesForDeletion.length} selected',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: Scrollbar(
+                        controller: _pageSelectorScrollController,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        thickness: 8,
+                        radius: const Radius.circular(10),
+                        child: GestureDetector(
+                          onPanUpdate: (details) {
+                            // Drag to scroll functionality
+                            _pageSelectorScrollController.position.moveTo(
+                              _pageSelectorScrollController.offset -
+                                  details.delta.dy,
+                            );
+                          },
+                          child: ListView.builder(
+                            controller: _pageSelectorScrollController,
+                            shrinkWrap: true,
+                            itemCount: pages.length,
+                            itemBuilder: (context, index) {
+                              final isCurrentPage = index == currentPageIndex;
+                              final hasError = validationErrors.containsKey(index);
+                              final isSelected = selectedPagesForDeletion.contains(index);
+
+                              return Container(
+                                margin: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                  horizontal: 4,
+                                ),
+                                child: Row(
+                                  children: [
+                                    // Checkbox for selection
+                                    Checkbox(
+                                      value: isSelected,
+                                      onChanged: pages.length > 1
+                                          ? (bool? value) {
+                                              setDialogState(() {
+                                                if (value == true) {
+                                                  selectedPagesForDeletion.add(index);
+                                                } else {
+                                                  selectedPagesForDeletion.remove(index);
+                                                }
+                                              });
+                                            }
+                                          : null, // Disable if only one page
+                                      activeColor: Colors.red,
+                                      checkColor: Colors.white,
+                                    ),
+                                    // Page button section
+                                    Expanded(
+                                      child: Material(
+                                        color: isSelected
+                                            ? Colors.red.withOpacity(0.2)
+                                            : isCurrentPage
+                                                ? Colors.green.withOpacity(0.3)
+                                                : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: InkWell(
+                                          onTap: () {
+                                            if (!isCurrentPage) {
+                                              _saveCurrentPageData();
+                                              currentPageIndex = index;
+                                              _selectedAnswerIndex =
+                                                  -1; // Reset selected answer
+                                              _loadPageData(currentPageIndex);
+                                            }
+                                            Navigator.of(context).pop();
+                                          },
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 12,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                color: isSelected
+                                                    ? Colors.red
+                                                    : isCurrentPage
+                                                        ? Colors.green
+                                                        : Colors.white.withOpacity(0.3),
+                                                width: isSelected || isCurrentPage ? 2 : 1,
+                                              ),
+                                              borderRadius: BorderRadius.circular(
+                                                8,
                                               ),
                                             ),
-                                            if (hasError) ...[
-                                              const SizedBox(width: 8),
-                                              Container(
-                                                padding: const EdgeInsets.all(
-                                                  4,
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  'Page ${index + 1}',
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 16,
+                                                    color: Colors.white,
+                                                    fontWeight: isCurrentPage
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                  ),
                                                 ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.red,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.error,
-                                                  color: Colors.white,
-                                                  size: 16,
-                                                ),
-                                              ),
-                                            ],
-                                            const Spacer(),
-                                            if (isCurrentPage)
-                                              const Icon(
-                                                Icons.check_circle,
-                                                color: Colors.green,
-                                                size: 20,
-                                              ),
-                                          ],
+                                                if (hasError) ...[
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding: const EdgeInsets.all(
+                                                      4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.error,
+                                                      color: Colors.white,
+                                                      size: 16,
+                                                    ),
+                                                  ),
+                                                ],
+                                                const Spacer(),
+                                                if (isCurrentPage)
+                                                  const Icon(
+                                                    Icons.check_circle,
+                                                    color: Colors.green,
+                                                    size: 20,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        AnimatedButton(
+                          width: 100,
+                          height: 40,
+                          color: Colors.grey,
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: Text(
+                            'Close',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        if (selectedPagesForDeletion.isNotEmpty)
+                          AnimatedButton(
+                            width: 120,
+                            height: 40,
+                            color: Colors.red,
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _deleteMultiplePages(selectedPagesForDeletion);
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.delete,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Delete (${selectedPagesForDeletion.length})',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ],
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                      ],
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                AnimatedButton(
-                  width: 100,
-                  height: 40,
-                  color: Colors.grey,
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(
-                    'Close',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
+    );
+  }
+  
+  /// Delete multiple pages at once
+  Future<void> _deleteMultiplePages(Set<int> pageIndices) async {
+    if (pageIndices.isEmpty || pages.length == 1) {
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2A2C2A),
+          title: Text(
+            'Delete Pages',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Text(
+            'Are you sure you want to delete ${pageIndices.length} page(s)? This action cannot be undone.',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'Delete',
+                style: GoogleFonts.poppins(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    // Convert to sorted list (descending order to avoid index shifting issues)
+    final sortedIndices = pageIndices.toList()..sort((a, b) => b.compareTo(a));
+
+    // Delete from Firestore and local state
+    for (final index in sortedIndices) {
+      await _deletePageFromFirestore(index);
+      pages.removeAt(index);
+    }
+
+    // Adjust current page index if needed
+    setState(() {
+      if (currentPageIndex >= pages.length) {
+        currentPageIndex = pages.length - 1;
+      }
+      // Check if current page was deleted
+      if (sortedIndices.contains(currentPageIndex)) {
+        currentPageIndex = 0;
+      }
+    });
+
+    _loadPageData(currentPageIndex);
+    
+    // Reset test status when deleting pages
+    _resetGameTestStatus();
+
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${pageIndices.length} page(s) deleted successfully',
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -1531,6 +1709,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                   ]
                 : List.filled(8, null),
             correctAnswerIndex: correctAnswerIndex,
+            showImageHint: gameType == 'Guess the answer'
+                ? (gameTypeData['showImageHint'] as bool?) ?? true
+                : true,
             listenAndRepeatAudioUrl: gameType == 'Listen and Repeat'
                 ? (gameTypeData['audio'] as String?)
                 : null,
@@ -2676,6 +2857,7 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
           'multipleChoice4': pageData.multipleChoices.length > 3
               ? pageData.multipleChoices[3]
               : '',
+          'showImageHint': pageData.showImageHint,
         });
       } else if (pageData.gameType == 'Guess the answer 2') {
         // Upload multiple images if new bytes exist, otherwise use existing URLs
@@ -3134,10 +3316,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             },
             initialChoices: multipleChoices,
             initialCorrectIndex: correctAnswerIndex,
-            initialShowImageHint: _showImageHint,
+            initialShowImageHint: pages[currentPageIndex].showImageHint,
             onImageHintToggled: (bool value) {
               setState(() {
-                _showImageHint = value;
+                pages[currentPageIndex].showImageHint = value;
               });
             },
           )
@@ -5120,6 +5302,8 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                                           _selectedAnswerIndex,
                                                       onAnswerSelected:
                                                           _onAnswerSelected,
+                                                      showImageHint:
+                                                          pages[currentPageIndex].showImageHint,
                                                     )
                                                   : selectedGameType ==
                                                         'Guess the answer 2'
@@ -5458,10 +5642,10 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                                               initialChoices: multipleChoices,
                                               initialCorrectIndex:
                                                   correctAnswerIndex,
-                                              initialShowImageHint: _showImageHint,
+                                              initialShowImageHint: pages[currentPageIndex].showImageHint,
                                               onImageHintToggled: (bool value) {
                                                 setState(() {
-                                                  _showImageHint = value;
+                                                  pages[currentPageIndex].showImageHint = value;
                                                 });
                                               },
                                             )

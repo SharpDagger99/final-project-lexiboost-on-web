@@ -60,6 +60,7 @@ dependencies:
   pdf: ^3.11.1
   google_generative_language_api: ^0.2.1
   syncfusion_flutter_pdf: ^28.1.33
+  google_gemini: ^0.1.2
 
 dev_dependencies:
   flutter_test:

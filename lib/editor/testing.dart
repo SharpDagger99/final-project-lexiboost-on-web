@@ -118,6 +118,9 @@ class _MyTestingState extends State<MyTesting> {
   final TextEditingController strokeUserAnswerController =
       TextEditingController(); // For Stroke user answer
 
+  // Scroll controller for testing content
+  final ScrollController _testingScrollController = ScrollController();
+
   // State variables
   double progressValue = 0.0;
   String selectedGameType = 'Fill in the blank';
@@ -765,6 +768,7 @@ class _MyTestingState extends State<MyTesting> {
     listenRepeatUserAnswerController.dispose();
     strokeSentenceController.dispose();
     strokeUserAnswerController.dispose();
+    _testingScrollController.dispose();
     super.dispose();
   }
 
@@ -1082,6 +1086,11 @@ class _MyTestingState extends State<MyTesting> {
 
   @override
   Widget build(BuildContext context) {
+    // Get screen size for responsive layout
+    final screenSize = MediaQuery.of(context).size;
+    final screenHeight = screenSize.height;
+
+
     // Show loading indicator
     if (_isLoading) {
       return Scaffold(
@@ -1145,19 +1154,26 @@ class _MyTestingState extends State<MyTesting> {
       backgroundColor: const Color(0xFF2C2F2C),
       body: Stack(
         children: [
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: const Color(0xFF2C2F2C),
-            child: Center(
-              child: SizedBox(
-                width: 428,
-                height: 900,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+          Center(
+            child: Container(
+              width: 428,
+              height: screenHeight.clamp(600.0, 1200.0),
+              decoration: const BoxDecoration(color: Colors.white),
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  // Handle mouse drag scrolling
+                  if (details.delta.dy != 0) {
+                    final newOffset = _testingScrollController.offset -
+                        (details.delta.dy * 2);
+                    final maxScroll =
+                        _testingScrollController.position.maxScrollExtent;
+                    final clampedOffset = newOffset.clamp(0.0, maxScroll);
+                    _testingScrollController.jumpTo(clampedOffset);
+                  }
+                },
+                child: SingleChildScrollView(
+                  controller: _testingScrollController,
+                  physics: const BouncingScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1168,10 +1184,6 @@ class _MyTestingState extends State<MyTesting> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(12),
-                              topRight: Radius.circular(12),
-                            ),
                             border: Border(
                               bottom: BorderSide(color: Colors.blue.shade200),
                             ),
@@ -1181,8 +1193,8 @@ class _MyTestingState extends State<MyTesting> {
                             children: [
                               Row(
                                 children: [
-                                  Icon(Icons.videogame_asset, 
-                                       color: Colors.blue.shade700, size: 20),
+                                  Icon(Icons.videogame_asset,
+                                      color: Colors.blue.shade700, size: 20),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -1195,7 +1207,8 @@ class _MyTestingState extends State<MyTesting> {
                                     ),
                                   ),
                                   IconButton(
-                                    icon: Icon(Icons.close, color: Colors.grey.shade600),
+                                    icon: Icon(Icons.close,
+                                        color: Colors.grey.shade600),
                                     onPressed: () => Navigator.pop(context),
                                     tooltip: 'Close',
                                   ),
@@ -1204,8 +1217,8 @@ class _MyTestingState extends State<MyTesting> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Icon(Icons.person, 
-                                       color: Colors.grey.shade600, size: 16),
+                                  Icon(Icons.person,
+                                      color: Colors.grey.shade600, size: 16),
                                   const SizedBox(width: 4),
                                   Text(
                                     'Created by: ${widget.teacherName}',
@@ -1299,13 +1312,13 @@ class _MyTestingState extends State<MyTesting> {
                           ),
                         ),
 
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: selectedGameType == 'Fill in the blank'
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              height: 800,
+                              child: selectedGameType == 'Fill in the blank'
                                     ? MyFillTheBlank(
                                         answerController: answerController,
                                         visibleLetters: visibleLetters,
@@ -1492,26 +1505,29 @@ class _MyTestingState extends State<MyTesting> {
                                     : MyMath(mathState: mathState),
                               ),
 
-                              Center(
-                                child: AnimatedButton(
-                                  width: 350,
-                                  height: 60,
-                                  color: isLastPage
-                                      ? Colors.orange
-                                      : Colors.green,
-                                  onPressed: _handleConfirm,
-                                  child: Text(
-                                    isLastPage ? "Done" : "Confirm",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                    ),
+                              const SizedBox(height: 16),
+
+                            Center(
+                              child: AnimatedButton(
+                                width: 350,
+                                height: 60,
+                                color: isLastPage
+                                    ? Colors.orange
+                                    : Colors.green,
+                                onPressed: _handleConfirm,
+                                child: Text(
+                                  isLastPage ? "Done" : "Confirm",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                              
+                            const SizedBox(height: 16),
+                          ],
                         ),
                       ),
                     ],

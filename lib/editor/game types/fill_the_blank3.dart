@@ -53,7 +53,9 @@ class MyFillInTheBlank3 extends StatelessWidget {
         ),
 
         Text(
-          "Guess what's the answer of the given question with an image hint.",
+          showImageHint
+              ? "Guess what's the answer on the given question with image hint."
+              : "Guess the answer on the given question.",
           style: GoogleFonts.poppins(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -312,6 +314,13 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
             : 0;
       });
     }
+
+    // Update showImageHint when widget properties change (e.g., when switching pages)
+    if (widget.initialShowImageHint != oldWidget.initialShowImageHint) {
+      setState(() {
+        showImageHint = widget.initialShowImageHint;
+      });
+    }
   }
 
   @override
@@ -341,6 +350,69 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
       }
     });
     widget.onCorrectAnswerSelected(selectedChoiceIndex);
+  }
+
+  /// Shows a confirmation dialog before toggling the image hint visibility
+  Future<void> _showImageHintToggleConfirmation(bool newValue) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2D2D2D),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            newValue ? 'Show Image Hint?' : 'Hide Image Hint?',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          content: Text(
+            newValue
+                ? 'Are you sure you want to show the image hint to players?'
+                : 'Are you sure you want to hide the image hint from players?',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.white70,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'Confirm',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        showImageHint = newValue;
+      });
+      widget.onImageHintToggled(newValue);
+    }
   }
 
   Future<void> _pickImage() async {
@@ -400,10 +472,7 @@ class _MyFillInTheBlank3SettingsState extends State<MyFillInTheBlank3Settings> {
                 Switch(
                   value: showImageHint,
                   onChanged: (value) {
-                    setState(() {
-                      showImageHint = value;
-                    });
-                    widget.onImageHintToggled(value);
+                    _showImageHintToggleConfirmation(value);
                   },
                   activeThumbColor: Colors.green,
                   inactiveThumbColor: Colors.grey,
