@@ -36,6 +36,28 @@ class _MyTeacherState extends State<MyTeacher> {
   String? _verificationMessage;
   Timer? _emailDebounce;
   User? _tempUser;
+  
+  // Email validation helper
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    return emailRegex.hasMatch(email);
+  }
+
+  // Get email provider name for user-friendly messages
+  String _getEmailProvider(String email) {
+    final domain = email.split('@').last.toLowerCase();
+    
+    if (domain.contains('gmail')) return 'Gmail';
+    if (domain.contains('yahoo')) return 'Yahoo';
+    if (domain.contains('outlook') || domain.contains('hotmail') || domain.contains('live')) return 'Outlook';
+    if (domain.contains('edu.ph') || domain.contains('.edu')) return 'Educational Institution';
+    if (domain.contains('icloud') || domain.contains('me.com')) return 'iCloud';
+    if (domain.contains('protonmail') || domain.contains('proton')) return 'ProtonMail';
+    
+    return 'your email provider';
+  }
 
   // Show dialog helper
   void _showDialog(String title, String message) {
@@ -179,7 +201,7 @@ class _MyTeacherState extends State<MyTeacher> {
                       number: "3",
                       icon: Icons.email,
                       title: "Email Verification",
-                      description: "Fill in ALL fields (email, password, confirm password, mobile, full name, address). After 2 seconds, the system will automatically send a verification link to your email.",
+                      description: "Fill in ALL fields (email, password, confirm password, mobile, full name, address). After 2 seconds, the system will automatically send a verification link to your email. We support all email providers: Gmail, Yahoo, Outlook, .edu.ph, and more.",
                       color: Colors.purple,
                     ),
                     
@@ -188,7 +210,7 @@ class _MyTeacherState extends State<MyTeacher> {
                       number: "4",
                       icon: Icons.mark_email_read,
                       title: "Verify Your Email",
-                      description: "Check your email inbox (and spam folder) for the verification link. Click the link to verify your email. A green checkmark ✓ will appear once verified.",
+                      description: "Check your email inbox (and spam/junk folder) for the verification link. The email will be sent to your provider (Gmail, Yahoo, Outlook, etc.). Click the link to verify your email. A green checkmark ✓ will appear once verified.",
                       color: Colors.green,
                     ),
                     
@@ -246,7 +268,7 @@ class _MyTeacherState extends State<MyTeacher> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            "• Fill in fields in any order you prefer\n• Both passwords must match to proceed\n• Email verification starts only when ALL fields are filled\n• Use a valid email you can access\n• Check spam folder if you don't see the verification email\n• Register button activates when ALL fields are filled AND email is verified\n• You can scroll up/down by dragging the screen\n• Admin approval typically takes 24-48 hours",
+                            "• Fill in fields in any order you prefer\n• Both passwords must match to proceed\n• Email verification starts only when ALL fields are filled\n• Use a valid email you can access (Gmail, Yahoo, Outlook, .edu.ph, etc.)\n• Check spam/junk folder if you don't see the verification email\n• All email providers are supported\n• Register button activates when ALL fields are filled AND email is verified\n• You can scroll up/down by dragging the screen\n• Admin approval typically takes 24-48 hours",
                             style: GoogleFonts.poppins(
                               fontSize: 12,
                               color: Colors.white70,
@@ -418,6 +440,15 @@ class _MyTeacherState extends State<MyTeacher> {
       return;
     }
     
+    // Validate email format
+    if (!_isValidEmail(email)) {
+      setState(() {
+        _isCheckingEmail = false;
+        _verificationMessage = "Invalid email format. Please use a valid email (Gmail, Yahoo, Outlook, .edu.ph, etc.)";
+      });
+      return;
+    }
+    
     // Don't check if already verified
     if (_isEmailVerified && _tempUser?.email == email) {
       return;
@@ -438,6 +469,8 @@ class _MyTeacherState extends State<MyTeacher> {
       _verificationMessage = null;
     });
     
+    final provider = _getEmailProvider(email);
+    
     try {
       // Create account with ACTUAL password (this will fail if email exists)
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -452,7 +485,7 @@ class _MyTeacherState extends State<MyTeacher> {
       
       setState(() {
         _isCheckingEmail = false;
-        _verificationMessage = "Verification email sent. Please check your inbox.";
+        _verificationMessage = "Verification email sent to your $provider inbox. Please check spam folder if not found.";
       });
       
       // Start checking for email verification
@@ -469,7 +502,7 @@ class _MyTeacherState extends State<MyTeacher> {
         });
       } else if (e.code == 'invalid-email') {
         setState(() {
-          _verificationMessage = "Invalid email format.";
+          _verificationMessage = "Invalid email format. Please use a valid email from any provider.";
         });
       } else if (e.code == 'weak-password') {
         setState(() {
@@ -716,8 +749,59 @@ class _MyTeacherState extends State<MyTeacher> {
                       ),
                     ),
                   ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Supported email providers info box
+              Container(
+                width: 300,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.verified_user, color: Colors.green, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'All Email Providers Supported',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Gmail • Yahoo • Outlook • iCloud\nEducational (.edu.ph) • ProtonMail • and more',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'You will receive verification emails',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 10,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ],
                 ),
+              ),
               ],
             ),
           ),
@@ -732,41 +816,57 @@ class _MyTeacherState extends State<MyTeacher> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
         width: 300,
-        height: 50,
-        child: TextField(
-          controller: emailController,
-          onChanged: (value) {
-            _checkAllFieldsAndVerify();
-            setState(() {}); // Refresh button state
-          },
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: "Email",
-            hintStyle: const TextStyle(color: Colors.white70),
-            filled: true,
-            fillColor: const Color(0xFF1E1E1E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 50,
+              child: TextField(
+                controller: emailController,
+                onChanged: (value) {
+                  _checkAllFieldsAndVerify();
+                  setState(() {}); // Refresh button state
+                },
+                style: const TextStyle(color: Colors.white),
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  hintText: "Email (Gmail, Yahoo, Outlook, .edu.ph, etc.)",
+                  hintStyle: const TextStyle(color: Colors.white70, fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFF1E1E1E),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  suffixIcon: _isCheckingEmail
+                      ? const Padding(
+                          padding: EdgeInsets.all(12.0),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                            ),
+                          ),
+                        )
+                      : _isEmailVerified
+                          ? const Icon(
+                              Icons.check_circle,
+                              color: Colors.green,
+                            )
+                          : null,
+                ),
+              ),
             ),
-            suffixIcon: _isCheckingEmail
-                ? const Padding(
-                    padding: EdgeInsets.all(12.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                      ),
-                    ),
-                  )
-                : _isEmailVerified
-                    ? const Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                      )
-                    : null,
-          ),
+            const SizedBox(height: 4),
+            Text(
+              "All email providers supported",
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                color: Colors.white54,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -69,13 +69,29 @@ class _MyTeachersDashboardState extends State<MyTeachersDashboard> {
 
       _allTeachers = snapshot.docs.map((doc) {
         final data = doc.data();
+        
+        // Try multiple possible field names for profile image
+        // Priority: profileImageUrl (Firebase Storage URL) > profileImage (base64) > other variants
+        String? profileImage;
+        if (data['profileImageUrl'] != null && (data['profileImageUrl'] as String).isNotEmpty) {
+          profileImage = data['profileImageUrl'];
+        } else if (data['profileImage'] != null && (data['profileImage'] as String).isNotEmpty) {
+          profileImage = data['profileImage'];
+        } else if (data['profile_image'] != null && (data['profile_image'] as String).isNotEmpty) {
+          profileImage = data['profile_image'];
+        } else if (data['profilePicture'] != null && (data['profilePicture'] as String).isNotEmpty) {
+          profileImage = data['profilePicture'];
+        } else if (data['profile_picture'] != null && (data['profile_picture'] as String).isNotEmpty) {
+          profileImage = data['profile_picture'];
+        }
+        
         return {
           'uid': doc.id,
           'name': data['fullname'] ?? data['name'] ?? 'Unknown',
           'email': data['email'] ?? 'No email',
           'fullname': data['fullname'] ?? 'Unknown',
           'createdAt': data['createdAt'] ?? data['created_at'],
-          'profileImage': data['profileImage'] ?? data['profile_image'],
+          'profileImage': profileImage,
           'banned': data['banned'] ?? false,
         };
       }).toList();
@@ -277,25 +293,7 @@ class _MyTeachersDashboardState extends State<MyTeachersDashboard> {
             child: Row(
               children: [
                 // Avatar
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.blue.withOpacity(0.3),
-                  backgroundImage: teacher['profileImage'] != null && (teacher['profileImage'] as String).isNotEmpty
-                      ? MemoryImage(base64Decode(teacher['profileImage']))
-                      : null,
-                  child: teacher['profileImage'] == null || (teacher['profileImage'] as String).isEmpty
-                      ? Text(
-                          (teacher['name'] as String)
-                              .substring(0, 1)
-                              .toUpperCase(),
-                          style: GoogleFonts.poppins(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        )
-                      : null,
-                ),
+                _buildAvatar(teacher, radius: 30, fontSize: 24),
                 const SizedBox(width: 16),
                 // Teacher Info
                 Expanded(
@@ -385,25 +383,7 @@ class _MyTeachersDashboardState extends State<MyTeachersDashboard> {
               // Header
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Colors.blue.withOpacity(0.3),
-                    backgroundImage: teacher['profileImage'] != null && (teacher['profileImage'] as String).isNotEmpty
-                        ? MemoryImage(base64Decode(teacher['profileImage']))
-                        : null,
-                    child: teacher['profileImage'] == null || (teacher['profileImage'] as String).isEmpty
-                        ? Text(
-                            (teacher['name'] as String)
-                                .substring(0, 1)
-                                .toUpperCase(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          )
-                        : null,
-                  ),
+                  _buildAvatar(teacher, radius: 40, fontSize: 32),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -541,5 +521,59 @@ class _MyTeachersDashboardState extends State<MyTeachersDashboard> {
     } catch (e) {
       return 'Unknown';
     }
+  }
+
+  Widget _buildAvatar(Map<String, dynamic> teacher, {required double radius, required double fontSize}) {
+    final profileImage = teacher['profileImage'];
+    final name = teacher['name'] as String;
+    
+    // Determine if it's a URL or base64 encoded image
+    ImageProvider? imageProvider;
+    if (profileImage != null && (profileImage as String).isNotEmpty) {
+      try {
+        // Check if it's a URL (starts with http:// or https://)
+        if (profileImage.startsWith('http://') || profileImage.startsWith('https://')) {
+          // It's a Firebase Storage URL
+          imageProvider = NetworkImage(profileImage);
+          debugPrint('Loading profile image from URL for ${teacher['name']}');
+        } else {
+          // It's base64 encoded data
+          String base64String = profileImage;
+          
+          // Remove data URL prefix if present (e.g., "data:image/png;base64,")
+          if (base64String.contains(',')) {
+            base64String = base64String.split(',').last;
+          }
+          
+          final decodedBytes = base64Decode(base64String);
+          imageProvider = MemoryImage(decodedBytes);
+          debugPrint('Loading profile image from base64 for ${teacher['name']}');
+        }
+      } catch (e) {
+        debugPrint('Error loading profile image for ${teacher['name']}: $e');
+        imageProvider = null;
+      }
+    }
+    
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Colors.blue.withOpacity(0.3),
+      backgroundImage: imageProvider,
+      onBackgroundImageError: imageProvider != null
+          ? (exception, stackTrace) {
+              debugPrint('Error displaying profile image: $exception');
+            }
+          : null,
+      child: imageProvider == null
+          ? Text(
+              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+              style: GoogleFonts.poppins(
+                fontSize: fontSize,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            )
+          : null,
+    );
   }
 }

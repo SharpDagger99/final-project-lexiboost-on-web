@@ -130,7 +130,7 @@ class DashboardService {
     }
   }
 
-  /// Get user growth data by weekday for the chart (current week only, percentage-based)
+  /// Get user growth data by weekday for the chart (current week only, count-based)
   Future<List<MonthlyChartData>> _getMonthlyGrowthData() async {
     try {
       final now = DateTime.now();
@@ -152,7 +152,7 @@ class DashboardService {
         final weekdayName = weekdayNames[i];
         weekdayStats[weekdayName] = MonthlyChartData(
           month: weekdayName,
-          count: 0, // Will be converted to percentage
+          count: 0,
           date: startOfWeek.add(Duration(days: i)),
         );
         weekdayCounts[weekdayName] = 0;
@@ -171,7 +171,6 @@ class DashboardService {
 
       // Count users by their creation weekday (only current week)
       final allUsers = [...teachersSnapshot.docs, ...studentsSnapshot.docs];
-      int totalWeekRegistrations = 0;
 
       for (var doc in allUsers) {
         final data = doc.data();
@@ -187,23 +186,19 @@ class DashboardService {
             
             if (weekdayCounts.containsKey(weekdayName)) {
               weekdayCounts[weekdayName] = (weekdayCounts[weekdayName] ?? 0) + 1;
-              totalWeekRegistrations++;
             }
           }
         }
       }
 
-      // Convert counts to percentages (0-100)
+      // Store actual counts (not percentages)
       for (var i = 0; i < 7; i++) {
         final weekdayName = weekdayNames[i];
         final count = weekdayCounts[weekdayName] ?? 0;
-        final percentage = totalWeekRegistrations > 0
-            ? (count / totalWeekRegistrations * 100).round()
-            : 0;
         
         weekdayStats[weekdayName] = MonthlyChartData(
           month: weekdayName,
-          count: percentage, // Store as percentage (0-100)
+          count: count, // Store actual count
           date: weekdayStats[weekdayName]!.date,
         );
       }

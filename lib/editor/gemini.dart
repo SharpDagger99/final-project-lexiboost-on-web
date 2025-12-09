@@ -1,4 +1,4 @@
-// ignore_for_file: avoid_print, prefer_interpolation_to_compose_strings, unnecessary_import
+// ignore_for_file: avoid_print, prefer_interpolation_to_compose_strings, unnecessary_import, unnecessary_string_escapes
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -417,12 +417,12 @@ PAGE FIELD REQUIREMENTS BY GAME TYPE:
 - Fill in the blank 2: answer, hint, visibleLetters
 - Guess the answer: content, hint, choices, correctAnswerIndex, showImageHint (SET TO FALSE!)
 - Guess the answer 2: content, hint, choices, correctAnswerIndex
-- Read the sentence: content (the sentence)
+- Read the sentence: content (EXACT sentence - NO "Write", "Say", or quotes!)
 - What is it called: answer, hint
 - Listen and Repeat: answer
 - Image Match: imageCount (2, 4, 6, or 8)
 - Math: totalBoxes, boxValues, operators, answer (number)
-- Stroke: content (description)
+- Stroke: content (EXACT text - NO "Write", "Trace", or quotes!)
 
 GAME TYPE REQUIREMENTS (follow these EXACTLY for each game type):
 
@@ -454,7 +454,10 @@ GAME TYPE REQUIREMENTS (follow these EXACTLY for each game type):
    - requiresImage: true (3 images must be added manually)
 
 5. "Read the sentence":
-   - content: The sentence to read aloud (string)
+   - content: The sentence to read aloud (string) - this is the EXACT answer the user must say
+   - CRITICAL: The content field IS the answer - do NOT add words like "Write", "Say", or quotation marks
+   - Example: content: "Sarah" (user must say exactly "Sarah" to be correct)
+   - Example: content: "The cat is sleeping" (user must say exactly "The cat is sleeping")
    - No additional configuration needed
 
 6. "What is it called":
@@ -480,8 +483,11 @@ GAME TYPE REQUIREMENTS (follow these EXACTLY for each game type):
    - Example: {"totalBoxes": 3, "boxValues": [10, 2, 5], "operators": ["÷", "+"], "answer": 10}
 
 10. "Stroke":
-    - content: Description of what to trace (string)
-    - requiresImage: true (stroke image must be added manually)
+    - content: The EXACT text the user must write/trace (string) - this is the answer
+    - CRITICAL: The content field IS the answer - do NOT add words like "Write", "Trace", or quotation marks
+    - Example: content: "Sarah" (user must write exactly "Sarah" to be correct)
+    - Example: content: "Hello World" (user must write exactly "Hello World")
+    - requiresImage: true (stroke image must be added manually as a hint)
 
 IMPORTANT AI DECISIONS:
 - For "Guess the answer": Always set showImageHint to FALSE unless the question specifically requires visual context
@@ -492,6 +498,8 @@ IMPORTANT AI DECISIONS:
   * operators array length must equal totalBoxes - 1
   * Calculate answer correctly and provide as a number
   * AI can freely change operators to create different math problems
+- For "Read the sentence": content is the EXACT answer - NO extra words like "Write", "Say", "Read", or quotation marks
+- For "Stroke": content is the EXACT answer - NO extra words like "Write", "Trace", "Draw", or quotation marks
 - Set correctAnswerIndex randomly between 0-3 to avoid patterns
 
 Generate exactly ${activityPlan['totalPages']} pages with educational, engaging content.
@@ -1199,27 +1207,37 @@ PAGE FIELD REQUIREMENTS BY GAME TYPE:
 - Fill in the blank 2: answer, hint, visibleLetters
 - Guess the answer: content, hint, choices (4 items), correctAnswerIndex (0-3), showImageHint (SET TO FALSE for text questions!)
 - Guess the answer 2: content, hint, choices (4 items), correctAnswerIndex (0-3)
-- Read the sentence: content (the sentence to read)
+- Read the sentence: content (EXACT sentence to read - NO extra words like "Write", "Say", or quotes!)
 - What is it called: answer, hint
 - Listen and Repeat: answer (word/phrase to repeat)
 - Image Match: imageCount (2, 4, 6, or 8)
 - Math: totalBoxes (1-10), boxValues (array of NUMBERS ONLY like [5, 3, 2]), operators (array like ["+", "-", "×", "÷"]), answer (calculated result as number)
-- Stroke: content (description of what to trace)
+- Stroke: content (EXACT text to write - NO extra words like "Write", "Trace", or quotes!)
 
 DIFFICULTY-BASED RULES:
-- easy: For "Fill in the blank", show 70% of letters. For "Math", use only + and - with small numbers (1-10)
-- normal: For "Fill in the blank", show 50% of letters. For "Math", use +, -, × with numbers up to 20
-- hard: For "Fill in the blank", show 30% of letters. For "Math", use all operators (+, -, ×, ÷) with larger numbers
+- easy: For "Fill in the blank", show 70% of letters. For "Math", use only + and - with small numbers (1-10). For "Read the sentence" and "Stroke", use short simple words/phrases
+- normal: For "Fill in the blank", show 50% of letters. For "Math", use +, -, × with numbers up to 20. For "Read the sentence" and "Stroke", use medium-length sentences
+- hard: For "Fill in the blank", show 30% of letters. For "Math", use all operators (+, -, ×, ÷) with larger numbers. For "Read the sentence" and "Stroke", use longer complex sentences
 
 MATH GAME TYPE EXAMPLES:
 - Easy: {"totalBoxes": 2, "boxValues": [5, 3], "operators": ["+"], "answer": 8}
 - Normal: {"totalBoxes": 3, "boxValues": [10, 5, 2], "operators": ["-", "×"], "answer": 10}
 - Hard: {"totalBoxes": 4, "boxValues": [20, 4, 3, 2], "operators": ["÷", "+", "×"], "answer": 11}
 
-CRITICAL FOR MATH: 
-- boxValues MUST be an array of numbers: [5, 3, 2] NOT ["5", "3", "2"]
-- operators MUST match totalBoxes - 1 (e.g., 3 boxes need 2 operators)
-- answer MUST be the correct calculated result as a number
+CRITICAL RULES: 
+- MATH: boxValues MUST be an array of numbers: [5, 3, 2] NOT ["5", "3", "2"]
+- MATH: operators MUST match totalBoxes - 1 (e.g., 3 boxes need 2 operators)
+- MATH: answer MUST be the correct calculated result as a number
+- READ THE SENTENCE: content must be ONLY the sentence, NO "Write", "Say", "Read", or quotation marks
+- STROKE: content must be ONLY the text to write, NO "Write", "Trace", "Draw", or quotation marks
+- Examples of CORRECT format:
+  * Read the sentence: {"content": "Sarah"} ✓
+  * Read the sentence: {"content": "The cat is sleeping"} ✓
+  * Stroke: {"content": "Hello"} ✓
+- Examples of WRONG format:
+  * Read the sentence: {"content": "Write Sarah"} ✗
+  * Read the sentence: {"content": "\"Sarah\""} ✗
+  * Stroke: {"content": "Trace the word Hello"} ✗
 
 Generate exactly $totalPages pages, cycling through ONLY these game types in order: ${gameTypes.join(', ')}
 DO NOT use any game types not in this list!

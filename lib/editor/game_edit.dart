@@ -923,9 +923,12 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
   
   /// Delete multiple pages at once
   Future<void> _deleteMultiplePages(Set<int> pageIndices) async {
-    if (pageIndices.isEmpty || pages.length == 1) {
+    if (pageIndices.isEmpty) {
       return;
     }
+
+    // Check if user is trying to delete all pages
+    final willDeleteAllPages = pageIndices.length >= pages.length;
 
     // Show confirmation dialog
     final confirmed = await showDialog<bool>(
@@ -941,7 +944,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             ),
           ),
           content: Text(
-            'Are you sure you want to delete ${pageIndices.length} page(s)? This action cannot be undone.',
+            willDeleteAllPages
+                ? 'You are about to delete all pages. A new default page will be created automatically.'
+                : 'Are you sure you want to delete ${pageIndices.length} page(s)? This action cannot be undone.',
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
           actions: [
@@ -978,39 +983,58 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
       pages.removeAt(index);
     }
 
-    // Adjust current page index if needed
-    setState(() {
-      if (currentPageIndex >= pages.length) {
-        currentPageIndex = pages.length - 1;
-      }
-      // Check if current page was deleted
-      if (sortedIndices.contains(currentPageIndex)) {
+    // If all pages were deleted, create a new default page
+    if (pages.isEmpty) {
+      setState(() {
+        pages = [PageData()];
         currentPageIndex = 0;
-      }
-    });
+      });
+      _loadPageData(currentPageIndex);
+      
+      // Show info message about default page creation
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'All pages deleted. A new default page has been created.',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      // Adjust current page index if needed
+      setState(() {
+        if (currentPageIndex >= pages.length) {
+          currentPageIndex = pages.length - 1;
+        }
+        // Check if current page was deleted
+        if (sortedIndices.contains(currentPageIndex)) {
+          currentPageIndex = 0;
+        }
+      });
 
-    _loadPageData(currentPageIndex);
+      _loadPageData(currentPageIndex);
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${pageIndices.length} page(s) deleted successfully',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
     
     // Reset test status when deleting pages
     _resetGameTestStatus();
-
-    // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${pageIndices.length} page(s) deleted successfully',
-          style: GoogleFonts.poppins(),
-        ),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   void _deletePage() {
-    if (pages.length == 1) {
-      return;
-    }
+    final isLastPage = pages.length == 1;
 
     showDialog(
       context: context,
@@ -1025,7 +1049,9 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
             ),
           ),
           content: Text(
-            'Are you sure you want to delete Page ${currentPageIndex + 1}?',
+            isLastPage
+                ? 'This is the last page. Deleting it will create a new default page.'
+                : 'Are you sure you want to delete Page ${currentPageIndex + 1}?',
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
           actions: [
@@ -1046,8 +1072,26 @@ class _MyGameEditState extends State<MyGameEdit> with WidgetsBindingObserver {
                 setState(() {
                   pages.removeAt(currentPageIndex);
 
-                  if (currentPageIndex >= pages.length) {
-                    currentPageIndex = pages.length - 1;
+                  // If all pages were deleted, create a new default page
+                  if (pages.isEmpty) {
+                    pages = [PageData()];
+                    currentPageIndex = 0;
+                    
+                    // Show info message
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Last page deleted. A new default page has been created.',
+                          style: GoogleFonts.poppins(),
+                        ),
+                        backgroundColor: Colors.blue,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  } else {
+                    if (currentPageIndex >= pages.length) {
+                      currentPageIndex = pages.length - 1;
+                    }
                   }
                 });
 

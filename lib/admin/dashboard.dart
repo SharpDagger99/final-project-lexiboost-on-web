@@ -21,7 +21,6 @@ class _MyDashBoardState extends State<MyDashBoard> {
   final DashboardService _dashboardService = DashboardService();
   DashboardStats _stats = DashboardStats.empty();
   List<GameTypeStats> _gameTypeStats = [];
-  Map<String, List<GameTypeWeekdayData>> _gameTypesByWeekday = {};
   bool _isLoading = true;
 
   @override
@@ -36,12 +35,10 @@ class _MyDashBoardState extends State<MyDashBoard> {
       final results = await Future.wait([
         _dashboardService.getDashboardStats(),
         _dashboardService.getGameTypeStatistics(),
-        _dashboardService.getGameTypesByWeekday(),
       ]);
       setState(() {
         _stats = results[0] as DashboardStats;
         _gameTypeStats = results[1] as List<GameTypeStats>;
-        _gameTypesByWeekday = results[2] as Map<String, List<GameTypeWeekdayData>>;
         _isLoading = false;
       });
     } catch (e) {
@@ -145,39 +142,6 @@ class _MyDashBoardState extends State<MyDashBoard> {
                           ),
                           SizedBox(height: _getResponsiveSpacing(context)),
                           _buildGameTypeStatistics(),
-
-                          SizedBox(height: _getResponsiveSpacing(context) * 2),
-
-                          // Game Types by Weekday Chart
-                          Row(
-                            children: [
-                              Text(
-                                'Game Types Played by Weekday',
-                                style: GoogleFonts.poppins(
-                                  fontSize: _getResponsiveFontSize(
-                                    context,
-                                    base: 20,
-                                  ),
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '(${_getCurrentWeekDateRange()})',
-                                style: GoogleFonts.poppins(
-                                  fontSize: _getResponsiveFontSize(
-                                    context,
-                                    base: 14,
-                                  ),
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: _getResponsiveSpacing(context)),
-                          _buildGameTypeWeekdayChart(),
 
                           SizedBox(height: _getResponsiveSpacing(context) * 2),
 
@@ -846,56 +810,7 @@ class _MyDashBoardState extends State<MyDashBoard> {
     );
   }
 
-  Widget _buildGameTypeWeekdayChart() {
-    final padding = _getResponsivePadding(context);
-    final chartHeight = _getChartHeight(context);
 
-    // Create color map for game types
-    Map<String, Color> gameTypeColors = {};
-    for (var gameType in _gameTypesByWeekday.keys) {
-      gameTypeColors[gameType] = _getGameTypeColor(gameType);
-    }
-
-    return Container(
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A3E),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ChartWidgets.buildGameTypeWeekdayChart(
-            data: _gameTypesByWeekday,
-            gameTypeColors: gameTypeColors,
-            height: chartHeight - (padding * 2),
-          ),
-          if (_gameTypesByWeekday.isNotEmpty) ...[
-            SizedBox(height: _getResponsiveSpacing(context) * 2),
-            // Legend
-            Wrap(
-              spacing: 16,
-              runSpacing: 12,
-              alignment: WrapAlignment.center,
-              children: _gameTypesByWeekday.keys.map((gameType) {
-                return _buildLegendItem(
-                  _formatGameTypeName(gameType),
-                  _getGameTypeColor(gameType),
-                );
-              }).toList(),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
   Widget _buildGameTypeBar({
     required String gameType,
@@ -1150,16 +1065,16 @@ class _MyDashBoardState extends State<MyDashBoard> {
     }
     csvBuffer.writeln(''); // Empty line
 
-    // User Registrations by Weekday (Current Week - Percentage Based)
+    // User Registrations by Weekday (Current Week - Count Based)
     final weekRange = _getCurrentWeekDateRange();
     csvBuffer.writeln('USER REGISTRATIONS BY WEEKDAY ($weekRange)');
-    csvBuffer.writeln('Weekday,Percentage');
+    csvBuffer.writeln('Weekday,Count');
     if (_stats.monthlyGrowth.isNotEmpty) {
       for (var data in _stats.monthlyGrowth) {
-        csvBuffer.writeln('${_escapeCsvField(data.month)},${data.count}%');
+        csvBuffer.writeln('${_escapeCsvField(data.month)},${data.count}');
       }
     } else {
-      csvBuffer.writeln('No data available,0%');
+      csvBuffer.writeln('No data available,0');
     }
 
     // Create and download CSV file

@@ -10,6 +10,7 @@ import 'package:lexi_on_web/teacher/notification2.dart';
 import 'package:lexi_on_web/teacher/class1.dart';
 import 'package:lexi_on_web/teacher/student_request.dart';
 import 'package:lexi_on_web/teacher/add_student.dart';
+import 'package:lexi_on_web/teacher/mystudent_dashboard.dart';
 import 'package:lexi_on_web/admin/settings_admin.dart';
 import 'package:lexi_on_web/start.dart';
 import 'package:lexi_on_web/teacher/teacher_profile.dart';
@@ -185,6 +186,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
   }
 
   final List<Map<String, dynamic>> menuItems = [
+    {"icon": Icons.dashboard, "title": "Dashboard"},
     {"icon": Icons.message_rounded, "title": "Class"},
     {"icon": Icons.people, "title": "Students"},
     {"icon": Icons.request_page, "title": "Request"},
@@ -194,16 +196,25 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
     {"icon": Icons.logout, "title": "Log Out"},
   ];
 
-  // Pages for each sidebar option
-  final List<Widget> pages = const [
-    MyClass1(),
-    MyAddStudent(),
-    MyStudentRequest(),
-    MyGameCreate(),
-    MyNotification2(),
-    MySettingsAdmin(),
-    Center(child: Text("Logging Out...", style: TextStyle(color: Colors.white))),
-  ];
+  // Pages for each sidebar option - built dynamically to pass navigation callback
+  List<Widget> _buildPages() {
+    return [
+      MyStudentDashboards(
+        onNavigate: (index) {
+          setState(() {
+            selectedIndex = index;
+          });
+        },
+      ),
+      const MyClass1(),
+      const MyAddStudent(),
+      const MyStudentRequest(),
+      const MyGameCreate(),
+      const MyNotification2(),
+      const MySettingsAdmin(),
+      const Center(child: Text("Logging Out...", style: TextStyle(color: Colors.white))),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -327,9 +338,14 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                 ),
                                 const SizedBox(height: 10),
                                 _buildSidebarItem(
+                                  icon: Icons.dashboard,
+                                  title: "Dashboard",
+                                  index: 0,
+                                ),
+                                _buildSidebarItem(
                                   icon: Icons.message_rounded,
                                   title: "Class",
-                                  index: 0,
+                                  index: 1,
                                 ),
                                 StreamBuilder<int>(
                                   stream: _getPendingRequestsCount(),
@@ -338,7 +354,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                     return _buildSidebarItem(
                                       icon: Icons.people,
                                       title: "Students",
-                                      index: 1,
+                                      index: 2,
                                       badgeCount: badgeCount,
                                     );
                                   },
@@ -350,7 +366,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                     return _buildSidebarItem(
                                       icon: Icons.request_page,
                                       title: "Request",
-                                      index: 2,
+                                      index: 3,
                                       badgeCount: badgeCount,
                                     );
                                   },
@@ -358,12 +374,12 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                 _buildSidebarItem(
                                   icon: Icons.videogame_asset,
                                   title: "Game Create",
-                                  index: 3,
+                                  index: 4,
                                 ),
                                 _buildSidebarItem(
                                   icon: Icons.notifications,
                                   title: "Notifications",
-                                  index: 4,
+                                  index: 5,
                                 ),
 
                                 const Spacer(),
@@ -371,12 +387,12 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                                 _buildSidebarItem(
                                   icon: Icons.settings,
                                   title: "Settings",
-                                  index: 5,
+                                  index: 6,
                                 ),
                                 _buildSidebarItem(
                                   icon: Icons.logout,
                                   title: "Log Out",
-                                  index: 6,
+                                  index: 7,
                                 ),
                               ],
                             ),
@@ -388,7 +404,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                             color: const Color(0xFF1E201E),
                             child: IndexedStack(
                               index: selectedIndex,
-                              children: pages,
+                              children: _buildPages(),
                             ),
                           ),
                         ),
@@ -434,9 +450,14 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                         ),
                         const SizedBox(height: 10),
                         _buildSidebarItem(
+                          icon: Icons.dashboard,
+                          title: "Dashboard",
+                          index: 0,
+                        ),
+                        _buildSidebarItem(
                           icon: Icons.message_rounded,
                           title: "Class",
-                          index: 0,
+                          index: 1,
                         ),
                         StreamBuilder<int>(
                           stream: _getPendingRequestsCount(),
@@ -445,7 +466,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                             return _buildSidebarItem(
                               icon: Icons.people,
                               title: "Students",
-                              index: 1,
+                              index: 2,
                               badgeCount: badgeCount,
                             );
                           },
@@ -457,7 +478,7 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                             return _buildSidebarItem(
                               icon: Icons.request_page,
                               title: "Request",
-                              index: 2,
+                              index: 3,
                               badgeCount: badgeCount,
                             );
                           },
@@ -465,12 +486,12 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                         _buildSidebarItem(
                           icon: Icons.videogame_asset,
                           title: "Game Create",
-                          index: 3,
+                          index: 4,
                         ),
                         _buildSidebarItem(
                           icon: Icons.notifications,
                           title: "Notifications",
-                          index: 4,
+                          index: 5,
                         ),
 
                         const Spacer(),
@@ -478,12 +499,12 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
                         _buildSidebarItem(
                           icon: Icons.settings,
                           title: "Settings",
-                          index: 5,
+                          index: 6,
                         ),
                         _buildSidebarItem(
                           icon: Icons.logout,
                           title: "Log Out",
-                          index: 6,
+                          index: 7,
                         ),
                       ],
                     ),
@@ -549,8 +570,8 @@ class _MyTeacherHomeState extends State<MyTeacherHome> {
       selected: isSelected,
       selectedTileColor: Colors.white12,
       onTap: () {
-        if (index == 6) {
-          // Log Out button index
+        if (index == 7) {
+          // Log Out button index (updated from 6 to 7)
           _showLogoutDialog();
         } else {
           setState(() {
