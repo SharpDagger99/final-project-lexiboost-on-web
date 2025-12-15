@@ -39,7 +39,7 @@ class _MyStudentState extends State<MyStudent>
 
   Future<void> _downloadApp() async {
     const url =
-        'https://drive.google.com/uc?export=download&id=13e_dU94vIR_79EZRIG8UJMTTiTLMLzBT';
+        'https://drive.google.com/uc?export=download&id=1sicEqHQoPw_iIUQgBDSmO0qVL80qTdH2';
     final uri = Uri.parse(url);
 
     if (await canLaunchUrl(uri)) {

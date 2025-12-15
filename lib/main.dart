@@ -40,6 +40,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
+      title: 'Lexi Web',
       debugShowCheckedModeBanner: false,
       initialRoute: '/start', // default route
       getPages: [

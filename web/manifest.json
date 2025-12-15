@@ -1,11 +1,11 @@
 {
-    "name": "LexiBoost",
-    "short_name": "LexiBoost",
+    "name": "Lexi Web",
+    "short_name": "Lexi Web",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "LexiBoost - Educational Learning Platform",
+    "description": "Lexi Web - Educational Learning Platform",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
