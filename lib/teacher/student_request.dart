@@ -581,7 +581,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
     );
   }
 
-  // Get all students who added this teacher
+  // Get all students who added this teacher (student-initiated requests only)
   Stream<List<Map<String, dynamic>>> _getStudentRequests() async* {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
@@ -620,9 +620,9 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
 
     print('Teacher role verified: $teacherName');
 
-    // Query all users to find students who have this teacher with status false
+    // Query all users to find students who have this teacher with status false AND were initiated by student
     await for (var usersSnapshot
-        in _firestore.collection('users').snapshots()) {
+        in _firestore.collection('users').where('role', isEqualTo: 'student').snapshots()) {
       List<Map<String, dynamic>> requests = [];
 
       for (var userDoc in usersSnapshot.docs) {
@@ -637,17 +637,19 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
             .doc(teacherName)
             .get();
 
-        // If the document exists with teacher's full name, this user requested this teacher
+        // If the document exists with teacher's full name
         if (teacherSubDoc.exists) {
           final teacherRequestData = teacherSubDoc.data();
           final status = teacherRequestData?['status'] ?? false;
-
-          // Only include pending requests (status = false)
-          if (!status) {
+          final requestedBy = teacherRequestData?['requestedBy'] ?? 'student'; // Default to student for backward compatibility
+          
+          // Only include pending requests (status = false) that were initiated by the STUDENT
+          // Teacher-initiated requests should NOT appear here
+          if (!status && requestedBy == 'student') {
             final userData = userDoc.data();
             
             print(
-              'Found pending request from user: ${userData['username']} (ID: ${userDoc.id})',
+              'Found pending student request from: ${userData['username']} (ID: ${userDoc.id})',
             );
             
             requests.add({
@@ -662,7 +664,7 @@ class _MyStudentRequestState extends State<MyStudentRequest> {
         }
       }
 
-      print('Total pending requests: ${requests.length}');
+      print('Total pending student requests: ${requests.length}');
       yield requests;
     }
   }
